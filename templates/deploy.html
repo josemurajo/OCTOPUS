@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Red y servicios{% endblock %}
+{% block content %}
+<h1>Red y servicios</h1>
+<p class="lead">Qué partes de OCTOPUS están en marcha y desde dónde se puede llegar a cada una.</p>
+<div class="card">
+  <table>
+    <tr><th>Servicio</th><th>Puerto</th><th>Estado</th><th>Accesible desde</th><th>Escuchando en</th></tr>
+    {% for s in servicios.filas %}
+    <tr>
+      <td><strong>{{ s.nombre }}</strong>{% if s.nota %}<div class="small muted">{{ s.nota }}</div>{% endif %}</td>
+      <td class="mono">{{ s.puerto }}</td>
+      <td>{% if s.activo %}<span class="pill ok">En marcha</span>{% else %}<span class="pill problema">Parado</span>{% endif %}</td>
+      <td class="small">{{ s.esperado }}</td>
+      <td class="mono small">{{ s.direcciones }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  <p class="small muted" style="margin-top:12px">Equipos: <strong>{{ servicios.cortafuegos }}</strong></p>
+</div>
+<div class="card">
+  <h2>¿Cómo se cambia?</h2>
+  <p class="small">Por seguridad, la red no se cambia desde la web (un error aquí podría dejar los equipos sin copias).
+    En el servidor, edita <span class="mono">install/.env</span> (puertos y dirección) y ejecuta
+    el instalador de nuevo (<span class="mono">instalar_servidor</span>). La guía <span class="mono">PRODUCCION.md</span> lo explica paso a paso.</p>
+</div>
+{% endblock %}

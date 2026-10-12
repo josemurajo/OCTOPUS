@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Inicio{% endblock %}
+{% block content %}
+{% if incidentes_abiertos %}
+<div class="notice problema" style="font-size:17px"><strong>Hay {{ incidentes_abiertos }} incidente{{ 's' if incidentes_abiertos != 1 }} de seguridad abierto{{ 's' if incidentes_abiertos != 1 }}</strong>
+  OCTOPUS ha aislado el equipo afectado y restaurado una copia sana. Revisa qué ha pasado y libera el equipo cuando esté limpio.
+  <a href="{{ url_for('incidentes') }}" style="margin-left:6px">Ver incidentes →</a></div>
+{% endif %}
+<div class="card hero {{ resumen.nivel }}">
+  <div class="hero-icon" aria-hidden="true">{{ '✓' if resumen.nivel == 'ok' else '!' }}</div>
+  <div style="flex:1">
+    <h1>{{ resumen.titulo }}</h1>
+    <p class="muted" style="font-size:17px">{{ resumen.texto }}</p>
+  </div>
+  {% if total and puede_actuar() %}
+  <form method="post" action="{{ url_for('copiar_todo') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn btn-primary btn-big" type="submit">Hacer copia de todo ahora</button>
+  </form>
+  {% elif not total %}
+  <a class="btn btn-primary btn-big" href="{{ url_for('equipo_nuevo') }}">Añadir un equipo</a>
+  {% endif %}
+</div>
+
+{% if avisos %}
+<div class="card">
+  <h2>Qué hay que revisar</h2>
+  {% for a in avisos %}
+  <div class="notice {{ a.nivel }}"><strong>{{ a.titulo }}</strong>{{ a.que_hacer }}
+    {% if a.id %}<a href="{{ url_for('equipo', system_id=a.id) }}" style="margin-left:6px">Ver equipo →</a>
+    {% elif a.enlace %}<a href="{{ a.enlace }}" style="margin-left:6px">Ir →</a>{% endif %}</div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div style="display:flex; justify-content:space-between; align-items:baseline; margin: 8px 0 12px;">
+  <h2 style="margin:0">Tus equipos <span class="muted small">({{ ok }} de {{ total }} protegidos)</span></h2>
+  <a href="{{ url_for('equipos') }}">Ver todos</a>
+</div>
+<div class="grid">
+  {% for e in lista %}
+  <a class="card device" href="{{ url_for('equipo', system_id=e.sys.id) }}" style="color:inherit; text-decoration:none; margin:0">
+    <div class="device-head">
+      <span class="device-name">{{ e.sys.hostname }}</span>
+      <span class="pill {{ e.est.nivel }}">{{ e.est.texto }}</span>
+    </div>
+    <dl class="kv">
+      <dt>Última copia</dt><dd>{{ e.est.ultima | hace }}</dd>
+      <dt>Copias guardadas</dt><dd>{{ e.est.copias | length }}</dd>
+      {% if e.trabajos and e.trabajos[0].estado == 'en_curso' %}<dt>Ahora</dt><dd>Haciendo copia…</dd>{% endif %}
+    </dl>
+  </a>
+  {% else %}
+  <div class="card empty">Todavía no hay equipos. <a href="{{ url_for('equipo_nuevo') }}">Añade el primero</a>.</div>
+  {% endfor %}
+</div>
+
+<div class="card" style="margin-top:20px">
+  <h2>Últimos movimientos</h2>
+  {% if actividad %}
+  <table>
+    {% for a in actividad %}
+    <tr>
+      <td style="width:170px" class="muted small">{{ a.timestamp | hace }}</td>
+      <td>{% if a.action == 'BACKUP_OK' %}Copia terminada{% elif a.action == 'BACKUP_ERROR' %}<span style="color:var(--bad)">Copia fallida</span>{% elif a.action == 'BACKUP_START' %}Copia iniciada{% elif a.action == 'RESTORE_OK' %}Archivo recuperado{% elif a.action == 'RESTORE_ERROR' %}<span style="color:var(--bad)">Fallo al recuperar</span>{% elif a.action == 'SYSTEM_ADD' %}Equipo añadido{% else %}{{ a.action }}{% endif %}
+        <span class="muted small">{{ a.details }}</span></td>
+      <td class="muted small">{{ a.username or 'automático' }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}<p class="muted">Aún no hay movimientos.</p>{% endif %}
+</div>
+{% endblock %}
+{% block scripts %}
+<script>setTimeout(function(){ location.href = location.pathname + '?auto=1'; }, 60000);</script>
+{% endblock %}

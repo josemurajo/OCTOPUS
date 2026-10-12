@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Añadir equipo{% endblock %}
+{% block content %}
+<p class="small"><a href="{{ url_for('equipos') }}">← Equipos</a></p>
+<h1>Añadir un equipo</h1>
+<p class="lead">Dinos qué equipo es y cómo llegar a él. OCTOPUS se instala solo y el equipo queda protegido como los demás.</p>
+<div class="card" style="max-width:720px">
+  <form method="post" id="form-equipo" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="field"><label for="os_family">¿Qué sistema tiene?</label>
+      <select id="os_family" name="os_family">
+        <option value="linux">Linux (Ubuntu, Debian, Rocky, Fedora…)</option>
+        <option value="macos">Mac (macOS 11 o posterior)</option>
+        <option value="windows">Windows 10 / 11 / Server</option>
+      </select></div>
+    <div class="field"><label for="hostname">Nombre del equipo</label>
+      <input type="text" id="hostname" name="hostname" maxlength="63" placeholder="PC-ANA" required pattern="[A-Za-z0-9][A-Za-z0-9._\-]*">
+      <p class="hint">El nombre exacto del equipo. En Windows: Configuración → Sistema → Información → «Nombre del dispositivo».
+        En Mac: Ajustes → General → Compartir → «Nombre local» (sin «.local»). En Linux: el comando <code>hostname</code>.</p></div>
+    <div class="field"><label for="rutas">Carpetas que se van a proteger</label>
+      <textarea id="rutas" name="rutas" rows="3" placeholder="{{ rutas_defecto['linux'][0] }}"></textarea>
+      <p class="hint">Una por línea. Si lo dejas vacío: <code>{{ rutas_defecto['windows'][0] }}</code> en Windows (todos los usuarios, sin archivos temporales),
+        <code>{{ rutas_defecto['macos'][0] }}</code> en Mac y <code>{{ rutas_defecto['linux'][0] }}</code> en Linux.</p></div>
+
+    <div class="field" id="bloque-modo"><label>¿Cómo se instala?</label>
+      <label style="display:flex;gap:8px;font-weight:normal"><input type="radio" name="modo" value="remoto" checked style="width:auto">
+        <span><strong>Desde aquí</strong>: el servidor entra en el equipo con su usuario y contraseña y lo instala todo.</span></label>
+      <label style="display:flex;gap:8px;font-weight:normal"><input type="radio" name="modo" value="descarga" style="width:auto">
+        <span><strong>Con un instalador</strong>: te lo descargas y le das doble clic en el propio equipo.</span></label>
+      <p class="hint" id="aviso-windows" style="display:none">En Windows se instala con un instalador de doble clic (Windows no trae el acceso remoto activado).</p>
+    </div>
+
+    <div id="bloque-remoto">
+      <div class="field"><label for="ip_address">Dirección IP del equipo</label>
+        <input type="text" id="ip_address" name="ip_address" placeholder="192.168.1.25"></div>
+      <div class="field"><label for="usuario">Usuario del equipo (administrador)</label>
+        <input type="text" id="usuario" name="usuario" placeholder="ana" autocomplete="off"></div>
+      <div class="field"><label for="password">Contraseña de ese usuario</label>
+        <input type="password" id="password" name="password" autocomplete="new-password">
+        <p class="hint">Se usa una sola vez para entrar e instalar; <strong>no se guarda</strong>. Después el servidor entra con su propia clave.
+          <span id="hint-mac" style="display:none">En el Mac tiene que estar activado «Ajustes → General → Compartir → Sesión remota».</span></p></div>
+      <label id="bloque-solo-clave" style="display:flex;gap:8px;align-items:flex-start;font-weight:normal;margin-bottom:14px">
+        <input type="checkbox" name="solo_clave" value="1" style="width:auto;margin-top:4px">
+        <span>Después, entrar a este equipo <strong>solo con la clave del servidor</strong> (desactiva la contraseña por SSH). Recomendado en servidores.</span></label>
+    </div>
+
+    <button class="btn btn-primary" type="submit" id="boton">Conectar e instalar</button>
+  </form>
+</div>
+<script>
+  (function () {
+    var f = document.getElementById('form-equipo'), so = document.getElementById('os_family');
+    var rutas = document.getElementById('rutas'), boton = document.getElementById('boton');
+    var def = {windows: {{ rutas_defecto['windows'][0] | tojson }}, macos: {{ rutas_defecto['macos'][0] | tojson }}, linux: {{ rutas_defecto['linux'][0] | tojson }}};
+    function modo() { var r = f.querySelector('input[name=modo]:checked'); return so.value === 'windows' ? 'descarga' : (r ? r.value : 'descarga'); }
+    function pintar() {
+      var win = so.value === 'windows', rem = modo() === 'remoto';
+      rutas.placeholder = def[so.value];
+      f.querySelectorAll('input[name=modo]').forEach(function (r) { r.disabled = win; });
+      document.getElementById('aviso-windows').style.display = win ? '' : 'none';
+      document.getElementById('bloque-remoto').style.display = rem ? '' : 'none';
+      document.getElementById('bloque-solo-clave').style.display = (rem && so.value === 'linux') ? 'flex' : 'none';
+      document.getElementById('hint-mac').style.display = so.value === 'macos' ? '' : 'none';
+      ['ip_address', 'usuario'].forEach(function (id) { document.getElementById(id).required = rem; });
+      boton.textContent = rem ? 'Conectar e instalar' : 'Preparar instalador';
+    }
+    so.addEventListener('change', pintar);
+    f.querySelectorAll('input[name=modo]').forEach(function (r) { r.addEventListener('change', pintar); });
+    f.addEventListener('submit', function (e) {
+      if (modo() !== 'remoto') return;
+      var nombre = document.getElementById('hostname').value, ip = document.getElementById('ip_address').value;
+      var usuario = document.getElementById('usuario').value;
+      if (!confirm('Se va a proceder a conectarse a la máquina «' + nombre + '» (' + ip + ') con el usuario «' + usuario +
+                   '» y a instalar OCTOPUS.\n\nTarda unos minutos. ¿Continuar?')) { e.preventDefault(); return; }
+      boton.disabled = true; boton.textContent = 'Conectando…';
+    });
+    pintar();
+  })();
+</script>
+{% endblock %}

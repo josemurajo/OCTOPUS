@@ -1,0 +1,15 @@
+# OCTOPUS Zero-Touch - Equipos Linux a desplegar con Ansible (para muchos equipos a la vez).
+# Copia este archivo como equipos.ini, rellena tus equipos y ejecuta en el servidor:
+#   sudo bash octopus.sh desplegar -k -K      (la primera vez: pide la contrasena SSH y la de sudo)
+#   sudo bash octopus.sh desplegar            (despues: entra con la clave SSH del servidor)
+#
+# Para 1-2 equipos o para Windows es mas facil el panel: Equipos -> Anadir equipo.
+#
+# Una linea por equipo. El nombre (primera palabra) debe ser el nombre real del equipo (hostname).
+#   ansible_host          IP o nombre DNS del equipo
+#   ansible_user          usuario con sudo en el equipo
+#   octopus_backup_paths  carpetas a proteger (lista JSON; por defecto ["/home"])
+
+[seleccionados]
+# servidor-web  ansible_host=192.168.1.30 ansible_user=admin octopus_backup_paths='["/srv/www","/home"]'
+# contabilidad  ansible_host=192.168.1.41 ansible_user=admin

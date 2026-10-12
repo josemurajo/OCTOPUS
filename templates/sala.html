@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Sala de análisis #{{ inc.id }}{% endblock %}
+{% block content %}
+<p class="small"><a href="{{ url_for('incidente', inc_id=inc.id) }}">← Incidente #{{ inc.id }}</a></p>
+<h1>Sala de análisis · {{ inc.hostname }}</h1>
+<p class="lead">Copia del equipo en el momento del ataque. Está en un entorno <strong>sin red, de solo lectura y sin permisos</strong>: aquí no puede hacer daño.</p>
+
+<div class="card">
+  <h2>Archivos ({{ archivos|length }}) <span class="muted small">— primero los sospechosos</span></h2>
+  <table>
+    <thead><tr><th>Archivo</th><th>Por qué es sospechoso</th><th>Tamaño</th><th></th></tr></thead>
+    {% for a in archivos[:400] %}
+    <tr>
+      <td class="mono">{{ a.ruta }}<br><span class="muted">{{ a.tipo[:70] }}</span></td>
+      <td class="small">{% if a.sospechoso %}<span class="pill problema">Sospechoso</span> {{ a.motivos | join(', ') }}{% else %}<span class="muted">—</span>{% endif %}</td>
+      <td class="small">{{ a.tamano | tamano }}</td>
+      <td style="text-align:right"><a class="btn btn-small" href="{{ url_for('sala', inc_id=inc.id, archivo=a.ruta) }}#detalle">Examinar</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+{% if error %}<div class="notice problema"><strong>No se pudo abrir</strong>{{ error }}</div>{% endif %}
+{% if detalle %}
+<div class="card" id="detalle">
+  <h2>{{ detalle.ruta }}</h2>
+  <dl class="kv"><dt>Tipo real</dt><dd>{{ detalle.tipo }}</dd>
+    {% for a in archivos if a.ruta == detalle.ruta %}<dt>SHA-256</dt><dd class="mono">{{ a.sha256 }}</dd><dt>Entropía</dt><dd>{{ a.entropia }} (8 = totalmente aleatorio/cifrado)</dd>{% endfor %}
+  </dl>
+  <p class="hint">Puedes buscar la huella SHA-256 en VirusTotal u otros servicios para saber si es un malware conocido.</p>
+  <form method="post" action="{{ url_for('incidente_accion', inc_id=inc.id) }}" style="margin-top:10px"
+        data-confirm="Se borrará este archivo del equipo {{ inc.hostname }} (si sigue allí). La copia de la sala no se toca. ¿Continuar?">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="accion" value="eliminar_amenaza">
+    <input type="hidden" name="ruta_sala" value="{{ detalle.ruta }}">
+    <button class="btn btn-danger btn-small" type="submit">Es una amenaza: borrarla del equipo</button></form>
+  {% if detalle.yara %}<h3 style="margin-top:14px">Reglas YARA que coinciden</h3><pre class="box mono">{{ detalle.yara }}</pre>{% endif %}
+  <h3 style="margin-top:14px">Contenido (hexadecimal, primeros 768 bytes)</h3><pre class="box mono">{{ detalle.hex }}</pre>
+  {% if detalle.strings %}<h3 style="margin-top:14px">Texto que contiene</h3><pre class="box mono">{{ detalle.strings }}</pre>{% endif %}
+</div>
+{% endif %}
+
+<div class="card" id="terminal">
+  <h2>Terminal de pruebas</h2>
+  {% if terminal %}
+  <p class="muted small" style="margin-bottom:10px">Los comandos se ejecutan en un contenedor desechable sin red, sin permisos y con límite de 60 s.
+    Las muestras están en <code>/muestras</code> (solo lectura). Herramientas: <code>file</code>, <code>strings</code>, <code>xxd</code>, <code>yara</code>, <code>sha256sum</code>, <code>unzip -l</code>, <code>python3</code>.</p>
+  <form method="post" action="{{ url_for('sala_ejecutar', inc_id=inc.id) }}" style="display:flex; gap:10px; flex-wrap:wrap">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="text" name="comando" class="mono" placeholder="yara -r /opt/octopus/reglas.yar ." style="flex:1; min-width:260px" value="{{ salida.comando if salida else '' }}">
+    <button class="btn btn-primary" type="submit">Ejecutar</button>
+  </form>
+  {% if salida %}<pre class="box mono" style="margin-top:12px">$ {{ salida.comando }}
+{{ salida.salida }}
+[código de salida: {{ salida.codigo }}]</pre>{% endif %}
+  {% else %}<p class="muted">El terminal está desactivado en Ajustes → Respuesta a ataques.</p>{% endif %}
+</div>
+<div class="card">
+  <h2>¿Necesitas analizarlo fuera?</h2>
+  <p class="muted">Descarga el paquete forense cifrado y ábrelo solo en una máquina virtual de análisis, nunca en un equipo de trabajo.</p>
+  <form method="post" action="{{ url_for('incidente_descargar', inc_id=inc.id) }}" style="margin-top:10px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn" type="submit">Descargar paquete forense (.7z cifrado)</button></form>
+  <form method="post" action="{{ url_for('incidente_accion', inc_id=inc.id) }}" style="margin-top:10px" data-confirm="¿Borrar la sala de análisis del servidor? La copia forense sigue en la cuarentena.">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="accion" value="borrar_sala">
+    <button class="btn btn-danger btn-small" type="submit">Borrar la sala del servidor</button></form>
+</div>
+{% endblock %}

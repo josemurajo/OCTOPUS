@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+
+{% block title %}Configuración de Notificaciones - OCTOPUS Zero-Touch{% endblock %}
+
+{% block content %}
+<h1>Configuración de Notificaciones</h1>
+<p style="color: #aaa; margin-bottom: 2rem;">Configura alertas por email y SMTP</p>
+
+<div class="card">
+    <h2>Configuración SMTP</h2>
+    <form method="POST">
+        <div class="form-group">
+            <label>
+                <input type="checkbox" name="smtp_enabled" {{ 'checked' if config.smtp_enabled }}>
+                Habilitar SMTP
+            </label>
+        </div>
+        
+        <div class="form-group">
+            <label for="smtp_server">Servidor SMTP</label>
+            <input type="text" id="smtp_server" name="smtp_server" value="{{ config.smtp_server }}" placeholder="smtp.gmail.com">
+        </div>
+        
+        <div class="form-group">
+            <label for="smtp_port">Puerto SMTP</label>
+            <input type="number" id="smtp_port" name="smtp_port" value="{{ config.smtp_port }}" placeholder="587">
+        </div>
+        
+        <div class="form-group">
+            <label for="smtp_username">Usuario SMTP</label>
+            <input type="text" id="smtp_username" name="smtp_username" value="{{ config.smtp_username }}" placeholder="tu_email@gmail.com">
+        </div>
+        
+        <div class="form-group">
+            <label for="smtp_password">Contraseña SMTP (o App Password)</label>
+            <input type="password" id="smtp_password" name="smtp_password" value="{{ config.smtp_password }}" placeholder="Contraseña o App Password">
+        </div>
+        
+        <div class="form-group">
+            <label for="smtp_from">Email remitente</label>
+            <input type="email" id="smtp_from" name="smtp_from" value="{{ config.smtp_from }}" placeholder="noreply@tudominio.com">
+        </div>
+        
+        <div class="form-group">
+            <label>
+                <input type="checkbox" name="smtp_use_tls" {{ 'checked' if config.smtp_use_tls }}>
+                Usar TLS
+            </label>
+        </div>
+        
+        <button type="submit" class="btn btn-primary">Guardar Configuración SMTP</button>
+    </form>
+</div>
+
+<div class="card">
+    <h2>Configuración de Alertas</h2>
+    <form method="POST">
+        <div class="form-group">
+            <label>
+                <input type="checkbox" name="email_notifications" {{ 'checked' if config.email_notifications }}>
+                Habilitar notificaciones por email
+            </label>
+        </div>
+        
+        <div class="form-group">
+            <label for="alert_email">Email para alertas</label>
+            <input type="email" id="alert_email" name="alert_email" value="{{ config.alert_email }}" placeholder="admin@tudominio.com">
+        </div>
+        
+        <div class="form-group">
+            <label>Niveles de alerta a notificar:</label>
+            <div style="margin-top: 0.5rem;">
+                <label style="display: block; margin: 0.25rem 0;">
+                    <input type="checkbox" name="notification_levels[]" value="critical" {{ 'checked' if 'critical' in config.notification_levels }}>
+                    Críticas
+                </label>
+                <label style="display: block; margin: 0.25rem 0;">
+                    <input type="checkbox" name="notification_levels[]" value="high" {{ 'checked' if 'high' in config.notification_levels }}>
+                    Altas
+                </label>
+                <label style="display: block; margin: 0.25rem 0;">
+                    <input type="checkbox" name="notification_levels[]" value="medium" {{ 'checked' if 'medium' in config.notification_levels }}>
+                    Medias
+                </label>
+                <label style="display: block; margin: 0.25rem 0;">
+                    <input type="checkbox" name="notification_levels[]" value="low" {{ 'checked' if 'low' in config.notification_levels }}>
+                    Bajas
+                </label>
+            </div>
+        </div>
+        
+        <button type="submit" class="btn btn-primary">Guardar Configuración de Alertas</button>
+    </form>
+</div>
+
+<div class="card">
+    <h2>Probar Notificaciones</h2>
+    <p style="color: #aaa; margin-bottom: 1rem;">Envía una notificación de prueba para verificar que SMTP está configurado correctamente</p>
+    <a href="{{ url_for('test_notification') }}" class="btn btn-secondary">Enviar Notificación de Prueba</a>
+</div>
+
+<div class="card">
+    <h2>Estado Actual</h2>
+    <table>
+        <tr>
+            <th>SMTP Habilitado</th>
+            <td>{{ 'Sí' if config.smtp_enabled else 'No' }}</td>
+        </tr>
+        <tr>
+            <th>Servidor SMTP</th>
+            <td>{{ config.smtp_server }}:{{ config.smtp_port }}</td>
+        </tr>
+        <tr>
+            <th>Usuario SMTP</th>
+            <td>{{ config.smtp_username or 'No configurado' }}</td>
+        </tr>
+        <tr>
+            <th>Email Remitente</th>
+            <td>{{ config.smtp_from or 'No configurado' }}</td>
+        </tr>
+        <tr>
+            <th>Notificaciones Habilitadas</th>
+            <td>{{ 'Sí' if config.email_notifications else 'No' }}</td>
+        </tr>
+        <tr>
+            <th>Email de Alertas</th>
+            <td>{{ config.alert_email or 'No configurado' }}</td>
+        </tr>
+        <tr>
+            <th>Niveles de Alerta</th>
+            <td>{{ ', '.join(config.notification_levels) if config.notification_levels else 'Ninguno' }}</td>
+        </tr>
+    </table>
+</div>
+
+<div class="card">
+    <h2>Información</h2>
+    <ul style="list-style: none; padding: 0;">
+        <li style="margin: 0.5rem 0;">
+            <strong style="color: #e94560;">Gmail:</strong> 
+            Requiere App Password si tienes 2FA activado. Configura en: Cuenta de Google > Seguridad > App Passwords
+        </li>
+        <li style="margin: 0.5rem 0;">
+            <strong style="color: #e94560;">Outlook/Office 365:</strong> 
+            Servidor: smtp.office365.com, Puerto: 587
+        </li>
+        <li style="margin: 0.5rem 0;">
+            <strong style="color: #e94560;">Niveles de Alerta:</strong> 
+            Solo se envían notificaciones para los niveles seleccionados.
+        </li>
+        <li style="margin: 0.5rem 0;">
+            <strong style="color: #e94560;">Seguridad:</strong> 
+            La contraseña SMTP se guarda en la base de datos. Usa App Passwords en lugar de tu contraseña real.
+        </li>
+    </ul>
+</div>
+{% endblock %}

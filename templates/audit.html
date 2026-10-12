@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block title %}Auditoría - OCTOPUS Zero-Touch{% endblock %}
+
+{% block content %}
+<h1>Logs de Auditoría</h1>
+<p style="color: #aaa; margin-bottom: 2rem;">Historial de acciones realizadas en el sistema</p>
+
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h2>Actividad Reciente</h2>
+        <a href="{{ url_for('clear_audit') }}" class="btn btn-secondary" onclick="return confirm('¿Eliminar logs antiguos (mantener últimos 30 días)?');">Limpiar Logs Antiguos</a>
+    </div>
+    
+    {% if logs %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Usuario</th>
+                    <th>Acción</th>
+                    <th>Detalles</th>
+                    <th>IP</th>
+                    <th>Fecha</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in logs %}
+                <tr>
+                    <td>{{ log.username or 'N/A' }}</td>
+                    <td>{{ log.action }}</td>
+                    <td>{{ log.details or '-' }}</td>
+                    <td>{{ log.ip_address or 'N/A' }}</td>
+                    <td>{{ log.timestamp }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p style="color: #aaa;">No hay logs de auditoría</p>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h2>Información</h2>
+    <ul style="list-style: none; padding: 0;">
+        <li style="margin: 0.5rem 0;">
+            <strong style="color: #e94560;">Logs de Auditoría:</strong> 
+            Registro de todas las acciones realizadas por usuarios administradores en el sistema.
+        </li>
+        <li style="margin: 0.5rem 0;">
+            <strong style="color: #e94560;">Retención:</strong> 
+            Los logs se mantienen por 365 días por defecto. La función "Limpiar Logs Antiguos" elimina logs anteriores a 30 días.
+        </li>
+        <li style="margin: 0.5rem 0;">
+            <strong style="color: #e94560;">Seguridad:</strong> 
+            Solo usuarios con rol Admin o Supremo pueden ver los logs de auditoría.
+        </li>
+    </ul>
+</div>
+{% endblock %}

@@ -1,0 +1,148 @@
+# Copia del flujo de GitHub Actions. En el repositorio va en .github/workflows/pruebas.yml
+# OCTOPUS Zero-Touch - pruebas automaticas en equipos reales de GitHub (Linux, Windows y Mac)
+#
+# En cada equipo: arranca el servidor OCTOPUS (sin Docker, igual que dentro del contenedor), genera el
+# instalador del panel para ese equipo, lo instala con el instalador REAL de su sistema y prueba
+# conexion, copia, que la copia esta en el almacen, restaurar un archivo y una carpeta.
+# Se lanza sola al subir cambios, y a mano desde la pestana "Actions" (boton "Run workflow").
+name: Pruebas OCTOPUS
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  agente:
+    name: Agente en ${{ matrix.nombre }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,  nombre: Linux,   so: linux }
+          - { os: windows-latest, nombre: Windows, so: windows }
+          - { os: macos-latest,   nombre: Mac,     so: macos }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    env:
+      OCTOPUS_IP: 127.0.0.1
+      PYTHONUTF8: "1"
+      MSYS2_ARG_CONV_EXCL: "*"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Dependencias del servidor
+        run: python -m pip install -r requirements.txt
+
+      - name: restic y rest-server
+        run: |
+          bash tests/ci/herramientas.sh "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: OpenSSL 3 (Mac)
+        if: matrix.so == 'macos'
+        run: echo "$(brew --prefix openssl@3)/bin" >> "$GITHUB_PATH"
+
+      - name: Arrancar el servidor (Linux / Mac)
+        if: matrix.so != 'windows'
+        run: |
+          export OCTOPUS_DATA="$RUNNER_TEMP/odata" OCTOPUS_BOVEDA_DIR="$RUNNER_TEMP/boveda"
+          nohup python lib/servidor.py > "$RUNNER_TEMP/servidor.log" 2>&1 &
+          for i in $(seq 1 90); do curl -fsk -m 3 https://127.0.0.1:8080/healthz && break; sleep 2; done
+          curl -fsk https://127.0.0.1:8080/healthz
+
+      - name: Arrancar el servidor (Windows)
+        if: matrix.so == 'windows'
+        shell: pwsh
+        run: |
+          $env:OCTOPUS_DATA = "$env:RUNNER_TEMP\odata"; $env:OCTOPUS_BOVEDA_DIR = "$env:RUNNER_TEMP\boveda"
+          $env:PATH = "$env:RUNNER_TEMP\bin;C:\Program Files\Git\usr\bin;$env:PATH"
+          Start-Process -FilePath python -ArgumentList "lib\servidor.py" -WorkingDirectory $PWD `
+            -RedirectStandardOutput "$env:RUNNER_TEMP\servidor.log" -RedirectStandardError "$env:RUNNER_TEMP\servidor_err.log"
+          for ($i = 0; $i -lt 90; $i++) {
+            try { $r = Invoke-WebRequest -Uri https://127.0.0.1:8080/healthz -SkipCertificateCheck -TimeoutSec 3; if ($r.StatusCode -eq 200) { $r.Content; break } } catch { }
+            Start-Sleep -Seconds 2
+          }
+
+      - name: Preparar el instalador del panel
+        run: |
+          case "${{ matrix.so }}" in
+            windows) DATOS='C:\octopus_ci' ;;
+            *)       DATOS="$HOME/octopus_ci" ;;
+          esac
+          echo "DATOS=$DATOS" >> "$GITHUB_ENV"
+          python tests/ci/prueba_agente.py preparar ${{ matrix.so }} ci-agente "$DATOS" "$RUNNER_TEMP/inst"
+
+      - name: Instalar el agente (Linux)
+        if: matrix.so == 'linux'
+        run: cd "$RUNNER_TEMP/inst" && sudo bash instalar_linux.sh
+
+      - name: Instalar el agente (Mac)
+        if: matrix.so == 'macos'
+        run: cd "$RUNNER_TEMP/inst" && sudo bash INSTALAR.command --sin-preguntas
+
+      - name: Instalar el agente (Windows)
+        if: matrix.so == 'windows'
+        shell: pwsh
+        run: |
+          & powershell -NoProfile -ExecutionPolicy Bypass -File "$env:RUNNER_TEMP\inst\instalar_windows.ps1"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Probar copia y restauracion
+        run: python tests/ci/prueba_agente.py probar ci-agente "$DATOS"
+
+      - name: Registros si algo falla
+        if: failure()
+        run: |
+          for f in "$RUNNER_TEMP"/servidor*.log /var/log/octopus/agent.log "/Library/Logs/Octopus/agent.log" \
+                   "/Library/Logs/Octopus/servicio.log" "C:/ProgramData/Octopus/agent.log"; do
+            [ -f "$f" ] && { echo "===== $f"; tail -n 80 "$f"; }
+          done
+          true
+
+  sintaxis:
+    name: Sintaxis de los scripts
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scripts de PowerShell
+        shell: pwsh
+        run: |
+          $mal = 0
+          Get-ChildItem -Recurse -Include *.ps1 | ForEach-Object {
+            $errores = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$errores) | Out-Null
+            if ($errores) { $mal++; Write-Host "MAL  $($_.FullName)"; $errores | ForEach-Object { Write-Host "     linea $($_.Extent.StartLineNumber): $($_.Message)" } }
+            else { Write-Host "bien $($_.Name)" }
+          }
+          if ($mal) { exit 1 }
+      - name: Scripts de bash
+        shell: bash
+        run: |
+          mal=0
+          for f in $(git ls-files '*.sh' '*.command'); do bash -n "$f" && echo "bien $f" || { echo "MAL  $f"; mal=1; }; done
+          exit $mal
+
+  servidor-mac:
+    name: Instalador del servidor en Mac (Colima)
+    runs-on: macos-15-intel
+    timeout-minutes: 60
+    continue-on-error: true   # depende de que el Mac de GitHub permita maquinas virtuales (Colima)
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instalar el servidor como lo haria un usuario
+        run: OCTOPUS_IP=127.0.0.1 bash instalar_servidor_mac.sh
+      - name: Comprobar
+        run: |
+          curl -fsk https://127.0.0.1:8080/healthz
+          docker exec octopus python /app/lib/mantenimiento.py kit | head -5
+          bash octopus.sh estado
+      - name: Registros si algo falla
+        if: failure()
+        run: docker logs --tail 80 octopus || colima status || true

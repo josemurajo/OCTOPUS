@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block title %}Configuración de Telegram - OCTOPUS Zero-Touch{% endblock %}
+
+{% block content %}
+<h1>Configuración de Telegram</h1>
+<p style="color: #aaa; margin-bottom: 2rem;">Configura alertas por Telegram usando Bot API</p>
+
+<div class="card">
+    <h2>Configuración de Telegram</h2>
+    <form method="POST">
+        <div class="form-group">
+            <label>
+                <input type="checkbox" name="telegram_enabled" {{ 'checked' if config.telegram_enabled }}>
+                Habilitar alertas por Telegram
+            </label>
+        </div>
+        
+        <div class="form-group">
+            <label for="telegram_bot_token">Bot Token</label>
+            <input type="password" id="telegram_bot_token" name="telegram_bot_token" value="{{ config.telegram_bot_token }}" placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz">
+        </div>
+        
+        <div class="form-group">
+            <label for="telegram_chat_id">Chat ID</label>
+            <input type="text" id="telegram_chat_id" name="telegram_chat_id" value="{{ config.telegram_chat_id }}" placeholder="123456789">
+        </div>
+        
+        <div class="form-group">
+            <label>Niveles de alerta a notificar:</label>
+            <div style="margin-top: 0.5rem;">
+                <label style="display: block; margin: 0.25rem 0;">
+                    <input type="checkbox" name="telegram_notification_levels[]" value="critical" {{ 'checked' if 'critical' in config.telegram_notification_levels }}>
+                    Críticas
+                </label>
+                <label style="display: block; margin: 0.25rem 0;">
+                    <input type="checkbox" name="telegram_notification_levels[]" value="high" {{ 'checked' if 'high' in config.telegram_notification_levels }}>
+                    Altas
+                </label>
+                <label style="display: block; margin: 0.25rem 0;">
+                    <input type="checkbox" name="telegram_notification_levels[]" value="medium" {{ 'checked' if 'medium' in config.telegram_notification_levels }}>
+                    Medias
+                </label>
+                <label style="display: block; margin: 0.25rem 0;">
+                    <input type="checkbox" name="telegram_notification_levels[]" value="low" {{ 'checked' if 'low' in config.telegram_notification_levels }}>
+                    Bajas
+                </label>
+            </div>
+        </div>
+        
+        <button type="submit" class="btn btn-primary">Guardar Configuración</button>
+    </form>
+</div>
+
+<div class="card">
+    <h2>Probar Conexión</h2>
+    <p style="color: #aaa; margin-bottom: 1rem;">Envía un mensaje de prueba para verificar que Telegram está configurado correctamente</p>
+    <a href="{{ url_for('test_telegram') }}" class="btn btn-secondary">Enviar Mensaje de Prueba</a>
+    <button onclick="getBotInfo()" class="btn btn-secondary" style="margin-left: 0.5rem;">Verificar Bot</button>
+    <div id="botInfo" style="margin-top: 1rem;"></div>
+</div>
+
+<div class="card">
+    <h2>Estado Actual</h2>
+    <table>
+        <tr>
+            <th>Telegram Habilitado</th>
+            <td>{{ 'Sí' if config.telegram_enabled else 'No' }}</td>
+        </tr>
+        <tr>
+            <th>Bot Token</th>
+            <td>{{ 'Configurado' if config.telegram_bot_token else 'No configurado' }}</td>
+        </tr>
+        <tr>
+            <th>Chat ID</th>
+            <td>{{ config.telegram_chat_id or 'No configurado' }}</td>
+        </tr>
+        <tr>
+            <th>Niveles de Alerta</th>
+            <td>{{ ', '.join(config.telegram_notification_levels) if config.telegram_notification_levels else 'Ninguno' }}</td>
+        </tr>
+    </table>
+</div>
+
+<div class="card">
+    <h2>Información</h2>
+    <ul style="list-style: none; padding: 0;">
+        <li style="margin: 0.5rem 0;">
+            <strong style="color: #e94560;">Crear Bot:</strong> 
+            Habla con @BotFather en Telegram para crear un bot y obtener el token.
+        </li>
+        <li style="margin: 0.5rem 0;">
+            <strong style="color: #e94560;">Obtener Chat ID:</strong> 
+            Envía un mensaje a tu bot y visita https://api.telegram.org/bot<TOKEN>/getUpdates para ver tu chat_id.
+        </li>
+        <li style="margin: 0.5rem 0;">
+            <strong style="color: #e94560;">Grupos:</strong> 
+            Para alertas a grupos, agrega el bot al grupo y usa el chat_id del grupo (negativo).
+        </li>
+        <li style="margin: 0.5rem 0;">
+            <strong style="color: #e94560;">Seguridad:</strong> 
+            El bot token es como una contraseña. No lo compartas.
+        </li>
+    </ul>
+</div>
+
+<script>
+function getBotInfo() {
+    const infoDiv = document.getElementById('botInfo');
+    infoDiv.innerHTML = '<p style="color: #aaa;">Verificando bot...</p>';
+    
+    fetch('{{ url_for("telegram_bot_info") }}')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                infoDiv.innerHTML = `
+                    <p style="color: #2ecc71;">
+                        <strong>Bot encontrado:</strong> @${data.bot_username}<br>
+                        <strong>Nombre:</strong> ${data.bot_name}<br>
+                        <strong>ID:</strong> ${data.bot_id}
+                    </p>
+                `;
+            } else {
+                infoDiv.innerHTML = `<p style="color: #e74c3c;">Error: ${data.error}</p>`;
+            }
+        })
+        .catch(error => {
+            infoDiv.innerHTML = `<p style="color: #e74c3c;">Error: ${error}</p>`;
+        });
+}
+</script>
+{% endblock %}

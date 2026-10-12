@@ -1,0 +1,71 @@
+# OCTOPUS Zero-Touch - servidor (igual en Linux, Windows y macOS)
+#
+# Lo arranca el instalador (instalar_servidor.sh, instalar_servidor_windows.ps1 o instalar_servidor_mac.sh). A mano:
+#   docker compose -f install/docker-compose.yml up -d --build
+#
+# Ajustes del anfitrion en install/.env (lo crea el instalador):
+#   OCTOPUS_IP=192.168.1.10     direccion con la que los equipos llegan a este servidor
+#   PANEL_PUERTO=8080           panel web y canal de ordenes de los agentes (HTTPS)
+#   ALMACEN_PUERTO=8000         almacen de copias (HTTPS, cada copia ademas cifrada por restic)
+#
+# Solo dos puertos TCP, ambos cifrados con la autoridad propia de OCTOPUS. Los equipos se conectan
+# ellos al servidor: no hace falta abrir nada en los equipos. La API interna no sale del contenedor.
+name: octopus
+
+services:
+  octopus:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: octopus-servidor:${OCTOPUS_VERSION:-local}
+    container_name: octopus
+    restart: unless-stopped
+    environment:
+      - OCTOPUS_IP=${OCTOPUS_IP:-}
+      - OCTOPUS_PUBLIC_HOST=${OCTOPUS_PUBLIC_HOST:-}
+      - OCTOPUS_NOMBRES_EXTRA=${OCTOPUS_NOMBRES_EXTRA:-}
+      - OCTOPUS_PUERTO_PANEL=${PANEL_PUERTO:-8080}
+      - OCTOPUS_PUERTO_ALMACEN=${ALMACEN_PUERTO:-8000}
+      - TZ=${TZ:-Europe/Madrid}
+      - MANTENIMIENTO_HORA=${MANTENIMIENTO_HORA:-03:30}
+    ports:
+      - "${PANEL_BIND:-0.0.0.0}:${PANEL_PUERTO:-8080}:8080"
+      - "${ALMACEN_BIND:-0.0.0.0}:${ALMACEN_PUERTO:-8000}:8000"
+    volumes:
+      - datos:/data        # configuracion, claves, base de datos del panel
+      - boveda:/boveda     # las copias de seguridad
+      # Sala de analisis de incidentes: lanza contenedores aislados (sin red) en el Docker del anfitrion.
+      # Si no la quieres, comenta esta linea: el panel hara un analisis basico.
+      - /var/run/docker.sock:/var/run/docker.sock
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  # Automatizaciones (opcional):  docker compose -f install/docker-compose.yml --profile n8n up -d
+  # Solo desde el propio servidor:  ssh -L 5678:127.0.0.1:5678 usuario@servidor
+  n8n:
+    profiles: ["n8n"]
+    image: ${N8N_IMAGE:-docker.n8n.io/n8nio/n8n:stable}
+    container_name: octopus_n8n
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5678:5678"
+    environment:
+      - N8N_DIAGNOSTICS_ENABLED=false
+      - GENERIC_TIMEZONE=${TZ:-Europe/Madrid}
+      - TZ=${TZ:-Europe/Madrid}
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ../n8n/workflows:/workflows:ro
+
+volumes:
+  datos:
+    name: ${OCTOPUS_VOLUMEN_DATOS:-octopus_datos}
+  boveda:
+    name: ${OCTOPUS_VOLUMEN_BOVEDA:-octopus_boveda}
+  n8n_data:
+    name: octopus_n8n

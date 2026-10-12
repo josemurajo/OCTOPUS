@@ -1,0 +1,300 @@
+{
+  "name": "ZeroTouch - SOAR Básico",
+  "nodes": [
+    {
+      "id": "1",
+      "name": "Webhook Wazuh",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [300, 300],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "wazuh-alert",
+        "responseMode": "onReceived",
+        "options": {
+          "responseContentType": "application/json",
+          "responseBody": "OK"
+        }
+      }
+    },
+    {
+      "id": "10",
+      "name": "Webhook Violación Carpeta",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [300, 600],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "violacion-carpeta",
+        "responseMode": "onReceived",
+        "options": {
+          "responseContentType": "application/json",
+          "responseBody": "OK"
+        }
+      }
+    },
+    {
+      "id": "11",
+      "name": "Analizar tipo de archivo",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [600, 600],
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.accion }}",
+              "operation": "contains",
+              "value2": "DELETE"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "12",
+      "name": "Restaurar archivo específico",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [900, 500],
+      "parameters": {
+        "method": "POST",
+        "url": "http://{{ $json.host }}:9999/webhook/restaurar-archivo",
+        "jsonParameters": true,
+        "bodyParametersJson": "={\"archivo\": \"{{ $json.archivo }}\"}"
+      }
+    },
+    {
+      "id": "13",
+      "name": "Loggear cambio menor",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [900, 700],
+      "parameters": {}
+    },
+    {
+      "id": "2",
+      "name": "Filtrar alertas críticas",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [600, 300],
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.rule.level }}",
+              "operation": "larger",
+              "value2": "7"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "3",
+      "name": "Aislar máquina (WireGuard)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [900, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/aislamiento",
+        "jsonParameters": true,
+        "bodyParametersJson": "={\"agent_id\": $json.agent.id, \"ip\": $json.agent.ip}"
+      }
+    },
+    {
+      "id": "4",
+      "name": "Lanzar backup forense",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [1200, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "http://{{ $json.agent.ip }}:9999/webhook/backup-forense",
+        "jsonParameters": true,
+        "bodyParametersJson": "={\"agent_id\": $json.agent.id, \"ip\": $json.agent.ip}"
+      }
+    },
+    {
+      "id": "5",
+      "name": "Restaurar desde último backup sano",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [1500, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "http://{{ $json.agent.ip }}:9999/webhook/restauracion",
+        "jsonParameters": true,
+        "bodyParametersJson": "={\"agent_id\": $json.agent.id, \"ip\": $json.agent.ip}"
+      }
+    },
+    {
+      "id": "6",
+      "name": "Notificar al equipo de seguridad",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 1,
+      "position": [1800, 200],
+      "parameters": {
+        "fromEmail": "zerotouch@cerebro.local",
+        "toEmail": "soc@empresa.local",
+        "subject": "ZeroTouch - Incidente restaurado automáticamente",
+        "text": "Se ha detectado una alerta crítica y se ha ejecutado:\n\n- Aislamiento de la máquina\n- Backup forense\n- Restauración desde copia sana\n\nAgente: {{$json[\"agent\"][\"id\"]}}\nIP: {{$json[\"agent\"][\"ip\"]}}\nRegla: {{$json[\"rule\"][\"description\"]}}"
+      }
+    },
+    {
+      "id": "7",
+      "name": "Reincorporar a la red",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [2100, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "http://{{ $json.agent.ip }}:9999/webhook/reincorporacion",
+        "jsonParameters": true,
+        "bodyParametersJson": "={\"agent_id\": $json.agent.id, \"ip\": $json.agent.ip}"
+      }
+    },
+    {
+      "id": "8",
+      "name": "Registrar auditoría",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [2400, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "http://{{ $json.agent.ip }}:5678/webhook/auditoria",
+        "jsonParameters": true,
+        "bodyParametersJson": "={\"tipo\": \"restauracion_automatica\", \"agent_id\": $json.agent.id, \"ip\": $json.agent.ip, \"regla\": $json.rule.description}"
+      }
+    },
+    {
+      "id": "9",
+      "name": "Ignorar alertas no críticas",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [900, 400],
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "Webhook Wazuh": {
+      "main": [
+        [
+          {
+            "node": "Filtrar alertas críticas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Violación Carpeta": {
+      "main": [
+        [
+          {
+            "node": "Analizar tipo de archivo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analizar tipo de archivo": {
+      "main": [
+        [
+          {
+            "node": "Restaurar archivo específico",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loggear cambio menor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtrar alertas críticas": {
+      "main": [
+        [
+          {
+            "node": "Aislar máquina (WireGuard)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ignorar alertas no críticas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aislar máquina (WireGuard)": {
+      "main": [
+        [
+          {
+            "node": "Lanzar backup forense",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lanzar backup forense": {
+      "main": [
+        [
+          {
+            "node": "Restaurar desde último backup sano",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restaurar desde último backup sano": {
+      "main": [
+        [
+          {
+            "node": "Notificar al equipo de seguridad",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notificar al equipo de seguridad": {
+      "main": [
+        [
+          {
+            "node": "Reincorporar a la red",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reincorporar a la red": {
+      "main": [
+        [
+          {
+            "node": "Registrar auditoría",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "zerotouch-soar-basico-v1"
+}
+

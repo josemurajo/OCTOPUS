@@ -1,0 +1,223 @@
+{% extends "base.html" %}
+
+{% block title %}Configuración de Wazuh - OCTOPUS Zero-Touch{% endblock %}
+
+{% block content %}
+<h1>Integración con Wazuh SIEM</h1>
+<p style="color: #aaa; margin-bottom: 2rem;">Configura la integración con Wazuh para detección de amenazas en tiempo real</p>
+
+<div class="card">
+    <h2>Configuración de Wazuh</h2>
+    <form method="POST">
+        <div class="form-group">
+            <label>
+                <input type="checkbox" name="wazuh_enabled" {{ 'checked' if config.wazuh_enabled }}>
+                Habilitar integración con Wazuh
+            </label>
+        </div>
+        
+        <div class="form-group">
+            <label for="wazuh_url">URL de API de Wazuh</label>
+            <input type="text" id="wazuh_url" name="wazuh_url" value="{{ config.wazuh_url }}" placeholder="https://wazuh-manager.example.com:55000">
+        </div>
+        
+        <div class="form-group">
+            <label for="wazuh_api_key">API Key de Wazuh</label>
+            <input type="password" id="wazuh_api_key" name="wazuh_api_key" value="{{ config.wazuh_api_key }}" placeholder="Tu API Key de Wazuh">
+        </div>
+        
+        <div class="form-group">
+            <label>
+                <input type="checkbox" name="wazuh_verify_ssl" {{ 'checked' if config.wazuh_verify_ssl }}>
+                Verificar SSL
+            </label>
+        </div>
+        
+        <div class="form-group">
+            <label for="wazuh_alert_level_min">Nivel mínimo de alerta (1-15)</label>
+            <input type="number" id="wazuh_alert_level_min" name="wazuh_alert_level_min" value="{{ config.wazuh_alert_level_min }}" min="1" max="15">
+        </div>
+        
+        <button type="submit" class="btn btn-primary">Guardar Configuración</button>
+    </form>
+</div>
+
+<div class="card">
+    <h2>Probar Conexión</h2>
+    <p style="color: #aaa; margin-bottom: 1rem;">Verifica que OCTOPUS puede conectarse a Wazuh</p>
+    <a href="{{ url_for('test_wazuh') }}" class="btn btn-secondary">Probar Conexión</a>
+</div>
+
+<div class="card">
+    <h2>Estado Actual</h2>
+    <table>
+        <tr>
+            <th>Wazuh Habilitado</th>
+            <td>{{ 'Sí' if config.wazuh_enabled else 'No' }}</td>
+        </tr>
+        <tr>
+            <th>URL de API</th>
+            <td>{{ config.wazuh_url or 'No configurada' }}</td>
+        </tr>
+        <tr>
+            <th>API Key</th>
+            <td>{{ 'Configurada' if config.wazuh_api_key else 'No configurada' }}</td>
+        </tr>
+        <tr>
+            <th>Verificar SSL</th>
+            <td>{{ 'Sí' if config.wazuh_verify_ssl else 'No' }}</td>
+        </tr>
+        <tr>
+            <th>Nivel Mínimo de Alerta</th>
+            <td>{{ config.wazuh_alert_level_min }}</td>
+        </tr>
+    </table>
+</div>
+
+<div class="card">
+    <h2>Alertas Recientes</h2>
+    <div style="margin-bottom: 1rem;">
+        <label for="alert_hours">Horas:</label>
+        <select id="alert_hours" onchange="loadAlerts()">
+            <option value="1">Última hora</option>
+            <option value="6">Últimas 6 horas</option>
+            <option value="24" selected>Últimas 24 horas</option>
+            <option value="168">Última semana</option>
+        </select>
+        <button onclick="loadAlerts()" class="btn btn-secondary" style="font-size: 0.875rem;">Cargar Alertas</button>
+    </div>
+    
+    <div id="alertsContainer">
+        <p style="color: #aaa;">Haz clic en "Cargar Alertas" para ver las alertas de Wazuh</p>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Alertas Críticas</h2>
+    <div style="margin-bottom: 1rem;">
+        <label for="critical_hours">Horas:</label>
+        <select id="critical_hours" onchange="loadCriticalAlerts()">
+            <option value="1" selected>Última hora</option>
+            <option value="6">Últimas 6 horas</option>
+            <option value="24">Últimas 24 horas</option>
+        </select>
+        <button onclick="loadCriticalAlerts()" class="btn btn-secondary" style="font-size: 0.875rem;">Cargar Alertas Críticas</button>
+    </div>
+    
+    <div id="criticalContainer">
+        <p style="color: #aaa;">Haz clic en "Cargar Alertas Críticas" para ver las alertas críticas</p>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Información</h2>
+    <ul style="list-style: none; padding: 0;">
+        <li style="margin: 0.5rem 0;">
+            <strong style="color: #e94560;">URL de API:</strong> 
+            La URL de la API de Wazuh (ej: https://wazuh-manager:55000)
+        </li>
+        <li style="margin: 0.5rem 0;">
+            <strong style="color: #e94560;">API Key:</strong> 
+            Token de autenticación de Wazuh. Obténlo desde el panel de Wazuh.
+        </li>
+        <li style="margin: 0.5rem 0;">
+            <strong style="color: #e94560;">Nivel de Alerta:</strong> 
+            Nivel mínimo de alerta de Wazuh para que OCTOPUS reaccione (1-15).
+        </li>
+        <li style="margin: 0.5rem 0;">
+            <strong style="color: #e94560;">Integración:</strong> 
+            Cuando Wazuh detecta una amenaza, OCTOPUS puede aislar la máquina, restaurar archivos o enviar alertas.
+        </li>
+    </ul>
+</div>
+
+<script>
+function loadAlerts() {
+    const hours = document.getElementById('alert_hours').value;
+    const container = document.getElementById('alertsContainer');
+    
+    container.innerHTML = '<p style="color: #aaa;">Cargando alertas...</p>';
+    
+    fetch(`{{ url_for('wazuh_alerts') }}?hours=${hours}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                if (data.alerts.length === 0) {
+                    container.innerHTML = '<p style="color: #2ecc71;">No hay alertas en este período</p>';
+                } else {
+                    let html = '<table><thead><tr><th>Fecha</th><th>Nivel</th><th>Descripción</th><th>Agente</th></tr></thead><tbody>';
+                    
+                    data.alerts.forEach(alert => {
+                        const rule = alert.rule || {};
+                        const agent = alert.agent || {};
+                        const timestamp = alert.timestamp || 'N/A';
+                        
+                        html += `
+                            <tr>
+                                <td>${timestamp}</td>
+                                <td>${rule.level || 'N/A'}</td>
+                                <td>${rule.description || 'N/A'}</td>
+                                <td>${agent.name || agent.id || 'N/A'}</td>
+                            </tr>
+                        `;
+                    });
+                    
+                    html += '</tbody></table>';
+                    html += `<p style="margin-top: 1rem;">Total: ${data.count} alertas</p>`;
+                    container.innerHTML = html;
+                }
+            } else {
+                container.innerHTML = `<p style="color: #e74c3c;">Error: ${data.error}</p>`;
+            }
+        })
+        .catch(error => {
+            container.innerHTML = `<p style="color: #e74c3c;">Error: ${error}</p>`;
+        });
+}
+
+function loadCriticalAlerts() {
+    const hours = document.getElementById('critical_hours').value;
+    const container = document.getElementById('criticalContainer');
+    
+    container.innerHTML = '<p style="color: #aaa;">Cargando alertas críticas...</p>';
+    
+    fetch(`{{ url_for('wazuh_critical') }}?hours=${hours}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                if (data.alerts.length === 0) {
+                    container.innerHTML = '<p style="color: #2ecc71;">No hay alertas críticas en este período</p>';
+                } else {
+                    let html = '<table><thead><tr><th>Fecha</th><th>Nivel</th><th>Descripción</th><th>Acción Sugerida</th></tr></thead><tbody>';
+                    
+                    data.analyzed.forEach((analysis, index) => {
+                        const alert = data.alerts[index];
+                        const rule = alert.rule || {};
+                        const timestamp = alert.timestamp || 'N/A';
+                        
+                        const actionColor = analysis.action === 'isolate' ? '#e74c3c' : analysis.action === 'restore' ? '#f39c12' : '#2ecc71';
+                        
+                        html += `
+                            <tr>
+                                <td>${timestamp}</td>
+                                <td>${rule.level || 'N/A'}</td>
+                                <td>${rule.description || 'N/A'}</td>
+                                <td><span style="color: ${actionColor}; font-weight: bold;">${analysis.action.toUpperCase()}</span></td>
+                            </tr>
+                        `;
+                    });
+                    
+                    html += '</tbody></table>';
+                    html += `<p style="margin-top: 1rem;">Total: ${data.count} alertas críticas</p>`;
+                    container.innerHTML = html;
+                }
+            } else {
+                container.innerHTML = `<p style="color: #e74c3c;">Error: ${data.error}</p>`;
+            }
+        })
+        .catch(error => {
+            container.innerHTML = `<p style="color: #e74c3c;">Error: ${error}</p>`;
+        });
+}
+</script>
+{% endblock %}

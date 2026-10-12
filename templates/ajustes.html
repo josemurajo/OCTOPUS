@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Ajustes{% endblock %}
+{% block content %}
+<h1>Ajustes</h1>
+<p class="lead">Lo normal es no tener que tocar nada aquí.</p>
+<div class="grid">
+  <div class="card">
+    <h2>Tu cuenta</h2>
+    <dl class="kv"><dt>Usuario</dt><dd>{{ user.username }}</dd><dt>Correo</dt><dd>{{ user.email }}</dd>
+      <dt>Último acceso</dt><dd>{{ user.last_login | hace }}</dd></dl>
+    <p style="margin-top:14px"><a class="btn" href="{{ url_for('cambiar_password') }}">Cambiar contraseña</a></p>
+  </div>
+  <div class="card">
+    <h2>Seguridad</h2>
+    <ul style="margin-left:18px" class="small">
+      <li>Conexión al panel: {{ '<strong>cifrada (HTTPS)</strong>'|safe if https else '<span style="color:var(--bad)">sin cifrar (HTTP)</span>'|safe }}</li>
+      <li>Las copias van cifradas antes de salir de cada equipo</li>
+      <li>Los equipos hablan con el servidor por HTTPS con una autoridad de certificados propia, y cada uno tiene su clave</li>
+      <li>La cuenta se bloquea 15 min tras 5 intentos fallidos</li>
+      <li>La sesión se cierra sola tras 30 min sin uso</li>
+    </ul>
+    <p class="small muted" style="margin-top:10px">Últimos accesos:</p>
+    <table class="small">{% for e in eventos %}<tr><td>{{ e.timestamp | hace }}</td><td>{{ 'Correcto' if e.action == 'LOGIN' else 'Fallido' if e.action == 'LOGIN_FAILED' else 'Bloqueado' }}</td><td class="muted">{{ e.ip_address }}</td></tr>{% endfor %}</table>
+  </div>
+  <div class="card">
+    <h2>Avisos</h2>
+    <p class="muted small">Recibe un mensaje si algo falla.</p>
+    <div class="actions" style="margin-top:10px">
+      <a class="btn" href="{{ url_for('config_notifications') }}">Correo electrónico</a>
+      <a class="btn" href="{{ url_for('config_telegram') }}">Telegram</a>
+    </div>
+  </div>
+</div>
+{% if puede_actuar() %}
+<div class="card">
+  <h2>Respuesta a ataques</h2>
+  <p class="muted small" style="margin-bottom:12px">Qué hace OCTOPUS cuando detecta un ataque grave (por ejemplo ransomware) en un equipo.</p>
+  <form method="post" action="{{ url_for('ajustes_incidentes') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label style="font-weight:400; display:flex; gap:10px; margin-bottom:10px"><input type="checkbox" name="auto" {{ 'checked' if cfg.incident_auto_response }}>
+      <span><strong>Actuar automáticamente</strong> — aislar el equipo, guardar una copia forense, restaurar la última copia sana y avisar al usuario.</span></label>
+    <label style="font-weight:400; display:flex; gap:10px; margin-bottom:10px"><input type="checkbox" name="aislado" {{ 'checked' if cfg.incident_keep_isolated }}>
+      <span><strong>Mantener el equipo aislado</strong> hasta que alguien de seguridad lo revise y pulse «Liberar equipo».</span></label>
+    <label style="font-weight:400; display:flex; gap:10px; margin-bottom:14px"><input type="checkbox" name="terminal" {{ 'checked' if cfg.sandbox_terminal }}>
+      <span><strong>Permitir comandos en la sala de análisis</strong> (solo administradores; todo queda registrado).</span></label>
+    <div class="field"><label for="contacto">A quién debe llamar el usuario afectado</label>
+      <input type="text" id="contacto" name="contacto" value="{{ cfg.security_contact }}" placeholder="Seguridad: ext. 2222 / seguridad@empresa.com">
+      <p class="hint">Aparece en el aviso que se muestra en el equipo atacado.</p></div>
+    <button class="btn btn-primary" type="submit">Guardar</button>
+  </form>
+</div>
+<div class="card">
+  <h2>Copias e informes</h2>
+  <form method="post" action="{{ url_for('ajustes_copias') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="field"><label for="limite_kbps">Velocidad máxima de las copias</label>
+      <select id="limite_kbps" name="limite_kbps" style="max-width:420px">
+        {% for k, texto in LIMITES_COPIA %}<option value="{{ k }}" {{ 'selected' if ajustes_copias.limite_kbps == k }}>{{ texto }}</option>{% endfor %}
+      </select>
+      <p class="hint">Para que las copias no dejen sin Internet a la oficina. Se aplica a cada equipo por separado.</p></div>
+    <div class="field"><label for="retencion">Cuántas copias se guardan</label>
+      <select id="retencion" name="retencion" style="max-width:520px">
+        {% set conocida = RETENCIONES | selectattr(0, 'equalto', ajustes_copias.retencion) | list %}
+        {% if not conocida %}<option value="" selected>Personalizada (se deja como está)</option>{% endif %}
+        {% for k, texto in RETENCIONES %}<option value="{{ k }}" {{ 'selected' if ajustes_copias.retencion == k }}>{{ texto }}</option>{% endfor %}
+      </select>
+      <p class="hint">Las copias más antiguas se borran solas cada noche. Más historial ocupa más disco en el servidor.</p></div>
+    <label style="font-weight:400; display:flex; gap:10px; margin-bottom:10px"><input type="checkbox" name="solo_horario" {{ 'checked' if ajustes_copias.solo_horario }}>
+      <span>Limitar solo en horario de trabajo (de lunes a viernes, de 8:00 a 20:00). Fuera de ese horario, a toda velocidad.</span></label>
+    <label style="font-weight:400; display:flex; gap:10px; margin-bottom:14px"><input type="checkbox" name="informe" {{ 'checked' if ajustes_copias.informe_mensual }}>
+      <span>Enviar el <strong>informe mensual</strong> por correo el día 1 (necesita el correo configurado en Avisos).</span></label>
+    <button class="btn btn-primary" type="submit">Guardar</button>
+    <a class="btn" href="{{ url_for('informe') }}" style="margin-left:6px">Ver el informe de este mes</a>
+  </form>
+</div>
+<div class="card">
+  <h2>Mantenimiento del servidor</h2>
+  <p class="muted small" style="margin-bottom:12px">Cada noche OCTOPUS borra las copias antiguas, comprueba que el almacén está sano,
+    hace una copia del propio servidor y te avisa si algún equipo se queda sin copia.</p>
+  {% if mant and mant.resultados %}
+  <p class="small">Última vez: <strong>{{ mant.fecha | hace }}</strong>
+    {% if mant.ok %}<span class="pill ok">Todo correcto</span>{% else %}<span class="pill problema">Revisar</span>{% endif %}</p>
+  <table class="small" style="margin-top:8px">
+    {% for k, r in mant.resultados.items() %}
+    <tr><td>{{ '✓' if r.ok else '!' }}</td><td><strong>{{ mant_nombres.get(k, k) }}</strong></td><td class="muted">{{ r.detalle }}</td></tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="small muted">Todavía no se ha hecho ningún mantenimiento (se hace cada noche a las 03:30).</p>
+  {% endif %}
+  <h3 style="margin-top:18px" id="kit">Kit de recuperación</h3>
+  <p class="small">Contiene las claves sin las que <strong>nadie</strong> podría recuperar las copias si se pierde este servidor.
+    Descárgalo una vez y guárdalo fuera de aquí (gestor de contraseñas o papel en un lugar seguro).
+    {% if kit_fecha %}<br><span class="muted">Última descarga: {{ kit_fecha | hace }}.</span>
+    {% else %}<br><strong>Todavía no lo has descargado nunca.</strong>{% endif %}</p>
+  <form method="post" action="{{ url_for('kit_recuperacion') }}" style="display:flex; gap:10px; flex-wrap:wrap; align-items:end; margin-top:10px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="field" style="margin:0"><label for="kitpw">Tu contraseña</label>
+      <input type="password" id="kitpw" name="password" required autocomplete="current-password"></div>
+    <div class="field" style="margin:0"><label for="kitzip">Proteger el kit con una contraseña (opcional)</label>
+      <input type="password" id="kitzip" name="clave_zip" minlength="8" autocomplete="new-password" placeholder="Déjalo vacío para texto normal"></div>
+    <button class="btn" type="submit">Descargar kit</button>
+  </form>
+  <p class="hint">Si pones contraseña, el kit se descarga como .zip cifrado (AES-256; se abre con 7-Zip o WinRAR).
+    <strong>Si olvidas esa contraseña, el kit no sirve</strong>: apúntala aparte.</p>
+</div>
+<div class="card">
+  <h2>Opciones avanzadas</h2>
+  <p class="muted small">Para técnicos. Normalmente no hace falta tocar nada de esto.</p>
+  <ul class="lista-opciones">
+    <li><a href="{{ url_for('config_wazuh') }}"><strong>Wazuh (SIEM)</strong></a><p class="hint">Conexión con Wazuh, si lo usas.</p></li>
+    <li><a href="{{ url_for('deploy') }}"><strong>Red y puertos</strong></a><p class="hint">Direcciones y puertos del servidor.</p></li>
+    <li><a href="{{ url_for('audit') }}"><strong>Registro de actividad</strong></a><p class="hint">Quién ha hecho qué y cuándo.</p></li>
+  </ul>
+</div>
+{% endif %}
+{% endblock %}

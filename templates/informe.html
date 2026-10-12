@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Informe de {{ d.nombre_mes }}{% endblock %}
+{% block content %}
+<div class="no-print" style="display:flex; gap:10px; align-items:end; flex-wrap:wrap; margin-bottom:16px">
+  <p class="small" style="flex:1"><a href="{{ url_for('ajustes') }}">← Ajustes</a></p>
+  <form method="get" style="display:flex; gap:8px; align-items:end">
+    <div><label for="mes" class="small">Mes</label>
+      <select id="mes" name="mes" onchange="this.form.submit()">
+        {% for m in meses %}<option value="{{ m }}" {{ 'selected' if m == d.mes }}>{{ nombre_mes(m) | capitalize }}</option>{% endfor %}
+      </select></div>
+  </form>
+  <button class="btn btn-primary" type="button" onclick="window.print()">Imprimir o guardar en PDF</button>
+</div>
+
+<div class="card">
+  <h1>Informe de copias de seguridad</h1>
+  <p class="lead">{{ d.nombre_mes | capitalize }} · generado el {{ d.generado }}</p>
+  {% set r = d.resumen %}
+  <div class="stats-grid" style="margin-top:16px">
+    <div class="stat-card"><div class="small muted">Equipos protegidos</div><div class="stat-num">{{ r.equipos }}</div></div>
+    <div class="stat-card"><div class="small muted">Copias hechas</div><div class="stat-num">{{ r.copias }}</div></div>
+    <div class="stat-card"><div class="small muted">Días con copia</div><div class="stat-num">{{ r.cobertura }} %</div></div>
+    <div class="stat-card"><div class="small muted">Pruebas de recuperación correctas</div><div class="stat-num">{{ r.pruebas_ok }} de {{ r.equipos }}</div></div>
+    <div class="stat-card"><div class="small muted">Archivos recuperados</div><div class="stat-num">{{ r.restauraciones }}</div></div>
+    <div class="stat-card"><div class="small muted">Copias fallidas</div><div class="stat-num">{{ r.fallos_copia }}</div></div>
+    <div class="stat-card"><div class="small muted">Ataques detectados</div><div class="stat-num">{{ r.incidentes }}</div></div>
+    {% if d.almacen %}<div class="stat-card"><div class="small muted">Espacio del almacén</div><div class="stat-num">{{ d.almacen.porcentaje }} %</div>
+      <div class="small muted">{{ d.almacen.usado_gb }} de {{ d.almacen.total_gb }} GB</div></div>{% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <h2>Equipos</h2>
+  <table>
+    <thead><tr><th>Equipo</th><th>Copias</th><th>Días con copia</th><th>Última copia</th><th>Prueba de recuperación</th><th>Ataques</th></tr></thead>
+    {% for e in d.equipos %}
+    <tr><td><strong>{{ e.equipo }}</strong> <span class="small muted">{{ e.sistema }}</span></td>
+      <td>{{ e.copias_mes }}</td><td>{{ e.dias_con_copia }} de {{ d.dias_mes }}</td><td>{{ e.ultima }}</td>
+      <td><span class="pill {{ 'ok' if e.prueba_ok else 'atencion' }}">{{ e.prueba }}</span></td><td>{{ e.incidentes }}</td></tr>
+    {% else %}<tr><td colspan="6" class="muted">No hay equipos.</td></tr>{% endfor %}
+  </table>
+</div>
+
+{% if d.incidentes %}
+<div class="card">
+  <h2>Ataques del mes</h2>
+  <table>
+    <thead><tr><th>#</th><th>Equipo</th><th>Detectado</th><th>Motivo</th><th>Estado</th></tr></thead>
+    {% for i in d.incidentes %}<tr><td>{{ i.id }}</td><td>{{ i.hostname }}</td><td>{{ i.detectado | fecha }}</td><td>{{ i.motivo }}</td><td>{{ i.estado }}</td></tr>{% endfor %}
+  </table>
+</div>
+{% endif %}
+
+<p class="small muted">«Días con copia»: de los días del mes que han pasado, en cuántos tuvo copia cada equipo (el total es la media de todos).
+  «Prueba de recuperación»: OCTOPUS recupera de verdad unos archivos de la última copia de cada equipo cada semana para comprobar que se pueden recuperar.</p>
+{% endblock %}

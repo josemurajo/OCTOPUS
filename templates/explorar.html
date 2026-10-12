@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Recuperar de {{ s.hostname }}{% endblock %}
+{% block content %}
+<p class="small"><a href="{{ url_for('restaurar') }}">← Recuperar archivos</a></p>
+<h1>Recuperar archivos de {{ s.hostname }}</h1>
+
+{% if not est.copias %}
+  <div class="card empty">Este equipo todavía no tiene copias.</div>
+{% else %}
+<div class="card">
+  <form method="get" style="display:flex; gap:12px; align-items:end; flex-wrap:wrap;">
+    <div style="flex:1; min-width:240px">
+      <label for="copia">1. Elige la copia (el día)</label>
+      <select id="copia" name="copia" onchange="this.form.submit()">
+        {% for c in est.copias %}<option value="{{ c.id }}" {{ 'selected' if c.id == copia }}>{{ c.time | fecha }} ({{ c.time | hace }}){{ ' — SOSPECHOSA (hecha durante un ataque)' if c.sospechosa }}</option>{% endfor %}
+      </select>
+    </div>
+    <input type="hidden" name="ruta" value="{{ ruta }}">
+  </form>
+  {% if copia_sel and copia_sel.sospechosa %}
+  <div class="notice problema" style="margin:14px 0 0"><strong>Cuidado: esta copia se hizo durante un ataque</strong>
+    Puede llevar archivos dañados o cifrados.
+    {% if limpia %}Mejor usa la última copia limpia, la del {{ limpia.time | fecha }}:
+    <a href="{{ url_for('explorar', system_id=s.id, copia=limpia.id, ruta=ruta) }}">cambiar a esa copia</a>.
+    {% else %}No hay ninguna copia limpia anterior.{% endif %}</div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>2. Busca el archivo o la carpeta</h2>
+  {% if not ruta %}
+    <p class="muted">Carpetas protegidas de este equipo:</p>
+    <table>
+      {% for p in paths %}
+      <tr><td><span class="file-icon">▸</span><a href="{{ url_for('explorar', system_id=s.id, copia=copia, ruta=p) }}"><strong>{{ p }}</strong></a></td></tr>
+      {% else %}<tr><td class="muted">El equipo no está conectado ahora mismo.</td></tr>{% endfor %}
+    </table>
+  {% else %}
+    <div class="crumbs">
+      <a href="{{ url_for('explorar', system_id=s.id, copia=copia) }}">Inicio</a>
+      {% for nombre, r in migas %}<span class="sep">/</span>
+        {% if loop.last %}<strong>{{ nombre }}</strong>{% else %}<a href="{{ url_for('explorar', system_id=s.id, copia=copia, ruta=r) }}">{{ nombre }}</a>{% endif %}
+      {% endfor %}
+    </div>
+    {% if error %}<div class="notice problema"><strong>No se pudo abrir la carpeta</strong>{{ error }}</div>{% endif %}
+    {% if contenido is not none %}
+    <table>
+      <thead><tr><th>Nombre</th><th>Tamaño</th><th></th></tr></thead>
+      {% if padre %}<tr><td colspan="3"><a href="{{ url_for('explorar', system_id=s.id, copia=copia, ruta=padre) }}">↑ Subir un nivel</a></td></tr>{% endif %}
+      {% for it in contenido %}
+      {% set real = ruta.rstrip('/\\') ~ ('\\' if '\\' in ruta else '/') ~ it.name %}
+      <tr>
+        <td>{% if it.type == 'dir' %}<span class="file-icon">▸</span><a href="{{ url_for('explorar', system_id=s.id, copia=copia, ruta=real) }}">{{ it.name }}</a>
+            {% else %}<span class="file-icon">·</span>{{ it.name }}{% endif %}</td>
+        <td class="muted small">{{ '' if it.type == 'dir' else (it.size | tamano) }}</td>
+        <td style="text-align:right">{% if puede_actuar() %}<button class="btn btn-small" type="button" data-ruta="{{ real }}" data-nombre="{{ it.name }}" onclick="abrir(this)">Recuperar</button>{% endif %}</td>
+      </tr>
+      {% else %}<tr><td colspan="3" class="muted">Carpeta vacía en esta copia.</td></tr>{% endfor %}
+    </table>
+    {% if puede_actuar() %}
+    <div style="margin-top:14px"><button class="btn" type="button" data-ruta="{{ ruta }}" data-nombre="toda esta carpeta" onclick="abrir(this)">Recuperar toda esta carpeta</button></div>
+    {% endif %}
+    {% endif %}
+  {% endif %}
+</div>
+{% endif %}
+
+<dialog id="dlg">
+  <form method="post" action="{{ url_for('restaurar_ruta', system_id=s.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="copia" value="{{ copia }}">
+    <input type="hidden" name="carpeta" value="{{ ruta }}">
+    <input type="hidden" name="ruta" id="dlg-ruta">
+    <h2>Recuperar <span id="dlg-nombre"></span></h2>
+    <p class="muted" style="margin-bottom:14px">De la copia del {{ copia_sel.time | fecha if copia_sel else '' }}. ¿Dónde lo dejamos?</p>
+    <label style="display:flex; gap:10px; align-items:flex-start; font-weight:400; margin-bottom:10px">
+      <input type="radio" name="destino" value="aparte" checked style="margin-top:5px">
+      <span><strong>Guardar una copia aparte</strong><br><span class="muted small">No toca nada. Aparece al lado con el nombre «….restaurado-fecha». Lo más seguro si dudas.</span></span></label>
+    <label style="display:flex; gap:10px; align-items:flex-start; font-weight:400; margin-bottom:18px">
+      <input type="radio" name="destino" value="original" style="margin-top:5px">
+      <span><strong>Sustituir la versión actual</strong><br><span class="muted small">Deja el archivo exactamente como estaba ese día.</span></span></label>
+    <div class="actions"><button class="btn btn-primary" type="submit">Recuperar</button>
+      <button class="btn" type="button" onclick="document.getElementById('dlg').close()">Cancelar</button></div>
+  </form>
+</dialog>
+{% endblock %}
+{% block scripts %}
+<script>
+function abrir(btn) {
+  document.getElementById('dlg-ruta').value = btn.dataset.ruta;
+  document.getElementById('dlg-nombre').textContent = btn.dataset.nombre;
+  document.getElementById('dlg').showModal();
+}
+</script>
+{% endblock %}

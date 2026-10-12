@@ -1,0 +1,246 @@
+---
+# OCTOPUS Zero-Touch - Despliegue de agentes en clientes Linux (Debian/Ubuntu y RHEL/Rocky/Alma/Fedora)
+#
+# Uso (desde el cerebro, lo hace deploy_vagrant.sh):
+#   ansible-playbook -i inventario.ini desplegar_agentes.yml -e @extra.json
+#
+# Seguridad que deja configurada en cada equipo:
+#   1. Acceso SSH del servidor con CLAVE (ed25519); el acceso por contrasena se DESACTIVA
+#      en cuanto se comprueba que la clave funciona. No se vuelve a pedir ninguna contrasena.
+#   2. El agente se conecta EL al servidor por HTTPS (autoridad de certificados propia de OCTOPUS)
+#      y recoge sus ordenes: el equipo no tiene ningun puerto abierto (el 9999 solo en 127.0.0.1).
+#   3. Cada equipo tiene su propia clave (octopus_agent_token): si se roba, solo vale para ese equipo.
+#   4. Las copias van cifradas por restic antes de salir y viajan por HTTPS.
+#
+# Variables por host (inventario):
+#   octopus_backup_paths  lista de rutas a proteger (por defecto /home)
+#   octopus_agent_token   clave propia del equipo (la generan desplegar.sh / deploy_vagrant.sh)
+#   octopus_servidor      direccion del servidor vista desde ese equipo (por defecto la del servidor)
+# Variables extra (-e): octopus_ssh_pubkey, octopus_ssh_key (ruta clave privada en el servidor)
+
+- name: OCTOPUS - Despliegue de agentes Linux
+  hosts: seleccionados
+  become: true
+  gather_facts: true
+
+  vars:
+    restic_version: "0.16.4"
+    octopus_dir: /opt/zerotouch
+    base_cfg: "{{ lookup('file', playbook_dir + '/config.json') | from_json }}"
+    servidor: "{{ octopus_servidor | default(base_cfg.servidor) }}"
+    # el inventario INI puede entregar la lista como texto: se convierte siempre a lista
+    rutas_backup: "{{ (octopus_backup_paths | from_yaml) if (octopus_backup_paths | default([]) is string) else (octopus_backup_paths | default(['/home'])) }}"
+
+  tasks:
+    - name: Comprobar que el sistema es Linux soportado
+      assert:
+        that: ansible_os_family in ['Debian', 'RedHat']
+        fail_msg: "Familia {{ ansible_os_family }} no soportada por este playbook"
+
+    # ---------------------------------------------------------------- Paquetes
+    - name: Paquetes necesarios (Debian/Ubuntu)
+      apt:
+        name: [python3, curl, bzip2, cron, iputils-ping]
+        state: present
+        update_cache: true
+        cache_valid_time: 86400
+      when: ansible_os_family == 'Debian'
+
+    - name: Paquetes necesarios (RHEL/Rocky/Fedora)
+      dnf:
+        name: [python3, curl, bzip2, cronie, iputils]
+        state: present
+      when: ansible_os_family == 'RedHat'
+
+    # ---------------------------------------------------------------- 1. SSH con clave
+    - name: Carpeta .ssh del usuario de despliegue
+      file:
+        path: "~{{ ansible_user }}/.ssh"
+        state: directory
+        owner: "{{ ansible_user }}"
+        mode: '0700'
+      when: octopus_ssh_pubkey is defined
+
+    - name: Autorizar la clave del cerebro
+      lineinfile:
+        path: "~{{ ansible_user }}/.ssh/authorized_keys"
+        line: "{{ octopus_ssh_pubkey }}"
+        create: true
+        owner: "{{ ansible_user }}"
+        mode: '0600'
+      when: octopus_ssh_pubkey is defined
+
+    - name: Comprobar desde el cerebro que la clave funciona
+      command: >
+        ssh -i {{ octopus_ssh_key }} -o BatchMode=yes -o StrictHostKeyChecking=no
+        -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 {{ ansible_user }}@{{ ansible_host }} true
+      delegate_to: localhost
+      become: false
+      register: clave_ok
+      changed_when: false
+      failed_when: false
+      when: octopus_ssh_key is defined
+
+    - name: Desactivar el acceso SSH con contrasena (ya funciona la clave)
+      copy:
+        dest: /etc/ssh/sshd_config.d/00-octopus.conf
+        mode: '0644'
+        content: |
+          # OCTOPUS: solo acceso con clave
+          PasswordAuthentication no
+          ChallengeResponseAuthentication no
+          PermitRootLogin no
+      when: clave_ok is defined and clave_ok.rc is defined and clave_ok.rc == 0
+      register: sshd_cambiado
+
+    - name: Asegurar que sshd lee la carpeta sshd_config.d
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        line: "Include /etc/ssh/sshd_config.d/*.conf"
+        insertbefore: BOF
+      when: sshd_cambiado is changed
+
+    - name: Quitar PasswordAuthentication yes del fichero principal
+      replace:
+        path: /etc/ssh/sshd_config
+        regexp: '^PasswordAuthentication\s+yes'
+        replace: '#PasswordAuthentication yes  # desactivado por OCTOPUS'
+      when: sshd_cambiado is changed
+
+    - name: Validar la configuracion de SSH antes de reiniciar (evita quedarse sin acceso)
+      shell: "$(command -v sshd || echo /usr/sbin/sshd) -t"
+      register: sshd_test
+      failed_when: false
+      changed_when: false
+      when: sshd_cambiado is changed
+
+    - name: Si la configuracion no es valida, deshacer el cambio
+      file:
+        path: /etc/ssh/sshd_config.d/00-octopus.conf
+        state: absent
+      when: sshd_cambiado is changed and sshd_test.rc != 0
+
+    - name: Reiniciar SSH
+      shell: systemctl restart sshd 2>/dev/null || systemctl restart ssh
+      when: sshd_cambiado is changed
+
+    # ---------------------------------------------------------------- restic
+    - name: Comprobar restic instalado
+      stat:
+        path: /usr/local/bin/restic
+      register: restic_bin
+
+    - name: Descargar restic {{ restic_version }}
+      get_url:
+        url: "https://github.com/restic/restic/releases/download/v{{ restic_version }}/restic_{{ restic_version }}_linux_amd64.bz2"
+        dest: /tmp/restic.bz2
+        mode: '0644'
+      register: restic_dl
+      when: not restic_bin.stat.exists
+      ignore_errors: true
+
+    - name: Instalar restic (binario oficial)
+      shell: bunzip2 -f /tmp/restic.bz2 && install -m 0755 /tmp/restic /usr/local/bin/restic
+      when: not restic_bin.stat.exists and restic_dl is succeeded
+
+    - name: Instalar restic (paquete de la distro, si GitHub no estaba accesible)
+      package:
+        name: restic
+        state: present
+      when: not restic_bin.stat.exists and restic_dl is failed
+
+    # ---------------------------------------------------------------- 2. Tunel WireGuard
+    - name: Carpetas del agente
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop: ["{{ octopus_dir }}", /etc/octopus, /var/log/octopus]
+
+    - name: Copiar agente
+      copy:
+        src: "{{ playbook_dir }}/../agentes/zerotouch_agent.py"
+        dest: "{{ octopus_dir }}/zerotouch_agent.py"
+        mode: '0755'
+      notify: reiniciar agente
+
+    - name: Configuracion del agente (/etc/octopus/config.json)
+      copy:
+        dest: /etc/octopus/config.json
+        mode: '0600'
+        content: >-
+          {{ base_cfg | combine({
+               'backup_paths': rutas_backup,
+               'hostname': inventory_hostname,
+               'agent_token': octopus_agent_token,
+               'servidor': servidor,
+               'ip_cerebro': servidor,
+               'panel_url': base_cfg.panel_url | regex_replace('//[^/:]+:', '//' + servidor + ':'),
+               'restic_repository': base_cfg.restic_repository | regex_replace('@[^@/:]+:', '@' + servidor + ':'),
+               'restic_repository_cuarentena': (base_cfg.restic_repository_cuarentena | default('')) | regex_replace('@[^@/:]+:', '@' + servidor + ':'),
+               'isolation_allow': octopus_isolation_allow | default([]),
+               'bind_addresses': ['127.0.0.1']
+             }) | to_nice_json }}
+      notify: reiniciar agente
+
+    - name: Servicio systemd del agente
+      copy:
+        dest: /etc/systemd/system/octopus-agent.service
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=OCTOPUS Zero-Touch Agent
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          Type=simple
+          Environment=PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+          Environment=OCTOPUS_CONFIG=/etc/octopus/config.json
+          ExecStart=/usr/bin/python3 {{ octopus_dir }}/zerotouch_agent.py
+          Restart=always
+          RestartSec=5
+
+          [Install]
+          WantedBy=multi-user.target
+      notify: reiniciar agente
+
+    - name: Habilitar y arrancar agente
+      systemd:
+        name: octopus-agent
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Aplicar cambios pendientes del agente
+      meta: flush_handlers
+
+    - name: Backup diario a las 20:00
+      cron:
+        name: "OCTOPUS backup diario"
+        minute: "0"
+        hour: "20"
+        job: "/usr/bin/python3 {{ octopus_dir }}/zerotouch_agent.py --copia >/dev/null 2>&1"
+
+    - name: Quitar restos de versiones anteriores (tunel WireGuard)
+      shell: |
+        systemctl disable --now wg-quick@octopus 2>/dev/null || true
+        rm -f /etc/wireguard/octopus.conf
+        firewall-cmd --permanent --remove-port=9999/tcp >/dev/null 2>&1 && firewall-cmd --reload >/dev/null 2>&1 || true
+      changed_when: false
+
+    - name: Esperar a que el agente responda
+      uri:
+        url: "http://127.0.0.1:9999/health"
+        return_content: true
+      register: health
+      retries: 10
+      delay: 3
+      until: health.status == 200
+
+  handlers:
+    - name: reiniciar agente
+      systemd:
+        name: octopus-agent
+        state: restarted
+        daemon_reload: true

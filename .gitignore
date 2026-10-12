@@ -1,0 +1,81 @@
+# ZeroTouch - Archivos a ignorar en Git
+
+# Variables de entorno (contienen contraseñas)
+.env
+.env.local
+.env.production
+
+# Base de datos del panel de administración
+data/admin_panel.db
+data/*.db
+
+# Logs de ZeroTouch
+*.log
+logs/
+agentes/*/zerotouch_*.log
+
+# Archivos temporales
+*.tmp
+*.temp
+*.swp
+*~
+
+# Scripts de cierre generados automáticamente
+scripts_cierre.txt
+puertos_abiertos.log
+
+# Resultados de instalación
+wazuh_result.txt
+wazuh-agent.msi
+wazuh-agent.pkg
+
+# Binarios descargados
+agentes/*/restic*
+agentes/windows/*.exe
+
+# Datos de Docker
+install/data/
+data/n8n/
+data/minio/
+data/wireguard/
+
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+# Generados por el instalador
+.venv/
+.env.bak
+CREDENCIALES_INICIALES.txt
+CREDENTIALS.txt
+ansible/config.json
+ansible/inventario_vagrant.ini
+__pycache__/
+# Claves y datos de produccion (no subir nunca)
+data/
+ansible/wg/
+ansible/equipos.ini
+ansible/.inventario_tunel.ini
+ansible/.extra_vars.json
+ansible/extra_vars.json
+
+# OCTOPUS v2: nunca subir claves ni datos del servidor
+install/.env
+CREDENCIALES_INICIALES.txt
+*kit_recuperacion*
+__pycache__/
+*.pyc

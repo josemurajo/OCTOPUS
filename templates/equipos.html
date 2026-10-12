@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Equipos{% endblock %}
+{% block content %}
+<div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+  <div><h1>Equipos</h1><p class="lead">Los ordenadores y servidores que OCTOPUS protege.</p></div>
+  {% if puede_actuar() %}<a class="btn btn-primary" href="{{ url_for('equipo_nuevo') }}">+ Añadir equipo</a>{% endif %}
+</div>
+<div class="card" style="padding:6px 10px">
+  <table>
+    <thead><tr><th>Equipo</th><th>Estado</th><th>Última copia</th><th>Copias</th><th>Sistema</th><th></th></tr></thead>
+    <tbody>
+    {% for e in lista %}
+    <tr>
+      <td><a href="{{ url_for('equipo', system_id=e.sys.id) }}"><strong>{{ e.sys.hostname }}</strong></a><br><span class="muted small">{{ e.sys.last_ip or e.sys.ip_address or '' }}</span></td>
+      <td><span class="pill {{ e.est.nivel }}">{{ e.est.texto }}</span></td>
+      <td>{{ e.est.ultima | hace }}</td>
+      <td>{{ e.est.copias | length }}</td>
+      <td class="small">{{ {'windows': 'Windows', 'macos': 'Mac', 'linux': 'Linux'}.get(e.sys.os_family, e.sys.os_family) }}</td>
+      <td style="text-align:right"><a class="btn btn-small" href="{{ url_for('equipo', system_id=e.sys.id) }}">Abrir</a></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="empty">Todavía no hay equipos.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

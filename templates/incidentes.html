@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Incidentes{% endblock %}
+{% block content %}
+<h1>Incidentes de seguridad</h1>
+<p class="lead">Cada vez que OCTOPUS detecta un ataque grave queda registrado aquí, con todo lo que se hizo.</p>
+<div class="card" style="padding:6px 10px">
+  <table>
+    <thead><tr><th>#</th><th>Equipo</th><th>Qué pasó</th><th>Cuándo</th><th>Estado</th><th></th></tr></thead>
+    <tbody>
+    {% for i in lista %}
+    <tr>
+      <td class="muted">{{ i.id }}</td>
+      <td><strong>{{ i.hostname }}</strong></td>
+      <td class="small">{{ i.motivo[:110] }}{{ '…' if i.motivo|length > 110 }}</td>
+      <td class="small">{{ i.creado | hace }}</td>
+      <td>{% if i.estado == 'cerrado' %}<span class="pill ok">Cerrado</span>
+          {% elif i.estado == 'contenido' %}<span class="pill atencion">Contenido · pendiente de revisar</span>
+          {% elif i.estado in ['respondiendo','nuevo'] %}<span class="pill atencion">Respondiendo…</span>
+          {% elif i.estado == 'pendiente' %}<span class="pill problema">Esperando decisión</span>
+          {% else %}<span class="pill problema">Revisar</span>{% endif %}</td>
+      <td style="text-align:right"><a class="btn btn-small" href="{{ url_for('incidente', inc_id=i.id) }}">Abrir</a></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="empty">No ha habido ningún incidente. ¡Bien!</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+{% block scripts %}{% if lista and lista[0].estado in ['respondiendo','nuevo'] %}<script>setTimeout(function(){ location.href = location.pathname + '?auto=1'; }, 5000);</script>{% endif %}{% endblock %}

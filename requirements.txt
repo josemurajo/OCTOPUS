@@ -1,0 +1,21 @@
+# OCTOPUS Zero-Touch - Python dependencies
+# Instala con:   pip install -r requirements.txt
+# Para desarrollo: pip install -r requirements.txt pyinstaller
+# (pip elige automaticamente versiones compatibles con tu Python >= 3.8)
+
+# Core web framework
+flask>=2.3,<4.0
+jinja2>=3.1
+
+# Seguridad panel web
+flask-limiter>=3.5
+flask-talisman>=1.1
+bcrypt>=4.0
+cryptography>=41.0
+
+# Cliente HTTP y formatos
+requests>=2.31
+pyyaml>=6.0
+
+# Servidor de produccion del panel (Linux)
+gunicorn>=21.2; sys_platform != "win32"

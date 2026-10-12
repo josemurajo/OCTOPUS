@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Recuperar archivos{% endblock %}
+{% block content %}
+<h1>Recuperar archivos</h1>
+<p class="lead">¿Has borrado o estropeado algo? Elige el equipo y te enseñamos sus copias para que recuperes lo que necesites.</p>
+<div class="grid">
+  {% for e in lista %}
+  <div class="card device" style="margin:0">
+    <div class="device-head"><span class="device-name">{{ e.sys.hostname }}</span><span class="pill {{ e.est.nivel }}">{{ e.est.texto }}</span></div>
+    <p class="muted small">{% set n = e.est.copias | length %}{{ n }} {{ "copia" if n == 1 else "copias" }}{% if n %} · la más reciente {{ e.est.ultima | hace }}{% endif %}</p>
+    {% if e.est.copias %}
+    <a class="btn btn-primary" href="{{ url_for('explorar', system_id=e.sys.id) }}">Elegir archivos</a>
+    {% else %}<span class="muted small">Aún no hay copias que recuperar.</span>{% endif %}
+  </div>
+  {% else %}
+  <div class="card empty">No hay equipos todavía.</div>
+  {% endfor %}
+</div>
+<div class="card" style="margin-top:20px">
+  <h2>¿Cómo funciona?</h2>
+  <ol style="margin-left:20px">
+    <li>Elige el equipo y el día de la copia.</li>
+    <li>Navega por las carpetas hasta el archivo o carpeta que quieres.</li>
+    <li>Pulsa <strong>Recuperar</strong> y elige si quieres <em>sustituir</em> la versión actual o <em>guardar una copia aparte</em> (lo más seguro si dudas).</li>
+  </ol>
+</div>
+{% endblock %}

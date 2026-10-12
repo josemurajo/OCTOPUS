@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}{{ s.hostname }}{% endblock %}
+{% block content %}
+<p class="small"><a href="{{ url_for('equipos') }}">← Equipos</a></p>
+<div class="card hero {{ est.nivel }}">
+  <div class="hero-icon" aria-hidden="true">{{ '✓' if est.nivel == 'ok' else '!' }}</div>
+  <div style="flex:1">
+    <h1>{{ s.hostname }}</h1>
+    <p class="muted">{{ est.texto }} · última copia {{ est.ultima | hace }}{% if est.ultima %} ({{ est.ultima | fecha }}){% endif %}</p>
+  </div>
+  <div class="actions">
+    {% if puede_actuar() %}
+    <form method="post" action="{{ url_for('equipo_copia', system_id=s.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-primary" type="submit" {{ 'disabled' if not est.online }}>Hacer copia ahora</button>
+    </form>
+    {% endif %}
+    <a class="btn" href="{{ url_for('explorar', system_id=s.id) }}">Recuperar archivos</a>
+    {% if puede_actuar() %}<a class="btn" href="{{ url_for('equipo_instalar', system_id=s.id) }}">Instalador</a>{% endif %}
+  </div>
+</div>
+
+{% if not est.online %}
+<div class="notice problema"><strong>No hay conexión con este equipo</strong>
+  Comprueba que está encendido y conectado a la red. Detalle técnico: {{ est.error }}</div>
+{% endif %}
+
+{% for t in trabajos %}{% if t.tipo == 'instalacion' %}
+{% if t.estado == 'en_curso' %}<div class="notice ok"><strong>Instalando OCTOPUS en el equipo…</strong>{{ t.mensaje }} Esta página se actualiza sola.</div>
+{% elif t.estado == 'ok' %}<div class="notice ok"><strong>Instalación terminada ({{ t.fin | hace }})</strong>{{ t.mensaje }}</div>
+{% else %}<div class="notice problema"><strong>La instalación no ha terminado bien ({{ t.fin | hace }})</strong>{{ t.mensaje }}</div>{% endif %}
+{% elif t.tipo == 'prueba' %}
+{% if t.estado == 'en_curso' %}<div class="notice ok"><strong>Probando la recuperación…</strong>{{ t.mensaje }} Esta página se actualiza sola.</div>
+{% elif t.estado == 'ok' %}<div class="notice ok"><strong>Prueba de recuperación correcta ({{ t.fin | hace }})</strong>{{ t.mensaje }}</div>
+{% else %}<div class="notice problema"><strong>La prueba de recuperación ha fallado ({{ t.fin | hace }})</strong>{{ t.mensaje }}
+  Qué hacer: haz una copia nueva de este equipo y vuelve a probar.</div>{% endif %}
+{% elif t.estado == 'en_curso' %}
+<div class="notice ok"><strong>Copia en curso…</strong>Empezó {{ t.inicio | hace }}. Esta página se actualiza sola.</div>
+{% elif t.estado == 'error' %}
+<div class="notice problema"><strong>La última copia falló ({{ t.fin | hace }})</strong>{{ t.mensaje }}</div>
+{% endif %}{% endfor %}
+
+{% if limpia is not none or copias | selectattr('sospechosa') | list %}
+<div class="notice atencion"><strong>Hay copias hechas durante un ataque</strong>
+  Están marcadas como «Sospechosa»: pueden llevar archivos dañados o cifrados. Para recuperar, usa una copia limpia
+  {%- if limpia %}: la última es la del {{ limpia.time | fecha }} (<a href="{{ url_for('explorar', system_id=s.id, copia=limpia.id) }}">ver sus archivos</a>){% endif %}.</div>
+{% endif %}
+
+<div class="grid">
+  <div class="card">
+    <h2>Qué se protege</h2>
+    {% if est.info and est.info.backup_paths %}
+    <ul style="margin-left:18px">{% for p in est.info.backup_paths %}<li><code>{{ p }}</code></li>{% endfor %}</ul>
+    {% else %}<p class="muted">Se mostrará cuando el equipo esté conectado.</p>{% endif %}
+    <p class="hint">Las copias se hacen solas cada día a las 20:00 y van cifradas.</p>
+  </div>
+  <div class="card">
+    <h2>Datos del equipo</h2>
+    <dl class="kv">
+      <dt>Dirección</dt><dd>{{ s.ip_address }}</dd>
+      <dt>Conexión</dt><dd>Cifrada (HTTPS){% if s.last_ip %} · última desde {{ s.last_ip }}{% endif %}</dd>
+      <dt>Sistema</dt><dd>{{ (est.info.os if est.info else s.os_family) | capitalize }}</dd>
+      <dt>Copias guardadas</dt><dd>{{ est.copias | length }}</dd>
+      <dt>Prueba de recuperación</dt><dd>
+        {%- if prueba %}<span class="pill {{ 'ok' if prueba.ok else 'problema' }}">{{ 'Correcta' if prueba.ok else 'Falló' }}</span>
+          <span title="{{ prueba.detalle }}">{{ prueba.fecha | hace }}</span>
+          {%- if not prueba.ok %}<br><span class="small muted">{{ prueba.detalle }}</span>{% endif %}
+        {%- else %}<span class="muted">Todavía no se ha hecho (se hace sola cada semana)</span>{% endif %}</dd>
+      <dt>Aviso sin copia</dt><dd>si pasa más de {% if horas_sin_copia < 48 %}{{ horas_sin_copia | int }} horas{% else %}{{ (horas_sin_copia / 24) | int }} días{% endif %}</dd>
+    </dl>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Copias guardadas</h2>
+  {% if copias %}
+  <table>
+    <thead><tr><th>Fecha</th><th>Hace</th><th></th></tr></thead>
+    {% for c in copias[:30] %}
+    <tr><td>{{ c.time | fecha }}{% if c.sospechosa %} <span class="pill problema" title="Hecha durante un ataque: puede llevar archivos dañados">Sospechosa</span>{% endif %}</td><td class="muted">{{ c.time | hace }}</td>
+      <td style="text-align:right"><a class="btn btn-small" href="{{ url_for('explorar', system_id=s.id, copia=c.id) }}">Ver archivos</a></td></tr>
+    {% endfor %}
+  </table>
+  {% else %}<p class="muted">Todavía no hay copias de este equipo.</p>{% endif %}
+</div>
+
+{% if puede_actuar() %}
+<div class="card">
+  <h2>Opciones</h2>
+  <ul class="lista-opciones">
+    <li>
+      <strong>Probar recuperación ahora</strong>
+      <p class="hint">Recupera de verdad unos archivos de la última copia en el servidor y comprueba que salen bien. No toca el equipo.</p>
+      <form method="post" action="{{ url_for('probar_recuperacion', system_id=s.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn" type="submit" {{ 'disabled' if not est.copias }}>Probar recuperación</button>
+      </form>
+    </li>
+    <li>
+      <strong>Aviso si se queda sin copia</strong>
+      <p class="hint">Cuándo avisar si este equipo no hace copia. Para un portátil que pasa días fuera, elige más tiempo.</p>
+      <form method="post" action="{{ url_for('equipo_ajustes', system_id=s.id) }}" style="display:flex; gap:10px; flex-wrap:wrap">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <select name="horas_sin_copia" aria-label="Aviso si se queda sin copia" style="max-width:420px">
+          {% for h, texto in HORAS_SIN_COPIA %}<option value="{{ h }}" {{ 'selected' if (horas_propias or 0) == h }}>{{ texto }}</option>{% endfor %}
+        </select>
+        <button class="btn" type="submit">Guardar</button>
+      </form>
+    </li>
+    <li>
+      <strong>Declarar incidencia</strong>
+      <p class="hint">¿Crees que este equipo está infectado? Aísla el equipo, guarda su estado actual para analizarlo y restaura la última copia sana.</p>
+      <form method="post" action="{{ url_for('declarar_incidente', system_id=s.id) }}"
+            data-confirm="Se aislará {{ s.hostname }} de la red, se guardará una copia forense y se restaurará la última copia sana. ¿Continuar?">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div style="display:flex; gap:10px; flex-wrap:wrap">
+          <input type="text" id="motivo" name="motivo" aria-label="Motivo" placeholder="Motivo (ej.: el usuario ha abierto un adjunto raro)" style="flex:1; min-width:240px">
+          <button class="btn btn-danger" type="submit">Declarar incidencia</button>
+        </div>
+      </form>
+    </li>
+    <li>
+      <strong>Quitar este equipo</strong>
+      <p class="hint">Deja de aparecer en el panel. Las copias ya guardadas no se borran.</p>
+      <form method="post" action="{{ url_for('delete_system', system_id=s.id) }}"
+            data-confirm="¿Quitar {{ s.hostname }} del panel? Las copias ya guardadas no se borran.">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-danger" type="submit">Quitar este equipo del panel</button>
+      </form>
+    </li>
+  </ul>
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+{% for t in trabajos %}{% if t.estado == 'en_curso' %}<script>setTimeout(function(){ location.href = location.pathname + '?refrescar=1&auto=1'; }, 8000);</script>{% endif %}{% endfor %}
+{% endblock %}

@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Incidente #{{ inc.id }}{% endblock %}
+{% block content %}
+<p class="small"><a href="{{ url_for('incidentes') }}">← Incidentes</a></p>
+<div class="card hero {{ 'ok' if inc.estado == 'cerrado' else ('atencion' if inc.estado == 'contenido' else 'problema') }}">
+  <div class="hero-icon">{{ '✓' if inc.estado == 'cerrado' else '!' }}</div>
+  <div style="flex:1">
+    <h1>Incidente #{{ inc.id }} · {{ inc.hostname }}</h1>
+    <p class="muted">{{ inc.motivo }}</p>
+    <p class="small muted">Detectado {{ inc.detectado | hace }} ({{ inc.detectado | fecha }}) · origen: {{ inc.origen }}</p>
+  </div>
+</div>
+
+{% if inc.estado in ['respondiendo','nuevo'] %}
+<div class="notice atencion"><strong>Respondiendo al ataque…</strong>Esta página se actualiza sola.</div>
+{% elif inc.estado == 'contenido' %}
+<div class="notice atencion"><strong>Ataque contenido</strong>El equipo está {{ 'aislado de la red' if inc.aislado else 'conectado' }} y se ha restaurado una copia sana.
+  Revisa la sala de análisis y, cuando el equipo esté limpio, libéralo.</div>
+{% elif inc.estado == 'revisar' %}
+<div class="notice problema"><strong>Algún paso falló</strong>Mira la línea de tiempo: puede que haga falta actuar a mano.</div>
+{% elif inc.estado == 'pendiente' %}
+<div class="notice problema"><strong>Esperando tu decisión</strong>La respuesta automática está desactivada. Pulsa «Responder ahora» para aislar, copiar y restaurar.</div>
+{% endif %}
+
+<div class="grid">
+  <div class="card">
+    <h2>Qué se ha hecho</h2>
+    <ul class="timeline">
+      {% for p in inc.pasos %}
+      <li class="{{ '' if p.ok else 'mal' }}"><strong>{{ p.texto }}</strong><br><span class="muted small">{{ p.hora }}{% if p.detalle %} · {{ p.detalle }}{% endif %}</span></li>
+      {% endfor %}
+    </ul>
+  </div>
+  <div class="card">
+    <h2>Qué puedes hacer</h2>
+    {% if puede_actuar() %}
+      {% if inc.estado == 'pendiente' or inc.estado == 'revisar' %}
+      <form method="post" action="{{ url_for('incidente_accion', inc_id=inc.id) }}" style="margin-bottom:12px">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="accion" value="responder">
+        <button class="btn btn-primary" type="submit">Responder ahora (aislar, copiar y restaurar)</button></form>
+      {% endif %}
+      <p style="margin-bottom:6px"><strong>1. Analiza el ataque</strong></p>
+      {% if sala %}
+        <div class="actions" style="margin-bottom:14px">
+          <a class="btn btn-primary" href="{{ url_for('sala', inc_id=inc.id) }}">Abrir sala de análisis</a>
+          <form method="post" action="{{ url_for('incidente_descargar', inc_id=inc.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn" type="submit">Descargar paquete forense (.7z)</button></form>
+        </div>
+        {% if inc.clave_paquete %}<p class="small">Contraseña del paquete: <code class="mono">{{ inc.clave_paquete }}</code></p>{% endif %}
+      {% elif inc.snapshot_forense %}
+        <form method="post" action="{{ url_for('incidente_accion', inc_id=inc.id) }}" style="margin-bottom:14px">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="accion" value="preparar_sala">
+          <button class="btn btn-primary" type="submit">Preparar sala de análisis</button>
+          <p class="hint">Recupera en el servidor la copia del equipo infectado, dentro de un entorno aislado sin red.</p></form>
+      {% else %}<p class="muted small" style="margin-bottom:14px">Todavía no hay copia forense.</p>{% endif %}
+
+      <p style="margin-bottom:6px"><strong>2. Borrar la amenaza</strong></p>
+      <form method="post" action="{{ url_for('incidente_accion', inc_id=inc.id) }}" style="margin-bottom:14px"
+            data-confirm="Se borrarán del equipo los {{ inc.evidencias|length }} archivos que hicieron saltar la alarma (si siguen ahí). ¿Continuar?">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="accion" value="eliminar_amenaza">
+        <button class="btn btn-danger" type="submit" {{ 'disabled' if not inc.evidencias }}>Eliminar la amenaza del equipo</button>
+        <p class="hint">Borra los archivos señalados por el detector. Para borrar uno concreto, ábrelo en la sala de análisis.</p></form>
+
+      {% if inc.estado != 'cerrado' %}
+      <p style="margin-bottom:6px"><strong>3. Cuando el equipo esté limpio</strong></p>
+      <form method="post" action="{{ url_for('incidente_accion', inc_id=inc.id) }}"
+            data-confirm="El equipo volverá a tener red normal y el incidente se cerrará. ¿Seguro que está limpio?">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="accion" value="liberar">
+        <div class="field"><label for="notas">Notas de cierre (opcional)</label><input type="text" id="notas" name="notas" placeholder="Qué se encontró y qué se hizo"></div>
+        <button class="btn" type="submit">Liberar equipo y cerrar incidente</button></form>
+      {% endif %}
+      {% if inc.estado == 'cerrado' and (inc.snapshot_forense or sala) %}
+      <p style="margin:14px 0 6px"><strong>Caso cerrado: destruir las pruebas</strong></p>
+      <form method="post" action="{{ url_for('incidente_accion', inc_id=inc.id) }}"
+            data-confirm="Se borrará DEFINITIVAMENTE la copia forense y la sala de análisis. No se podrá recuperar. ¿Continuar?">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="accion" value="destruir_forense">
+        <button class="btn btn-danger" type="submit">Destruir copia forense y sala</button></form>
+      {% endif %}
+    {% else %}<p class="muted">Solo los administradores pueden actuar sobre incidentes.</p>{% endif %}
+  </div>
+</div>
+
+{% if inc.evidencias %}
+<div class="card">
+  <h2>Archivos que hicieron saltar la alarma</h2>
+  <ul class="mono small" style="margin-left:18px">{% for e in inc.evidencias[:40] %}<li>{{ e }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}{% if inc.estado in ['respondiendo','nuevo'] %}<script>setTimeout(function(){ location.href = location.pathname + '?auto=1'; }, 4000);</script>{% endif %}{% endblock %}
