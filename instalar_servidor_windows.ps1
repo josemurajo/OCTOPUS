@@ -187,7 +187,7 @@ foreach ($p in @($pPanel, $pAlm)) {
         Start-Service iphlpsvc -ErrorAction SilentlyContinue
         Start-Sleep -Seconds 2
         $t = Test-NetConnection -ComputerName $IP -Port $p -WarningAction SilentlyContinue
-        if ($t.TcpTestSucceeded) { Bien "puerto $p reenviado a Docker (netsh portproxy)" } else { Aviso "No se llega al puerto $p por $IP: revisa el antivirus o el firewall" }
+        if ($t.TcpTestSucceeded) { Bien "puerto $p reenviado a Docker (netsh portproxy)" } else { Aviso "No se llega al puerto $p por $($IP): revisa el antivirus o el firewall" }
     } else {
         Bien "puerto $p accesible por $IP"
     }
