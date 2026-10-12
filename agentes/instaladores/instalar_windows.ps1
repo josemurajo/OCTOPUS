@@ -53,8 +53,9 @@ function Buscar-Python {
     # Pythons instalados para todos los usuarios (registro de Windows). Uno instalado solo para un usuario
     # (carpeta C:\Users\...) no sirve: la tarea del agente corre como SYSTEM.
     foreach ($raiz in @('HKLM:\SOFTWARE\Python\PythonCore', 'HKLM:\SOFTWARE\WOW6432Node\Python\PythonCore')) {
-        Get-ChildItem $raiz -ErrorAction SilentlyContinue | Sort-Object PSChildName -Descending | ForEach-Object {
-            $ip = Get-ItemProperty (Join-Path $_.PSPath 'InstallPath') -ErrorAction SilentlyContinue
+        # bucle "foreach" normal: un "return" dentro de ForEach-Object no sale de la funcion
+        foreach ($k in @(Get-ChildItem $raiz -ErrorAction SilentlyContinue | Sort-Object { try { [version](($_.PSChildName -split '-')[0]) } catch { [version]'0.0' } } -Descending)) {
+            $ip = Get-ItemProperty (Join-Path $k.PSPath 'InstallPath') -ErrorAction SilentlyContinue
             $exe = if ($ip.ExecutablePath) { $ip.ExecutablePath } elseif ($ip.'(default)') { Join-Path $ip.'(default)' 'python.exe' } else { $null }
             if ($exe -and (Test-Path $exe) -and ($exe -notlike "$env:SystemDrive\Users\*")) {
                 $v = & $exe -c "import sys, ssl, json; print(sys.version_info >= (3, 8))" 2>$null
