@@ -11,7 +11,8 @@
 #   4. Abre los puertos 8080 y 8000 en el Firewall de Windows y comprueba que se llega a ellos desde la red
 #      (si Docker solo escucha en esta maquina, crea el reenvio necesario con netsh portproxy).
 #   Volver a ejecutarlo actualiza a la version de esta carpeta sin perder datos ni copias.
-param([string]$IP = "")
+param([string]$IP = "", [switch]$SinPreguntas, [string]$Registro = "")
+# -SinPreguntas: no espera a que se pulse Intro (instalaciones automaticas). -Registro <archivo>: guarda toda la salida
 # "Continue": en PowerShell 5.1 el texto que Docker escribe en la salida de errores se volveria "error" con "Stop".
 # Los fallos se comprueban uno a uno con $LASTEXITCODE.
 $ErrorActionPreference = "Continue"
@@ -23,7 +24,8 @@ $HostEnv = Join-Path $Raiz "install\.env"
 function Paso($t)  { Write-Host ""; Write-Host "==> $t" -ForegroundColor Cyan }
 function Bien($t)  { Write-Host "    $t" -ForegroundColor Green }
 function Aviso($t) { Write-Host "    $t" -ForegroundColor Yellow }
-function Fallo($t) { Write-Host ""; Write-Host "ERROR: $t" -ForegroundColor Red; Read-Host "Pulsa Intro para cerrar"; exit 1 }
+function Pausa { if (-not $SinPreguntas) { Read-Host "Pulsa Intro para cerrar" | Out-Null } }
+function Fallo($t) { Write-Host ""; Write-Host "ERROR: $t" -ForegroundColor Red; Pausa; if ($Registro) { Stop-Transcript | Out-Null }; exit 1 }
 function Refrescar-Path {
     $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
 }
@@ -33,9 +35,12 @@ $yo = New-Object Security.Principal.WindowsPrincipal([Security.Principal.Windows
 if (-not $yo.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     $args2 = "-NoProfile -ExecutionPolicy Bypass -File `"$($MyInvocation.MyCommand.Path)`""
     if ($IP) { $args2 += " -IP $IP" }
+    if ($SinPreguntas) { $args2 += " -SinPreguntas" }
+    if ($Registro) { $args2 += " -Registro `"$Registro`"" }
     Start-Process powershell -Verb RunAs -ArgumentList $args2
     exit 0
 }
+if ($Registro) { Start-Transcript -Path $Registro -Append | Out-Null }
 if (-not (Test-Path $ComposeFile)) { Fallo "No encuentro $ComposeFile. Ejecuta este archivo desde la carpeta de OCTOPUS." }
 $os = Get-CimInstance Win32_OperatingSystem
 Write-Host "OCTOPUS Zero-Touch - instalacion del servidor en Windows   ($($os.Caption), compilacion $($os.BuildNumber))" -ForegroundColor White
@@ -67,7 +72,8 @@ if (-not (Docker-Va)) {
         }
         Write-Host ""
         Write-Host "WSL2 activado. REINICIA el equipo y vuelve a hacer doble clic en INSTALAR_SERVIDOR_WINDOWS.bat." -ForegroundColor Yellow
-        Read-Host "Pulsa Intro para cerrar"
+        Pausa
+        if ($Registro) { Stop-Transcript | Out-Null }
         exit 3010
     }
     & wsl.exe --update *> $null
@@ -205,4 +211,5 @@ if (Test-Path $cred) { Write-Host "  Contrasena:   en $cred (un solo uso; borral
 Write-Host "  Gestion:      octopus.ps1 (clic derecho -> Ejecutar con PowerShell, o: powershell -File octopus.ps1 ayuda)"
 Write-Host "  IMPORTANTE:   este equipo tiene que quedarse encendido y con la sesion iniciada (Rancher Desktop"
 Write-Host "                arranca al iniciar sesion). Desactiva la suspension en Configuracion -> Sistema -> Energia."
-Read-Host "Pulsa Intro para cerrar"
+if ($Registro) { Stop-Transcript | Out-Null }
+Pausa
