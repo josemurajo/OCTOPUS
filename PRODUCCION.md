@@ -28,6 +28,19 @@ sudo OCTOPUS_IP=192.168.1.10 OCTOPUS_NOMBRES_EXTRA=octopus.empresa.local bash in
 El instalador pone Docker si falta, arranca OCTOPUS, abre los puertos en el cortafuegos del servidor y muestra
 la dirección del panel y la **contraseña inicial** (de un solo uso). Si la pierdes: `sudo bash octopus.sh credenciales`.
 
+**Linux es lo recomendado** para el servidor. También se puede instalar en:
+
+- **Windows 10 (22H2) / 11 / Server:** doble clic en `INSTALAR_SERVIDOR_WINDOWS.bat`. Activa WSL2 (la primera vez
+  puede pedir reiniciar y volver a ejecutarlo), instala Rancher Desktop (gratis, de código abierto) si no hay Docker,
+  arranca OCTOPUS, abre los puertos en el Firewall de Windows y comprueba que se llega desde la red.
+  Gestión: `octopus.ps1` (lo mismo que `octopus.sh`). *Probado solo en la sintaxis: falta probarlo en un Windows real.*
+- **Mac (macOS 13 o posterior):** `bash instalar_servidor_mac.sh` con tu usuario (sin sudo). Instala con Homebrew
+  Colima + Docker (gratis, sin Docker Desktop) y arranca OCTOPUS. Gestión: `bash octopus.sh ...` (sin sudo).
+  *Probado en un Mac real de GitHub.*
+
+En Windows y Mac el equipo tiene que quedarse **encendido y con la sesión iniciada** (Rancher Desktop / Colima
+arrancan al iniciar sesión) y sin entrar en reposo.
+
 ## 3. Primeros pasos en el panel
 
 1. Entra en `https://<ip-del-servidor>:8080` con el usuario **admin** y la contraseña inicial. El navegador

@@ -43,6 +43,8 @@ sudo bash instalar_servidor.sh
 ```
 
 Instala Docker si no está, arranca OCTOPUS y muestra la dirección del panel y la contraseña inicial.
+También en **Windows** (doble clic en `INSTALAR_SERVIDOR_WINDOWS.bat`) y **Mac** (`bash instalar_servidor_mac.sh`):
+ver [PRODUCCION.md](PRODUCCION.md).
 Después, en el panel: **Equipos → Añadir equipo**.
 
 - **Linux y Mac**: "Desde aquí" — se pone la IP, el usuario y la contraseña del equipo y el servidor
@@ -54,6 +56,8 @@ Después, en el panel: **Equipos → Añadir equipo**.
 | Carpeta / archivo | Qué es |
 |---|---|
 | `instalar_servidor.sh` | Instalador del servidor (Linux). Volver a ejecutarlo actualiza sin perder nada |
+| `INSTALAR_SERVIDOR_WINDOWS.bat`, `instalar_servidor_windows.ps1`, `octopus.ps1` | Servidor en Windows (WSL2 + Rancher Desktop) |
+| `instalar_servidor_mac.sh` | Servidor en Mac (Colima) |
 | `octopus.sh` | Gestión del servidor: estado, logs, kit, mantenimiento, actualizar, volver... |
 | `Dockerfile`, `install/docker-compose.yml` | La imagen y el contenedor del servidor |
 | `lib/` | El servidor: panel (`admin_panel.py`), arranque (`servidor.py`), mantenimiento, incidentes, informe... |
