@@ -110,8 +110,15 @@ más `OFFSITE_AWS_ACCESS_KEY_ID=` y `OFFSITE_AWS_SECRET_ACCESS_KEY=`. Al guardar
 copia al externo se hace esa noche (o ya mismo con `sudo bash octopus.sh mantenimiento autocopia`).
 
 La contraseña del almacén externo aparece en el kit de recuperación: **descarga el kit otra vez** después de
-configurarlo. Consejo: en S3/Backblaze activa el "bloqueo de objetos" (Object Lock) del bucket para que ni con la
-contraseña se puedan borrar las copias durante unos días.
+configurarlo. **Muy recomendado: bloqueo por tiempo (Object Lock).** Al crear el bucket en S3, Backblaze B2 o Wasabi, activa el
+"bloqueo de objetos" con una retención por defecto (por ejemplo, modo *Governance* o *Compliance*, 30 días). Así,
+aunque alguien robe las claves del almacén, no puede destruir las copias durante ese tiempo. OCTOPUS funciona con
+él sin cambiar nada (probado con un almacén compatible S3: un "atacante" con las claves intentó borrarlo todo y
+no pudo borrar ni un archivo).
+
+Si alguien borra el almacén externo bloqueado, lo que deja son "marcas de borrado": en la web del proveedor
+(*Mostrar versiones*) o con `aws s3api`, borra esas marcas y las copias vuelven a aparecer. Después ya se puede
+recuperar con normalidad (`octopus.sh recuperar-servidor <almacén>` o `restic ... restore --no-lock`).
 
 ## 6. Qué hace OCTOPUS solo cada noche (03:30)
 
