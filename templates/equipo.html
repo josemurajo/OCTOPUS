@@ -77,7 +77,7 @@
   <table>
     <thead><tr><th>Fecha</th><th>Hace</th><th></th></tr></thead>
     {% for c in copias[:30] %}
-    <tr><td>{{ c.time | fecha }}{% if c.sospechosa %} <span class="pill problema" title="Hecha durante un ataque: puede llevar archivos dañados">Sospechosa</span>{% endif %}</td><td class="muted">{{ c.time | hace }}</td>
+    <tr><td>{{ c.time | fecha }}{% if c.sospechosa %} <span class="pill problema" title="Hecha durante un ataque: puede llevar archivos dañados">Sospechosa</span>{% endif %}{% if 'completa' in (c.tags or []) %} <span class="pill ok" title="Copia de todo el disco del equipo">Completa</span>{% endif %}</td><td class="muted">{{ c.time | hace }}</td>
       <td style="text-align:right"><a class="btn btn-small" href="{{ url_for('explorar', system_id=s.id, copia=c.id) }}">Ver archivos</a></td></tr>
     {% endfor %}
   </table>
@@ -105,6 +105,20 @@
           {% for h, texto in HORAS_SIN_COPIA %}<option value="{{ h }}" {{ 'selected' if (horas_propias or 0) == h }}>{{ texto }}</option>{% endfor %}
         </select>
         <button class="btn" type="submit">Guardar</button>
+      </form>
+    </li>
+    <li>
+      <strong>Copia completa del equipo (opcional)</strong>
+      <p class="hint">Además de las carpetas de arriba, copia <strong>todo el disco</strong> (programas, ajustes, todo) una vez
+        por semana, para poder reconstruir el equipo entero si se rompe. Ocupa bastante más espacio en el servidor:
+        actívala solo en los equipos que lo necesiten.
+        {% if completa_activa %}<br>Última copia completa: <strong>{{ ultima_completa.time | hace if ultima_completa else 'todavía ninguna' }}</strong>{% endif %}</p>
+      <form method="post" action="{{ url_for('equipo_copia_completa', system_id=s.id) }}" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label style="font-weight:400; display:flex; gap:8px; align-items:center; margin:0">
+          <input type="checkbox" name="activa" {{ 'checked' if completa_activa }} style="width:auto"> Hacer copia completa cada semana</label>
+        <button class="btn" type="submit" name="accion" value="guardar">Guardar</button>
+        {% if completa_activa %}<button class="btn" type="submit" name="accion" value="ahora">Hacer copia completa ahora</button>{% endif %}
       </form>
     </li>
     <li>

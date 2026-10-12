@@ -85,6 +85,9 @@ class Agente:
     def backup(self):
         return self._req("POST", "/webhook/backup", timeout=6 * 3600)
 
+    def copia_completa(self):
+        return self._req("POST", "/webhook/copia-completa", timeout=12 * 3600)
+
     def restore(self, path, snapshot="latest", destino="original"):
         return self._req("POST", "/webhook/restaurar-archivo",
                          {"archivo": path, "snapshot": snapshot, "destino": destino}, timeout=3600)
@@ -206,25 +209,27 @@ def invalidar(system_id=None):
             _cache.pop(system_id, None)
 
 
-def lanzar_copia(system, on_done=None):
-    """Lanza la copia en segundo plano y devuelve el id del trabajo."""
+def lanzar_copia(system, on_done=None, completa=False):
+    """Lanza la copia (o la copia completa del equipo) en segundo plano y devuelve el id del trabajo."""
     job_id = uuid.uuid4().hex[:10]
     with _jobs_lock:
         for j in JOBS.values():
             if j["system_id"] == system["id"] and j["estado"] == "en_curso":
                 return j["id"]
         JOBS[job_id] = {"id": job_id, "system_id": system["id"], "equipo": system["hostname"],
-                        "tipo": "copia", "estado": "en_curso", "mensaje": "Copia en curso...",
+                        "tipo": "copia", "estado": "en_curso",
+                        "mensaje": "Copia completa del equipo en curso (puede tardar horas)..." if completa else "Copia en curso...",
                         "inicio": datetime.now(timezone.utc), "fin": None}
     ip = ip_de(system)
     sid = system["id"]
 
     def _run():
-        r = Agente(ip).backup()
+        r = Agente(ip).copia_completa() if completa else Agente(ip).backup()
         ok = r.get("status") == "success"
         with _jobs_lock:
             JOBS[job_id].update(estado="ok" if ok else "error", fin=datetime.now(timezone.utc),
-                                mensaje="Copia terminada" if ok else (r.get("message") or "Error desconocido"))
+                                mensaje=("Copia completa terminada" if completa else "Copia terminada") if ok
+                                else (r.get("message") or "Error desconocido"))
         invalidar(sid)
         if on_done:
             try:

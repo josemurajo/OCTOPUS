@@ -72,6 +72,22 @@ arrancan al iniciar sesión) y sin entrar en reposo.
 Cada equipo hace una copia al día a las **20:00** (y cuando se pulsa "Hacer copia ahora"). En Mac, para que entren
 Documentos, Escritorio y Descargas hay que dar "Acceso total al disco" a Python (lo explica el instalador).
 
+### Copia completa del equipo (opcional)
+
+En la ficha de cada equipo → Opciones → **Copia completa del equipo**. Si se activa, además de las carpetas
+protegidas se copia **todo el disco** (programas, ajustes, todo, sin temporales ni papelera) una vez por semana.
+Ocupa bastante más espacio en el servidor, por eso está desactivada por defecto: actívala solo en los equipos
+que haría falta reconstruir enteros (servidores, el PC de contabilidad...). Se guardan las 2 últimas y una al mes
+durante 3 meses.
+
+- Para **recuperar archivos sueltos** de cualquier sitio del disco: Recuperar archivos → elige la copia marcada
+  como *Completa*. Lo que no sea de las carpetas protegidas se deja siempre **al lado** (`.restaurado-fecha`),
+  nunca encima de un archivo del sistema.
+- Para **reconstruir un equipo entero**: instala de nuevo el sistema (Windows, Linux o macOS), instala el agente
+  con el mismo nombre de equipo desde el panel y recupera de la última copia completa las carpetas que hagan
+  falta (programas, configuración, datos). No es una imagen de disco que se "vuelca" de una vez: es una copia de
+  todos los archivos.
+
 ## 5. Almacén externo (copia fuera del servidor)
 
 Si se estropea el disco del servidor o hay un incendio, las copias que solo están en el servidor se pierden.

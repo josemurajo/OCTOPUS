@@ -148,6 +148,15 @@ def retencion(env: dict) -> dict:
     except (ValueError, IndexError, AttributeError):
         pass
     ok = r.returncode == 0
+    if ok:
+        # copias completas del equipo (opcionales, ocupan mucho): solo las 2 ultimas y una al mes durante 3 meses
+        rc = run([restic_bin(), "forget", "--prune", "--tag", "completa", "--group-by", "host",
+                  "--keep-last", "2", "--keep-monthly", "3", "--json"], env=restic_env(repo, pwd))
+        try:
+            for grupo in json.loads((rc.stdout or "").strip().splitlines()[0] if rc.stdout.strip() else "[]"):
+                borradas += len(grupo.get("remove") or [])
+        except (ValueError, IndexError, AttributeError):
+            pass
     detalle = (f"Politica {p['nombre']}: {p['daily']} diarias, {p['weekly']} semanales, {p['monthly']} mensuales. "
                f"Copias antiguas borradas: {borradas}") if ok else (r.stderr or r.stdout)[-400:]
     return {"ok": ok, "detalle": detalle}
@@ -358,7 +367,8 @@ def probar_equipo(env: dict, host: str, muestra: int = 5) -> dict:
     e = restic_env(repo, pwd)
     r = run([restic_bin(), "snapshots", "--json", "--no-lock", "--host", host], env=e, timeout=600)
     try:
-        copias = [s for s in json.loads(r.stdout or "[]") or [] if "forense" not in (s.get("tags") or [])]
+        copias = [s for s in json.loads(r.stdout or "[]") or []
+                  if not {"forense", "completa"} & set(s.get("tags") or [])]
     except ValueError:
         copias = []
     if not copias:

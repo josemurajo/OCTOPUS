@@ -25,7 +25,7 @@ from datetime import datetime
 from pathlib import Path
 
 PORT = int(os.environ.get("OCTOPUS_AGENT_PORT", "9999"))
-AGENT_VERSION = "3.1"
+AGENT_VERSION = "3.2"
 _BACKUP_LOCK = threading.Lock()
 SYSTEM = platform.system().lower()
 
@@ -202,9 +202,23 @@ def _norm(path: str) -> str:
 
 
 def path_protegida(cfg: dict, path: str) -> bool:
-    """Solo se puede restaurar/listar dentro de las rutas de las que se hace copia."""
+    """Solo se puede restaurar/listar dentro de las rutas de las que se hace copia
+    (o de cualquier sitio del disco si el equipo tiene la copia completa activada)."""
+    return en_rutas_normales(cfg, path) or (bool(AJUSTES_SERVIDOR.get("copia_completa")) and en_copia_completa(path))
+
+
+def en_rutas_normales(cfg: dict, path: str) -> bool:
     target = _norm(path)
     for base in backup_paths(cfg):
+        b = _norm(base)
+        if target == b or target.startswith(b.rstrip(os.sep) + os.sep):
+            return True
+    return False
+
+
+def en_copia_completa(path: str) -> bool:
+    target = _norm(path)
+    for base in rutas_completas():
         b = _norm(base)
         if target == b or target.startswith(b.rstrip(os.sep) + os.sep):
             return True
@@ -745,6 +759,97 @@ EXCLUSIONES_WINDOWS = ["C:\\Users\\*\\AppData\\Local", "C:\\Users\\*\\AppData\\L
 # Ajustes que manda el servidor en cada consulta (se pueden cambiar en el panel sin reinstalar nada)
 AJUSTES_SERVIDOR: dict = {}
 
+# ---------------------------------------------------------------- copia completa del equipo (opcional)
+# Todo el disco del sistema salvo lo que no sirve para nada al recuperar (temporales, papelera, memoria virtual,
+# caches). Sirve para reconstruir un equipo: se reinstala el sistema, el agente, y se recupera todo de esta copia.
+EXCL_COMPLETA_WINDOWS = ["C:\\pagefile.sys", "C:\\hiberfil.sys", "C:\\swapfile.sys", "C:\\$Recycle.Bin",
+                         "C:\\System Volume Information", "C:\\Windows\\Temp", "C:\\Windows\\SoftwareDistribution\\Download",
+                         "C:\\Users\\*\\AppData\\Local\\Temp", "C:\\Users\\*\\AppData\\Local\\*\\Cache",
+                         "C:\\ProgramData\\Microsoft\\Windows Defender\\Scans", "*.tmp"]
+EXCL_COMPLETA_LINUX = ["/proc", "/sys", "/dev", "/run", "/tmp", "/var/tmp", "/var/cache", "/mnt", "/media",
+                       "/lost+found", "/swapfile", "/swap.img", "/var/lib/docker", "/var/lib/containerd",
+                       "/home/*/.cache", "/root/.cache"]
+EXCL_COMPLETA_MAC = ["/System/Volumes/Data/private/var/vm", "/System/Volumes/Data/private/tmp",
+                     "/System/Volumes/Data/private/var/folders", "/System/Volumes/Data/Volumes",
+                     "/System/Volumes/Data/.Spotlight-V100", "/System/Volumes/Data/.fseventsd",
+                     "/System/Volumes/Data/Users/*/Library/Caches", "/System/Volumes/Data/Users/*/.Trash"]
+
+
+def rutas_completas() -> list[str]:
+    # OCTOPUS_RUTA_COMPLETA: otra raiz (o varias separadas por ";"), p. ej. un servidor con los datos en otro disco
+    if os.environ.get("OCTOPUS_RUTA_COMPLETA"):
+        return [r for r in os.environ["OCTOPUS_RUTA_COMPLETA"].split(";") if r.strip()]
+    if SYSTEM == "windows":
+        return [(os.environ.get("SystemDrive") or "C:") + "\\"]
+    if SYSTEM == "darwin":
+        return ["/System/Volumes/Data"]   # en macOS el disco "/" del sistema es de solo lectura: los datos van aqui
+    return ["/"]
+
+
+def copia_completa(cfg: dict) -> dict:
+    """Copia de todo el disco del sistema (etiqueta 'completa'), aparte de la copia diaria de las carpetas."""
+    if not _BACKUP_LOCK.acquire(blocking=False):
+        return {"status": "error", "message": "Ya hay una copia en curso en este equipo"}
+    try:
+        log("Copia completa del equipo")
+        binary = restic_bin()
+        if not _restic_ready(binary):
+            return {"status": "error", "message": f"restic no encontrado: {binary}"}
+        err = asegurar_repo(cfg)
+        if err:
+            return err
+        excl = EXCL_COMPLETA_WINDOWS if SYSTEM == "windows" else EXCL_COMPLETA_MAC if SYSTEM == "darwin" else EXCL_COMPLETA_LINUX
+        cmd = [binary, "backup", *rutas_completas(), "--tag", "octopus-agent", "--tag", "completa",
+               "--host", agent_host(cfg), "--json"]
+        for e in excl:
+            cmd += ["--exclude", e]
+        kbps = limite_subida(AJUSTES_SERVIDOR)
+        if kbps:
+            cmd += ["--limit-upload", str(kbps)]
+        if SYSTEM == "windows":
+            cmd.append("--use-fs-snapshot")
+        else:
+            cmd.append("--one-file-system")
+        result = run_cmd(cmd, env=restic_env(cfg))
+        if result.returncode not in (0, 3):
+            log(f"Copia completa fallida: {(result.stderr or '').strip()[-300:]}")
+            return {"status": "error", "message": (result.stderr or result.stdout)[-1000:]}
+        snap = ""
+        for line in (result.stdout or "").splitlines():
+            try:
+                d = json.loads(line)
+            except ValueError:
+                continue
+            if d.get("message_type") == "summary":
+                snap = d.get("snapshot_id", "")
+        try:
+            STATE_DIR.mkdir(parents=True, exist_ok=True)
+            (STATE_DIR / "ultima_copia_completa.txt").write_text(datetime.now().isoformat(timespec="seconds"))
+        except OSError:
+            pass
+        log(f"Copia completa OK snapshot={snap}")
+        r = {"status": "success", "snapshot_id": snap, "paths": rutas_completas(), "host": agent_host(cfg), "completa": True}
+        if result.returncode == 3:
+            r["aviso"] = "Algunos archivos no se pudieron leer (en uso o sin permiso)"
+        return r
+    finally:
+        _BACKUP_LOCK.release()
+
+
+def toca_copia_completa(ahora: datetime | None = None) -> bool:
+    """Si esta activada y la ultima copia completa tiene mas de N dias (7 por defecto)."""
+    if not AJUSTES_SERVIDOR.get("copia_completa"):
+        return False
+    try:
+        dias = float(AJUSTES_SERVIDOR.get("copia_completa_dias") or 7)
+    except (TypeError, ValueError):
+        dias = 7
+    try:
+        ultima = datetime.fromisoformat((STATE_DIR / "ultima_copia_completa.txt").read_text().strip())
+    except (OSError, ValueError):
+        return True
+    return ((ahora or datetime.now()) - ultima).total_seconds() >= dias * 86400 - 3600
+
 
 def limite_subida(ajustes: dict, ahora: datetime | None = None) -> int:
     """KB/s maximos para la copia (0 = sin limite). Con 'solo_horario', solo de lunes a viernes de 8 a 20 h."""
@@ -904,6 +1009,8 @@ def restaurar_archivo(cfg: dict, path_archivo: str, snapshot: str = "latest", de
     suspender_detector(60)
     if not path_protegida(cfg, path_archivo):
         return {"status": "error", "message": "Esa ruta no forma parte de las copias de este equipo"}
+    if destino != "aparte" and not en_rutas_normales(cfg, path_archivo):
+        destino = "aparte"   # desde la copia completa nunca se sobrescribe nada del sistema: se deja al lado
     env = restic_env(cfg)
     source = os.path.abspath(path_archivo)
     in_snapshot = snapshot_path(source)
@@ -951,6 +1058,10 @@ def despachar(cfg: dict, metodo: str, ruta: str, datos: dict | None = None) -> d
         return aislar_maquina(cfg)
     if ruta == "/webhook/reincorporacion":
         return reincorporar_red()
+    if ruta == "/webhook/copia-completa":
+        if not AJUSTES_SERVIDOR.get("copia_completa"):
+            return {"status": "error", "message": "La copia completa no esta activada para este equipo"}
+        return copia_completa(cfg)
     if ruta in ("/webhook/backup-forense", "/webhook/backup"):
         return backup_forense(cfg, datos.get("paths") or datos.get("path"))
     if ruta == "/webhook/forense":
@@ -1127,6 +1238,9 @@ def copia_programada() -> int:
         log(f"No se pudieron leer los ajustes del servidor ({exc.__class__.__name__}); copia sin limite de velocidad")
     res = backup_forense(cfg)
     log(f"Copia programada: {res.get('status')} {res.get('message', '')}".strip())
+    if toca_copia_completa():
+        rc = copia_completa(cfg)
+        log(f"Copia completa programada: {rc.get('status')} {rc.get('message', '')}".strip())
     return 0 if res.get("status") == "success" else 1
 
 

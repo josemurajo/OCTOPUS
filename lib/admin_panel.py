@@ -1518,6 +1518,8 @@ def equipo(system_id):
                            prueba=_mant.leer_pruebas().get(row['hostname'].lower()),
                            horas_sin_copia=agentes.horas_sin_copia(row),
                            horas_propias=agentes.notas_equipo(row).get('horas_sin_copia'),
+                           completa_activa=bool(agentes.notas_equipo(row).get('copia_completa')),
+                           ultima_completa=next((c for c in copias if 'completa' in (c.get('tags') or [])), None),
                            limpia=_inc.ultima_limpia(copias) if any(c['sospechosa'] for c in copias) else None)
 
 
@@ -1590,6 +1592,42 @@ def equipo_ajustes(system_id):
     log_audit(session['user_id'], 'SYSTEM_SETTINGS', f'{row["hostname"]}: horas_sin_copia={horas or "general"}', request.remote_addr)
     flash('Guardado.', 'success')
     return redirect(url_for('equipo', system_id=system_id))
+
+
+@app.route('/equipos/<int:system_id>/copia-completa', methods=['POST'])
+@login_required
+def equipo_copia_completa(system_id):
+    """Copia completa del equipo (opcional): activar/desactivar, o hacerla ahora."""
+    row = _get_system(system_id)
+    if not row or not puede_actuar():
+        return redirect(url_for('equipos'))
+    if request.form.get('accion') == 'ahora':
+        if agentes.notas_equipo(row).get('copia_completa'):
+            agentes.lanzar_copia(row, on_done=_copia_terminada, completa=True)
+            log_audit(session['user_id'], 'FULL_BACKUP_START', f'equipo={row["hostname"]}', request.remote_addr)
+            flash(f'Copia completa de {row["hostname"]} en marcha. La primera puede tardar horas; puedes seguir usando '
+                  'el panel.', 'success')
+        return redirect(url_for('equipo', system_id=system_id))
+    activa = request.form.get('activa') == 'on'
+    notas = agentes.notas_equipo(row)
+    if activa:
+        notas['copia_completa'] = True
+    else:
+        notas.pop('copia_completa', None)
+    with get_db_connection() as c:
+        c.execute('UPDATE systems SET notes = ? WHERE id = ?', (json.dumps(notas) if notas else None, system_id))
+    agentes.invalidar(system_id)
+    log_audit(session['user_id'], 'SYSTEM_SETTINGS', f'{row["hostname"]}: copia_completa={activa}', request.remote_addr)
+    flash('Copia completa activada: se hará una vez por semana (la primera, en la próxima copia diaria).' if activa
+          else 'Copia completa desactivada. Las copias completas ya hechas se borran solas con las antiguas.', 'success')
+    return redirect(url_for('equipo', system_id=system_id))
+
+
+def _ajustes_agente(row):
+    """Ajustes generales de las copias + los propios de este equipo (los recibe el agente en cada consulta)."""
+    aj = _ajustes_copias()
+    return {'limite_kbps': aj['limite_kbps'], 'solo_horario': aj['solo_horario'],
+            'copia_completa': bool(agentes.notas_equipo(row).get('copia_completa')), 'copia_completa_dias': 7}
 
 
 def _copia_terminada(system_id, ok, resp):
@@ -1710,9 +1748,10 @@ def restaurar_ruta(system_id):
     if r.get('status') == 'success':
         log_audit(session['user_id'], 'RESTORE_OK', f'{row["hostname"]}:{ruta} copia={copia} destino={destino}', request.remote_addr)
         _notificar_incidente('restauracion', f'Recuperación terminada en {row["hostname"]}: «{ruta}» '
-                             f'(copia {copia}, {"guardada aparte en " + str(r.get("file")) if destino == "aparte" else "en su sitio original"}). '
+                             f'(copia {copia}, {"en su sitio original" if str(r.get("file")) == ruta else "guardada aparte en " + str(r.get("file"))}). '
                              f'La pidió el usuario {session.get("username", "?")}.')
-        if destino == 'aparte':
+        if destino == 'aparte' or (r.get('file') and str(r.get('file')).rstrip('/\\') != ruta.rstrip('/\\')):
+            # (desde una copia completa, lo que es del sistema se deja siempre al lado, sin sobrescribir)
             flash(f'Listo. La versión recuperada está en: {r.get("file")}', 'success')
         else:
             flash(f'Listo. «{ruta}» ha vuelto a como estaba en esa copia.', 'success')
@@ -2065,19 +2104,18 @@ def api_agente_ordenes():
                 c.execute('UPDATE systems SET agent_info = ? WHERE id = ?', (json.dumps(info['info'])[:20000], row['id']))
         except sqlite3.Error:
             pass
-    aj = _ajustes_copias()
     return jsonify({'ordenes': _ordenes.pendientes(row['hostname']), 'espera': _ordenes.INTERVALO_AGENTE,
-                    'ajustes': {'limite_kbps': aj['limite_kbps'], 'solo_horario': aj['solo_horario']}})
+                    'ajustes': _ajustes_agente(row)})
 
 
 @app.route('/api/agente/ajustes', methods=['POST'])
 @limiter.exempt
 def api_agente_ajustes():
     """Ajustes para la copia diaria programada (que corre como proceso aparte del agente)."""
-    if not _agente_autenticado():
+    row = _agente_autenticado()
+    if not row:
         return jsonify({'error': 'no autorizado'}), 401
-    aj = _ajustes_copias()
-    return jsonify({'ajustes': {'limite_kbps': aj['limite_kbps'], 'solo_horario': aj['solo_horario']}})
+    return jsonify({'ajustes': _ajustes_agente(row)})
 
 
 @app.route('/api/agente/resultado', methods=['POST'])

@@ -152,7 +152,9 @@ def marcar_copias(system_id, copias: list) -> list:
 
 
 def ultima_limpia(copias_marcadas: list):
-    return next((c for c in copias_marcadas if not c.get("sospechosa")), None)
+    """La copia sana mas reciente. Mejor una copia normal de las carpetas (se restaura antes) que una completa."""
+    limpias = [c for c in copias_marcadas if not c.get("sospechosa") and "forense" not in (c.get("tags") or [])]
+    return next((c for c in limpias if "completa" not in (c.get("tags") or [])), None) or next(iter(limpias), None)
 
 
 def _set(inc_id, **campos):
