@@ -78,11 +78,12 @@ S3 s3api delete-bucket --bucket octopus >/dev/null 2>&1 && fail "el atacante no 
 while read -r key ver; do
     [ -n "$key" ] && S3 s3api delete-object --bucket octopus --key "$key" --version-id "$ver" >/dev/null 2>&1
 done < <(S3 s3api list-object-versions --bucket octopus --query 'DeleteMarkers[].[Key,VersionId]' --output text 2>/dev/null)
-if RESTIC_PASSWORD=ClaveExterna2026 restic -r $EXT restore latest --host pc-ana --target "$T/rest" -q 2>/dev/null \
-   && grep -q "factura importante" "$(find "$T/rest" -name factura.txt | head -1)"; then
+# (al quitar las marcas reaparecen tambien candados viejos de restic: se lee sin candado)
+ERR=$(RESTIC_PASSWORD=ClaveExterna2026 restic -r $EXT restore latest --no-lock --host pc-ana --target "$T/rest" -q 2>&1)
+if grep -q "factura importante" "$(find "$T/rest" -name factura.txt 2>/dev/null | head -1)" 2>/dev/null; then
     pass "las copias se recuperan despues del ataque" "factura.txt recuperada del almacen externo"
 else
-    fail "las copias se recuperan despues del ataque"
+    fail "las copias se recuperan despues del ataque" "$(echo "$ERR" | tail -3 | tr '\n' ' ')"
 fi
 docker rm -f minio >/dev/null 2>&1
 exit $FALLOS
