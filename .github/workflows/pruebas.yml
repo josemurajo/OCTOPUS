@@ -151,3 +151,17 @@ jobs:
       - name: Registros si algo falla
         if: failure()
         run: docker logs --tail 80 octopus || colima status || true
+
+  almacen-bloqueo:
+    name: Almacen externo con bloqueo por tiempo (S3 Object Lock)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Dependencias
+        run: python -m pip install -r requirements.txt
+      - name: Copia externa, ataque y recuperacion
+        run: bash tests/ci/prueba_bloqueo.sh
