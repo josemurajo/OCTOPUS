@@ -207,9 +207,12 @@ def autocopia(env: dict) -> dict:
                 (dest / rel).parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src, dest / rel)
         ssh = Path("/root/.ssh")
-        for f in ssh.glob("octopus_ed25519*"):
-            (dest / "ssh").mkdir(exist_ok=True)
-            shutil.copy2(f, dest / "ssh" / f.name)
+        try:
+            for f in ssh.glob("octopus_ed25519*"):
+                (dest / "ssh").mkdir(exist_ok=True)
+                shutil.copy2(f, dest / "ssh" / f.name)
+        except OSError:  # sin permiso o sin carpeta: la copia del servidor se hace igual, sin las claves SSH
+            pass
         r = run(["docker", "volume", "ls", "-q"], timeout=30)
         for vol in (r.stdout or "").split():
             if vol.endswith("wg_data"):
