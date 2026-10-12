@@ -57,7 +57,9 @@ jobs:
           for i in $(seq 1 90); do curl -fsk -m 3 https://127.0.0.1:8080/healthz && break; sleep 2; done
           curl -fsk https://127.0.0.1:8080/healthz
 
-      - name: Arrancar el servidor (Windows)
+      # En Windows, GitHub cierra los programas que arranca un paso al terminar ese paso: el servidor, la
+      # instalacion del agente y la prueba tienen que ir en el MISMO paso.
+      - name: Servidor, instalador del agente y prueba (Windows)
         if: matrix.so == 'windows'
         shell: pwsh
         run: |
@@ -65,12 +67,22 @@ jobs:
           $env:PATH = "$env:RUNNER_TEMP\bin;C:\Program Files\Git\usr\bin;$env:PATH"
           Start-Process -FilePath python -ArgumentList "lib\servidor.py" -WorkingDirectory $PWD `
             -RedirectStandardOutput "$env:RUNNER_TEMP\servidor.log" -RedirectStandardError "$env:RUNNER_TEMP\servidor_err.log"
+          $listo = $false
           for ($i = 0; $i -lt 90; $i++) {
-            try { $r = Invoke-WebRequest -Uri https://127.0.0.1:8080/healthz -SkipCertificateCheck -TimeoutSec 3; if ($r.StatusCode -eq 200) { $r.Content; break } } catch { }
+            try { $r = Invoke-WebRequest -Uri https://127.0.0.1:8080/healthz -SkipCertificateCheck -TimeoutSec 3; if ($r.StatusCode -eq 200) { $r.Content; $listo = $true; break } } catch { }
             Start-Sleep -Seconds 2
           }
+          if (-not $listo) { Write-Host "El servidor no arranca"; exit 1 }
+          $datos = 'C:\octopus_ci'
+          python tests/ci/prueba_agente.py preparar windows ci-agente $datos "$env:RUNNER_TEMP\inst"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & powershell -NoProfile -ExecutionPolicy Bypass -File "$env:RUNNER_TEMP\inst\instalar_windows.ps1"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python tests/ci/prueba_agente.py probar ci-agente $datos
+          exit $LASTEXITCODE
 
       - name: Preparar el instalador del panel
+        if: matrix.so != 'windows'
         run: |
           case "${{ matrix.so }}" in
             windows) DATOS='C:\octopus_ci' ;;
@@ -87,14 +99,8 @@ jobs:
         if: matrix.so == 'macos'
         run: cd "$RUNNER_TEMP/inst" && sudo bash INSTALAR.command --sin-preguntas
 
-      - name: Instalar el agente (Windows)
-        if: matrix.so == 'windows'
-        shell: pwsh
-        run: |
-          & powershell -NoProfile -ExecutionPolicy Bypass -File "$env:RUNNER_TEMP\inst\instalar_windows.ps1"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
       - name: Probar copia y restauracion
+        if: matrix.so != 'windows'
         run: python tests/ci/prueba_agente.py probar ci-agente "$DATOS"
 
       - name: Registros si algo falla
