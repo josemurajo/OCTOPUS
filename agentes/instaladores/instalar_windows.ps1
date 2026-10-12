@@ -50,7 +50,20 @@ function Buscar-Python {
         (Join-Path $env:ProgramFiles 'Python310\python.exe')
     )
     foreach ($c in $candidatos) { if (Test-Path $c) { return $c } }
-    # un Python instalado solo para un usuario no sirve: la tarea corre como SYSTEM
+    # Pythons instalados para todos los usuarios (registro de Windows). Uno instalado solo para un usuario
+    # (carpeta C:\Users\...) no sirve: la tarea del agente corre como SYSTEM.
+    foreach ($raiz in @('HKLM:\SOFTWARE\Python\PythonCore', 'HKLM:\SOFTWARE\WOW6432Node\Python\PythonCore')) {
+        Get-ChildItem $raiz -ErrorAction SilentlyContinue | Sort-Object PSChildName -Descending | ForEach-Object {
+            $ip = Get-ItemProperty (Join-Path $_.PSPath 'InstallPath') -ErrorAction SilentlyContinue
+            $exe = if ($ip.ExecutablePath) { $ip.ExecutablePath } elseif ($ip.'(default)') { Join-Path $ip.'(default)' 'python.exe' } else { $null }
+            if ($exe -and (Test-Path $exe) -and ($exe -notlike "$env:SystemDrive\Users\*")) {
+                $v = & $exe -c "import sys, ssl, json; print(sys.version_info >= (3, 8))" 2>$null
+                if ($v -eq 'True') { return $exe }
+            }
+        }
+    }
+    $propio = Join-Path $env:ProgramFiles 'OctopusPython\python.exe'
+    if (Test-Path $propio) { return $propio }
     return $null
 }
 
@@ -109,9 +122,16 @@ try {
         Aviso "Instalando Python $PythonVer (tarda 1-2 minutos)..."
         $exe = Join-Path $tmp 'python.exe'
         Descargar "https://www.python.org/ftp/python/$PythonVer/python-$PythonVer-amd64.exe" $exe
-        $p = Start-Process -FilePath $exe -Wait -PassThru -ArgumentList @(
-            '/quiet', 'InstallAllUsers=1', 'PrependPath=1', 'Include_test=0', 'Include_doc=0', 'Shortcuts=0')
-        if ($p.ExitCode -ne 0) { throw "El instalador de Python termino con codigo $($p.ExitCode)" }
+        # Sin el "lanzador" de Python: si el equipo ya tiene uno mas nuevo, el instalador fallaba con 1603
+        $opc = @('/quiet', 'InstallAllUsers=1', 'PrependPath=0', 'Include_test=0', 'Include_doc=0', 'Shortcuts=0',
+                 'Include_launcher=0', 'InstallLauncherAllUsers=0', 'AssociateFiles=0')
+        $p = Start-Process -FilePath $exe -Wait -PassThru -ArgumentList $opc
+        if ($p.ExitCode -notin 0, 3010) {
+            # segundo intento en una carpeta propia (por si choca con otro Python 3.12 ya instalado)
+            Aviso "El instalador de Python devolvio $($p.ExitCode); se reintenta en una carpeta propia..."
+            $p = Start-Process -FilePath $exe -Wait -PassThru -ArgumentList ($opc + @("TargetDir=`"$(Join-Path $env:ProgramFiles 'OctopusPython')`""))
+        }
+        if ($p.ExitCode -notin 0, 3010) { throw "El instalador de Python termino con codigo $($p.ExitCode)" }
         $py = Buscar-Python
         if (-not $py) { throw 'Python no aparece tras instalarlo' }
     }
