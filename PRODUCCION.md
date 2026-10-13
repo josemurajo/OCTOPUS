@@ -184,6 +184,11 @@ sudo bash octopus.sh actualizar      # instala la versión de esta carpeta (cons
 sudo bash octopus.sh volver          # vuelve a la versión anterior si la actualización da problemas
 ```
 
+**Se actualiza solo:** si hay una versión nueva firmada, se instala sola de madrugada (con el mantenimiento de las
+03:30). Si el cliente no quiere, en Ajustes → Actualizaciones está **«Poner en pausa las actualizaciones»**: sigue
+avisando de las versiones nuevas, pero no instala nada hasta que se pulse «Actualizar ahora» o se reanude. Si una
+versión falla al instalarse sola, se reintenta como mucho 3 veces (cada 2 días) y después sale el aviso OCT-ACT-01.
+
 **Actualizar desde el panel (Ajustes → Actualizaciones):** OCTOPUS busca versión nueva cada 2 días (o con el botón
 «Buscar actualizaciones»). Con «Actualizar ahora» (pide tu contraseña) el servidor la descarga de GitHub, **comprueba que
 está firmada con la clave de publicación de OCTOPUS** y la instala sola; si no está firmada o algo no coincide, no instala

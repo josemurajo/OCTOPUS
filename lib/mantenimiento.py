@@ -574,6 +574,27 @@ def main(argv: list[str]) -> int:
         _b.marcar("mantenimiento", f"Actualizaciones: {act.get('detalle')}",
                   codigo="OCT-ACT-01" if act.get("hay_nueva") else None)
     if cmd == "todo":
+        # actualizacion automatica (salvo que este en pausa en Ajustes -> Actualizaciones)
+        try:
+            import actualizar as _act
+            activada = True
+            try:
+                from config_manager import ConfigManager
+                activada = ConfigManager(str(db_path(env))).get_config("actualizar_solo") is not False
+            except Exception:
+                pass
+            # solo de madrugada (el panel se reinicia): si el mantenimiento se lanza de dia, se deja para la noche
+            if datetime.now().hour < 7:
+                r = _act.pedir_automatica(_av.leer_actualizacion(), activada)
+            else:
+                r = {"pedida": False, "detalle": "no hay versión nueva" if not _av.leer_actualizacion().get("hay_nueva")
+                     else "hay versión nueva: si está activada, se instalará sola esta noche"}
+            if r["pedida"] or "no hay versión nueva" not in r["detalle"]:
+                _b.marcar("actualizacion", f"Automática: {r['detalle']}", nivel="ok" if r["pedida"] else "aviso")
+                log(f"Actualizacion automatica: {r['detalle']}")
+        except Exception as exc:
+            _b.marcar("actualizacion", f"Automática: error inesperado ({exc})", nivel="error")
+    if cmd == "todo":
         try:
             import sugerencias
             r = sugerencias.reenviar_pendientes(env)

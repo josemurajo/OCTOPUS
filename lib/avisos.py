@@ -146,8 +146,10 @@ CATALOGO: dict[str, dict] = {
     "OCT-ACT-01": {
         "nivel": "atencion", "titulo": "Hay una versión nueva de OCTOPUS ({detalle})",
         "por_que": "Las versiones nuevas traen arreglos y mejoras de seguridad.",
-        "pasos": ["Ve a Ajustes → Actualizaciones y pulsa «Actualizar ahora»: el servidor la descarga, comprueba que está "
-                  "firmada por OCTOPUS y la instala solo (si algo va mal, vuelve solo a la versión actual).",
+        "pasos": ["Normalmente se instala sola por la noche. Si ves este aviso es porque las actualizaciones automáticas "
+                  "están en pausa, o porque no se pudo instalar sola: ve a Ajustes → Actualizaciones y pulsa «Actualizar ahora» "
+                  "(el servidor la descarga, comprueba que está firmada por OCTOPUS y la instala; si algo va mal, vuelve "
+                  "solo a la versión actual).",
                   "Si ese botón dice que el actualizador no está activado (servidores Windows), en el servidor: "
                   "sudo bash octopus.sh actualizar (en Windows: octopus.ps1 actualizar). Se conservan los datos y las copias.",
                   "Pulsa «Solucionar» para volver a comprobar si ya estás al día."],
@@ -292,9 +294,14 @@ def comprobar_actualizacion(timeout: float = 15) -> dict:
 
 def leer_actualizacion() -> dict:
     try:
-        return json.loads(ACTUALIZACION_FILE.read_text(encoding="utf-8"))
+        act = json.loads(ACTUALIZACION_FILE.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
+    # si ya se ha actualizado desde la ultima comprobacion, deja de haber version nueva
+    local = version_local()
+    if act.get("hay_nueva") and local and _num(local) >= _num(act.get("remota", "")):
+        act.update(hay_nueva=False, local=local, detalle=f"al día ({local})")
+    return act
 
 
 # ---------------------------------------------------------------- acciones automaticas del servidor

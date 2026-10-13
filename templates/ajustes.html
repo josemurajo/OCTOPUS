@@ -114,8 +114,25 @@
   <p class="small">Versión instalada: <strong>{{ version or '?' }}</strong>.
     {% if act.fecha %}Última comprobación: {{ act.fecha | hace }}{% if act.hay_nueva %} — <strong style="color:var(--accent)">hay una versión nueva: {{ act.remota }}</strong>{% else %} — {{ act.detalle }}{% endif %}.{% endif %}
     OCTOPUS lo comprueba solo cada 2 días.</p>
+  {% if act_solo %}
+  <div class="notice ok" style="margin-top:12px"><strong>Se actualiza solo.</strong> Cuando sale una versión nueva firmada, se instala
+    sola de madrugada (a las 03:30, con el mantenimiento). No hace falta hacer nada.
+    {% if act_atascada %}<br><strong style="color:var(--bad)">La versión {{ act.remota }} no se ha podido instalar sola varias veces:</strong>
+      mira el resultado de abajo y usa «Actualizar ahora».{% endif %}
+    <form method="post" action="{{ url_for('actualizaciones_automaticas') }}" style="margin-top:8px"
+          data-confirm="¿Poner en pausa las actualizaciones automáticas? OCTOPUS seguirá avisando de las versiones nuevas, pero no las instalará solo.">
+      <input type="hidden" name="activar" value="0">
+      <button class="btn btn-small" type="submit">⏸ Poner en pausa las actualizaciones</button></form></div>
+  {% else %}
+  <div class="notice atencion" style="margin-top:12px"><strong>Actualizaciones automáticas en pausa.</strong> OCTOPUS avisa de las versiones
+    nuevas pero no las instala solo. Ojo: las versiones nuevas traen arreglos de seguridad.
+    <form method="post" action="{{ url_for('actualizaciones_automaticas') }}" style="margin-top:8px">
+      <input type="hidden" name="activar" value="1">
+      <button class="btn btn-small btn-primary" type="submit">▶ Volver a actualizar solo</button></form></div>
+  {% endif %}
   <form method="post" action="{{ url_for('buscar_actualizaciones') }}" style="margin-top:10px; display:inline">
     <button class="btn" type="submit">Buscar actualizaciones</button></form>
+  <p class="hint">Los botones son por si no se ha actualizado solo por lo que sea, o si lo quieres hacer ya sin esperar a la noche.</p>
   {% if act_estado.pedida %}
   <div class="notice atencion" style="margin-top:14px"><strong>Actualización a la {{ act_estado.pedida }} en marcha</strong>{{ act_estado.estado }}
     <form method="post" action="{{ url_for('actualizar_ahora') }}" style="margin-top:8px"><input type="hidden" name="accion" value="cancelar">

@@ -124,6 +124,9 @@ class ConfigManager:
         # Archivos señuelo en los equipos (un archivo trampa oculto por carpeta protegida)
         "senuelos": True,
 
+        # Instalar solas (por la noche) las versiones nuevas firmadas; False = en pausa
+        "actualizar_solo": True,
+
         # Quien recibe cada tipo de aviso: {"ataques": "a@x, b@x", "copias": "", "servidor": "", "informe": ""}
         # (vacio = el correo general alert_email)
         "avisos_destinatarios": {},

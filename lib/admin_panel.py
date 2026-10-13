@@ -1532,7 +1532,8 @@ def _avisos(lista):
         if dias is not None and dias < 30:
             avisos.append(_aviso('OCT-CERT-01', None, None, sol, detalle=f'quedan {dias} días'))
         act = _av.leer_actualizacion()
-        if act.get('hay_nueva'):
+        if act.get('hay_nueva') and not __import__('actualizar').la_hara_sola(
+                act, config_manager.get_config('actualizar_solo') is not False):
             avisos.append(_aviso('OCT-ACT-01', None, None, sol, detalle=act.get('remota', '')))
         try:
             with get_db_connection() as c:
@@ -2185,7 +2186,28 @@ def ajustes():
                            mant=_mant.leer_estado(), mant_nombres=_mant.NOMBRES,
                            kit_fecha=kit['timestamp'] if kit else None,
                            ajustes_copias=_ajustes_copias(), act=_av.leer_actualizacion(),
-                           act_estado=__import__('actualizar').estado(), version=_av.version_local())
+                           act_estado=__import__('actualizar').estado(), version=_av.version_local(),
+                           act_solo=config_manager.get_config('actualizar_solo') is not False,
+                           act_atascada=__import__('actualizar').automatica_atascada(_av.leer_actualizacion().get('remota', '')))
+
+
+@app.route('/ajustes/actualizaciones/automaticas', methods=['POST'])
+@login_required
+@role_required('supremo', 'admin')
+def actualizaciones_automaticas():
+    """Pausa o reanuda las actualizaciones automáticas (por si el cliente no quiere que se actualice solo)."""
+    activar = request.form.get('activar') == '1'
+    config_manager.set_config('actualizar_solo', activar, session['user_id'])
+    log_audit(session['user_id'], 'UPDATE_AUTO_ON' if activar else 'UPDATE_AUTO_OFF', '', request.remote_addr)
+    _ban.marcar('actualizacion', f'Actualizaciones automáticas {"activadas" if activar else "en pausa"} por '
+                                 f'{session.get("username")}')
+    if activar:
+        flash('Actualizaciones automáticas activadas: cuando salga una versión nueva firmada, se instalará sola por la noche.',
+              'success')
+    else:
+        flash('Actualizaciones automáticas en pausa: OCTOPUS seguirá avisando de las versiones nuevas, pero no las '
+              'instalará hasta que pulses «Actualizar ahora» o las vuelvas a activar.', 'success')
+    return redirect(url_for('ajustes') + '#actualizaciones')
 
 
 @app.route('/ajustes/actualizaciones/buscar', methods=['POST'])
