@@ -13,6 +13,7 @@ Uso: powershell -ExecutionPolicy Bypass -File octopus.ps1 <orden>
   logs            registro en directo del servidor (Ctrl+C para salir)
   credenciales    contrasena inicial del panel
   buscar-equipos  busca los equipos de la red y los protege, con ventanas y raton (sin usar el panel)
+  quitar-2fa <usuario>  si se pierde el movil y los codigos de emergencia (pide el codigo del kit de recuperacion)
   acceso-emergencia  si te has quedado fuera del panel: quita bloqueos, "solo red de la oficina" y doble aprobacion
   kit             kit de recuperacion (claves de las copias) - guardalo fuera del servidor
   mantenimiento   limpieza, verificacion y copia del servidor ahora (normalmente cada noche)
@@ -91,6 +92,11 @@ switch ($Orden) {
     "credenciales"  { Get-Content "$Raiz\data\CREDENCIALES_INICIALES.txt" -ErrorAction SilentlyContinue }
     "kit"           { $null = Py "lib\mantenimiento.py" "kit" }
     "acceso-emergencia" { $null = Py "lib\seguridad.py" "emergencia" }
+    "quitar-2fa" {
+        if (-not $Arg) { Write-Host "Uso: octopus.ps1 quitar-2fa <usuario>   (pide el codigo de recuperacion del kit)"; exit 2 }
+        # sin "| Out-Host": tiene que poder preguntar el codigo en la consola
+        Entorno; Push-Location $Raiz; & "$Raiz\python\python.exe" "lib\dosfa.py" "quitar" $Arg; $rc = $LASTEXITCODE; Pop-Location; exit $rc
+    }
     "buscar-equipos" {
         # sin "| Out-Host": las ventanas necesitan la consola de verdad
         Entorno; Push-Location $Raiz

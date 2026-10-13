@@ -19,7 +19,8 @@
     <tr>
       <td><strong>{{ u.username }}</strong>{% if u.id == session.get('user_id') %} <span class="muted small">(tú)</span>{% endif %}
         {% if u.origen and u.origen != 'local' %}<div class="muted small">usuario de la empresa ({{ {'ldap': 'Active Directory', 'radius': 'RADIUS', 'oidc': 'OIDC'}.get(u.origen, u.origen) }}): {{ 'su papel es el elegido en Ajustes → Funciones → RADIUS' if u.origen == 'radius' else 'su papel sale de sus grupos' }}</div>
-        {% elif u.must_change_password %}<div class="muted small">aún no ha elegido su contraseña</div>{% endif %}</td>
+        {% elif u.must_change_password %}<div class="muted small">aún no ha elegido su contraseña</div>{% endif %}
+        {% if u.totp_activo %}<div class="small" title="Doble autenticación activada">🔐 doble autenticación</div>{% endif %}</td>
       <td class="small">{{ u.email }}</td>
       <td>
         {% if u.role == 'supremo' or u.id == session.get('user_id') or (u.origen and u.origen != 'local') %}{{ NOMBRE_ROL.get(u.role, u.role) }}
@@ -37,6 +38,11 @@
         <form method="post" action="{{ url_for('usuario_cambiar', uid=u.id) }}" style="display:inline" data-confirm="¿Poner una contraseña temporal nueva a {{ u.username }}? La que tenía dejará de valer.">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="accion" value="clave">
           <button class="btn btn-small" type="submit">Nueva contraseña</button></form>{% endif %}
+        {% if u.totp_activo %}
+        <form method="post" action="{{ url_for('usuario_cambiar', uid=u.id) }}" style="display:inline-flex; gap:4px" data-confirm="¿Quitar la doble autenticación de {{ u.username }}? (por ejemplo, si ha perdido el móvil). Tendrá que volver a activarla.">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="accion" value="quitar2fa">
+          {% if dosfa_activo() %}<input type="text" name="codigo_2fa" inputmode="numeric" placeholder="tu código" required style="width:90px" aria-label="Tu código">{% endif %}
+          <button class="btn btn-small" type="submit">Quitar 2FA</button></form>{% endif %}
         {% if u.role != 'supremo' or session.get('role') == 'supremo' %}
         <form method="post" action="{{ url_for('usuario_cambiar', uid=u.id) }}" style="display:inline" data-confirm="¿Borrar el usuario {{ u.username }}? No podrá volver a entrar.">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="accion" value="borrar">

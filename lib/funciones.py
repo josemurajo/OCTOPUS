@@ -83,6 +83,13 @@ FUNCIONES: list[dict] = [
      "explica": "Permite a los administradores ejecutar comandos en la sala de análisis de un incidente."},
 
     # ------------------------------------------------------------------------------------------- acceso
+    {"clave": "dosfa", "grupo": "acceso", "nivel": "basico", "defecto": True,
+     "nombre": "Doble autenticación con el móvil",
+     "explica": "Además de la contraseña, un código de 6 cifras de una app del móvil (Google o Microsoft Authenticator). "
+                "Aunque alguien sepa la contraseña, sin tu móvil no entra. Cada navegador se puede recordar 30 días.",
+     "opciones": [("quien", "Quién la tiene que usar", "eleccion", "admins", "basico", "",
+                   {"valores": [("admins", "Los administradores (recomendado)"), ("todos", "Todos los usuarios"),
+                                ("opcional", "Nadie obligado: cada uno decide")]})]},
     {"clave": "aviso_acceso_nuevo", "grupo": "acceso", "nivel": "basico", "defecto": True,
      "nombre": "Avisar si alguien entra desde un sitio nuevo",
      "explica": "Si alguien entra al panel desde un navegador o una dirección que no se había usado antes, llega un aviso "

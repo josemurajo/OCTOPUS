@@ -256,6 +256,8 @@ def security_checks():
         # Contrasena inicial: obligar a cambiarla antes de usar el panel
         if session.get('must_change') and request.endpoint not in ('cambiar_password', 'logout', 'static'):
             return redirect(url_for('cambiar_password'))
+        if session.get('falta_2fa') and request.endpoint not in ('cuenta_2fa', 'ayuda_2fa', 'logout', 'static'):
+            return redirect(url_for('cuenta_2fa'))
 
 
 @app.after_request
@@ -533,7 +535,25 @@ def _oidc_boton():
         return None
 
 
+def _necesita_2fa(user):
+    """¿Este usuario tiene que usar la doble autenticación? (los de OIDC no: la pone su proveedor)."""
+    if (user['origen'] if 'origen' in user.keys() else 'local') == 'oidc' or not _fun.activa('dosfa'):
+        return False
+    quien = _fun.opcion('dosfa', 'quien')
+    return quien == 'todos' or (quien == 'admins' and user['role'] in ('admin', 'supremo'))
+
+
 def _iniciar_sesion(user, como):
+    """Contraseña correcta: si tiene la 2FA activada, pide el código (salvo navegador recordado); si no, entra."""
+    if (user['origen'] if 'origen' in user.keys() else 'local') != 'oidc' and _dosfa.activo(DB_FILE, user['id']) \
+            and not _dosfa.recordado(DB_FILE, user['id'], request.cookies.get('octopus_2fa', '')):
+        session.clear()
+        session['pre2fa'] = {'uid': user['id'], 'como': como, 't': datetime.now().timestamp(), 'fallos': 0}
+        return redirect(url_for('login_codigo'))
+    return _abrir_sesion(user, como)
+
+
+def _abrir_sesion(user, como):
     """Abre la sesión (local o de la empresa) y devuelve la respuesta."""
     with get_db_connection() as c:
         c.execute('UPDATE users SET last_login = ?, failed_logins = 0, locked_until = NULL WHERE id = ?',
@@ -545,6 +565,7 @@ def _iniciar_sesion(user, como):
     session['nivel'] = (user['nivel'] if 'nivel' in user.keys() else None) or 'basico'
     session['gen'] = (user['sesion_gen'] if 'sesion_gen' in user.keys() else 0) or 0
     session['must_change'] = bool(user['must_change_password'])
+    session['falta_2fa'] = _necesita_2fa(user) and not _dosfa.activo(DB_FILE, user['id'])
     session['_last_seen'] = datetime.now().timestamp()
     session.permanent = True
     log_audit(user['id'], 'LOGIN', f'Inicio de sesion ({como})', request.remote_addr)
@@ -557,6 +578,131 @@ def _iniciar_sesion(user, como):
     if cookie:
         resp.set_cookie('octopus_disp', cookie, max_age=400 * 86400, httponly=True, secure=USE_HTTPS, samesite='Lax')
     return resp
+
+
+import dosfa as _dosfa
+_dosfa.init(DB_FILE)
+
+
+@app.route('/login/codigo', methods=['GET', 'POST'])
+def login_codigo():
+    """Segundo paso al entrar: el código de 6 cifras de la app del móvil (o un código de emergencia)."""
+    pre = session.get('pre2fa')
+    if not pre or datetime.now().timestamp() - pre.get('t', 0) > 600:
+        session.pop('pre2fa', None)
+        flash('Han pasado más de 10 minutos: vuelve a escribir tu usuario y contraseña.', 'info')
+        return redirect(url_for('login'))
+    if request.method == 'POST':
+        tipo = _dosfa.comprobar(DB_FILE, pre['uid'], request.form.get('codigo', ''))
+        with get_db_connection() as c:
+            user = c.execute('SELECT * FROM users WHERE id = ?', (pre['uid'],)).fetchone()
+        if tipo and user:
+            recordar = request.form.get('recordar') == 'on'
+            resp = _abrir_sesion(user, pre.get('como', '') + ' + doble autenticación')
+            if tipo == 'emergencia':
+                quedan = _dosfa.quedan_emergencia(DB_FILE, user['id'])
+                log_audit(user['id'], '2FA_EMERGENCIA', f'Código de emergencia usado (quedan {quedan})', request.remote_addr)
+                flash(f'Has entrado con un código de emergencia. Te quedan {quedan}. Si has perdido el móvil, ve a '
+                      f'«Tu cuenta → Doble autenticación» y vuelve a activarla con el móvil nuevo.', 'info')
+            if recordar:
+                resp.set_cookie('octopus_2fa', _dosfa.recordar(DB_FILE, user['id']), max_age=_dosfa.DIAS_RECORDAR * 86400,
+                                httponly=True, secure=USE_HTTPS, samesite='Lax')
+            return resp
+        pre['fallos'] = pre.get('fallos', 0) + 1
+        session['pre2fa'] = pre
+        log_audit(pre['uid'], 'LOGIN_FAILED', f'Código de doble autenticación incorrecto ({pre["fallos"]})', request.remote_addr)
+        _seg_fallo('código de doble autenticación incorrecto')
+        if pre['fallos'] >= 5:
+            session.pop('pre2fa', None)
+            with get_db_connection() as c:
+                c.execute('UPDATE users SET locked_until = ? WHERE id = ?',
+                          (datetime.now() + timedelta(minutes=LOCKOUT_MINUTES), pre['uid']))
+            flash(f'Demasiados códigos incorrectos: la cuenta queda bloqueada {LOCKOUT_MINUTES} minutos.', 'error')
+            return redirect(url_for('login'))
+        flash('Ese código no vale. Mira que la hora del móvil esté bien y escribe el que sale ahora.', 'error')
+    return render_template('login_codigo.html')
+
+
+def _codigo_ok(uid, campo='codigo_2fa'):
+    """Para lo delicado: si el usuario tiene la 2FA activada, el código es obligatorio (aunque el navegador esté recordado)."""
+    if not _dosfa.activo(DB_FILE, uid):
+        return True
+    return bool(_dosfa.comprobar(DB_FILE, uid, request.form.get(campo, '')))
+
+
+app.jinja_env.globals['dosfa_activo'] = lambda: 'user_id' in session and _dosfa.activo(DB_FILE, session['user_id'])
+
+
+@app.route('/cuenta/2fa', methods=['GET', 'POST'])
+@login_required
+def cuenta_2fa():
+    """Activar, ver y gestionar la doble autenticación del propio usuario."""
+    uid = session['user_id']
+    with get_db_connection() as c:
+        user = c.execute('SELECT * FROM users WHERE id = ?', (uid,)).fetchone()
+    obligatoria = _necesita_2fa(user)
+    activa = _dosfa.activo(DB_FILE, uid)
+    if request.method == 'POST':
+        accion = request.form.get('accion', '')
+        if accion == 'confirmar' and not activa:
+            codigos = _dosfa.confirmar(DB_FILE, uid, request.form.get('codigo', ''))
+            if not codigos:
+                flash('Ese código no vale. Escribe el de 6 cifras que sale ahora en la app (cambia cada 30 segundos).', 'error')
+                return redirect(url_for('cuenta_2fa'))
+            session.pop('falta_2fa', None)
+            _dosfa.olvidar_navegadores(DB_FILE, uid)
+            log_audit(uid, '2FA_ACTIVADA', 'Doble autenticación activada', request.remote_addr)
+            return render_template('cuenta_2fa.html', fase='codigos', codigos=codigos, nueva=True)
+        if accion in ('nuevos', 'desactivar') and activa:
+            if not _dosfa.comprobar(DB_FILE, uid, request.form.get('codigo', '')):
+                flash('Para eso hace falta el código de la app (o uno de emergencia).', 'error')
+                return redirect(url_for('cuenta_2fa'))
+            if accion == 'nuevos':
+                log_audit(uid, '2FA_CODIGOS', 'Códigos de emergencia nuevos', request.remote_addr)
+                return render_template('cuenta_2fa.html', fase='codigos', codigos=_dosfa.nuevos_codigos(DB_FILE, uid),
+                                       nueva=False)
+            if obligatoria:
+                flash('En este servidor la doble autenticación es obligatoria para tu usuario. Si has cambiado de móvil, '
+                      'usa «Cambiar de móvil».', 'error')
+                return redirect(url_for('cuenta_2fa'))
+            _dosfa.quitar(DB_FILE, uid)
+            with get_db_connection() as c:
+                session['gen'] = c.execute('SELECT sesion_gen FROM users WHERE id = ?', (uid,)).fetchone()[0]
+            log_audit(uid, '2FA_DESACTIVADA', 'Doble autenticación desactivada por el propio usuario', request.remote_addr)
+            flash('Doble autenticación desactivada.', 'success')
+            return redirect(url_for('cuenta_2fa'))
+        if accion == 'cambiar_movil' and activa:
+            if not _dosfa.comprobar(DB_FILE, uid, request.form.get('codigo', '')):
+                flash('Para cambiar de móvil hace falta un código del móvil antiguo o uno de emergencia.', 'error')
+                return redirect(url_for('cuenta_2fa'))
+            _dosfa.preparar(DB_FILE, uid)     # deja de estar activa hasta que se confirme con el móvil nuevo
+            session['falta_2fa'] = obligatoria
+            log_audit(uid, '2FA_CAMBIO_MOVIL', 'Cambio de móvil de la doble autenticación', request.remote_addr)
+            flash('Ahora escanea el código QR con el móvil nuevo.', 'info')
+            return redirect(url_for('cuenta_2fa'))
+        if accion == 'olvidar':
+            _dosfa.olvidar_navegadores(DB_FILE, uid)
+            log_audit(uid, '2FA_OLVIDAR', 'Olvidados los navegadores recordados', request.remote_addr)
+            resp = redirect(url_for('cuenta_2fa'))
+            resp.delete_cookie('octopus_2fa')
+            flash('Hecho: todos los navegadores volverán a pedir el código.', 'success')
+            return resp
+        return redirect(url_for('cuenta_2fa'))
+    if activa:
+        return render_template('cuenta_2fa.html', fase='activa', obligatoria=obligatoria,
+                               quedan=_dosfa.quedan_emergencia(DB_FILE, uid))
+    secreto = _dosfa.secreto_pendiente(DB_FILE, uid) or _dosfa.preparar(DB_FILE, uid)
+    import configuracion as _conf
+    servidor = _conf.leer_env().get('OCTOPUS_PUBLIC_HOST') or _conf.leer_env().get('OCTOPUS_IP') or ''
+    enlace = _dosfa.uri(user['username'], secreto, servidor)
+    return render_template('cuenta_2fa.html', fase='activar', obligatoria=obligatoria, qr=_dosfa.qr_svg(enlace),
+                           secreto=' '.join(secreto[i:i + 4] for i in range(0, len(secreto), 4)))
+
+
+@app.route('/ayuda/doble-autenticacion')
+def ayuda_2fa():
+    """Guía sencilla, paso a paso (se puede abrir sin haber entrado y se puede imprimir)."""
+    return render_template('ayuda_2fa.html')
 
 
 @app.route('/login/empresa')
@@ -2057,8 +2203,17 @@ def kit_recuperacion():
         log_audit(session['user_id'], 'RECOVERY_KIT_DENIED', 'Contrasena incorrecta', request.remote_addr)
         flash('La contraseña no es correcta.', 'error')
         return redirect(url_for('ajustes'))
+    if not _codigo_ok(session['user_id']):
+        log_audit(session['user_id'], 'RECOVERY_KIT_DENIED', 'Código de doble autenticación incorrecto', request.remote_addr)
+        flash('Falta el código de la app del móvil (o no es correcto).', 'error')
+        return redirect(url_for('ajustes') + '#kit')
     import mantenimiento as _mant
     texto = _mant.kit(_mant.leer_env())
+    codigo_rec = _dosfa.nuevo_codigo_recuperacion(DB_FILE)
+    texto += ("\n\n=== CÓDIGO PARA QUITAR LA DOBLE AUTENTICACIÓN (si se pierde el móvil y los códigos de emergencia) ===\n"
+              f"{codigo_rec}\n"
+              "Solo sirve en la consola del servidor, como administrador del servidor:  octopus.sh quitar-2fa <usuario>\n"
+              "Al usarlo se avisa a todos los administradores. Cada kit nuevo cambia este código: vale el del último kit.\n")
     clave_zip = request.form.get('clave_zip', '')
     if clave_zip:
         if len(clave_zip) < 8:
@@ -2112,6 +2267,8 @@ def cambiar_password():
             error = 'La contraseña nueva tiene que ser distinta de la actual.'
         elif user['username'].lower() in nueva.lower() or nueva.lower() in ('password1234', 'contrasena123', '123456789012'):
             error = 'Esa contraseña es demasiado fácil de adivinar.'
+        elif not _codigo_ok(user['id']):
+            error = 'Falta el código de la app del móvil (o no es correcto).'
         if error:
             conn.close()
             flash(error, 'error')
@@ -2523,7 +2680,7 @@ def _funciones_vista():
 
 
 # ---- doble aprobación: lo peligroso lo aprueba otro administrador (si la función está encendida)
-_PROTEGIDOS_AL_APAGAR = {'senuelos', 'incident_auto_response', 'incident_keep_isolated', 'aviso_acceso_nuevo',
+_PROTEGIDOS_AL_APAGAR = {'dosfa', 'senuelos', 'incident_auto_response', 'incident_keep_isolated', 'aviso_acceso_nuevo',
                          'bloqueo_atacantes', 'panel_solo_redes', 'doble_aprobacion', 'email_notifications',
                          'telegram_enabled'}
 _PROTEGIDOS_SIEMPRE = {'backup_retention'}
@@ -2711,8 +2868,8 @@ def _clave_temporal():
 @role_required('admin', 'supremo')
 def usuarios():
     with get_db_connection() as c:
-        filas = c.execute('SELECT id, username, email, role, last_login, locked_until, must_change_password, origen '
-                          'FROM users ORDER BY id').fetchall()
+        filas = c.execute('SELECT id, username, email, role, last_login, locked_until, must_change_password, origen, '
+                          'totp_activo FROM users ORDER BY id').fetchall()
     nueva = session.pop('clave_una_vez', None)   # la contraseña temporal se enseña una sola vez
     return render_template('usuarios.html', filas=filas, roles=ROLES, nueva=nueva)
 
@@ -2792,6 +2949,19 @@ def usuario_cambiar(uid):
         _seg.olvidar_dispositivos(DB_FILE, uid)
         log_audit(session['user_id'], 'USER_PASSWORD_RESET', u['username'], request.remote_addr)
         session['clave_una_vez'] = {'usuario': u['username'], 'clave': clave}
+    elif accion == 'quitar2fa':
+        if yo:
+            flash('Para la tuya usa «Tu cuenta → Doble autenticación».', 'error')
+        elif not _codigo_ok(session['user_id']):
+            flash('Para quitar la doble autenticación de otro usuario hace falta tu código de la app.', 'error')
+        else:
+            _dosfa.quitar(DB_FILE, uid)
+            log_audit(session['user_id'], '2FA_QUITADA', f'{u["username"]}: quitada por {session.get("username")}',
+                      request.remote_addr)
+            _notificar_incidente('acceso', f'OCTOPUS: {session.get("username")} ha quitado la doble autenticación de '
+                                           f'«{u["username"]}» (al entrar tendrá que volver a activarla).')
+            flash(f'Doble autenticación de {u["username"]} quitada: la próxima vez que entre tendrá que activarla otra vez '
+                  f'con su móvil.', 'success')
     elif accion == 'borrar':
         if yo:
             flash('No puedes borrar tu propio usuario.', 'error')

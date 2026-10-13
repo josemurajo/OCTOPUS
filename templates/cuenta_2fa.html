@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Doble autenticación{% endblock %}
+{% block content %}
+<style>
+.pasos2fa { display: grid; grid-template-columns: 260px 1fr; gap: 24px; align-items: start; }
+.qr { background: #fff; padding: 10px; border-radius: 10px; width: 240px; }
+.qr svg { width: 220px; height: 220px; display: block; }
+.secreto { font-family: monospace; font-size: 15px; word-break: break-all; background: var(--bg); padding: 6px 8px; border-radius: 6px; }
+.codigos { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 24px; font-family: monospace; font-size: 20px;
+           letter-spacing: 1px; max-width: 420px; margin: 14px 0; }
+.lista-pasos li { margin-bottom: 8px; }
+@media (max-width: 700px) { .pasos2fa { grid-template-columns: 1fr; } }
+@media print { nav, header, footer, .no-imprimir { display: none !important; } }
+</style>
+<p class="small no-imprimir"><a href="{{ url_for('ajustes') }}">← Ajustes</a></p>
+<h1>Doble autenticación</h1>
+
+{% if fase == 'activar' %}
+<p class="lead">{% if obligatoria %}En este servidor tu usuario tiene que usar la doble autenticación. Son 2 minutos y solo se hace una vez.
+  {% else %}Protege tu cuenta con un código del móvil además de la contraseña.{% endif %}
+  <a href="{{ url_for('ayuda_2fa') }}">Ver la guía paso a paso</a>.</p>
+<div class="card">
+  <div class="pasos2fa">
+    <div>
+      <div class="qr" aria-label="Código QR para la app de autenticación">{{ qr | safe }}</div>
+      <p class="small muted" style="margin-top:8px">¿No puedes escanear? En la app elige «Introducir clave» y escribe:</p>
+      <div class="secreto">{{ secreto }}</div>
+    </div>
+    <div>
+      <ol class="lista-pasos" style="margin-left:18px">
+        <li>Instala en el móvil <strong>Google Authenticator</strong> o <strong>Microsoft Authenticator</strong> (gratis, en la App Store
+          o Google Play), o usa la que ya tengas.</li>
+        <li>En la app pulsa <strong>«+»</strong> → <strong>«Escanear código QR»</strong> y apunta la cámara al cuadrado de la izquierda.</li>
+        <li>Aparece «OCTOPUS» con un número de 6 cifras. <strong>Escríbelo aquí abajo</strong> y pulsa «Activar».</li>
+      </ol>
+      <form method="post" action="{{ url_for('cuenta_2fa') }}" autocomplete="off" style="margin-top:14px">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="accion" value="confirmar">
+        <div class="field"><label for="codigo">Número de la app</label>
+          <input type="text" id="codigo" name="codigo" inputmode="numeric" autocomplete="one-time-code" required autofocus
+                 placeholder="123 456" style="max-width:200px; font-size:22px; letter-spacing:4px; text-align:center"></div>
+        <button class="btn btn-primary" type="submit">Activar</button>
+        {% if obligatoria %}<a class="btn" href="{{ url_for('logout') }}" style="margin-left:6px">Salir y hacerlo luego</a>{% endif %}
+      </form>
+    </div>
+  </div>
+</div>
+
+{% elif fase == 'codigos' %}
+<div class="card" style="border-left:4px solid var(--good, #2a7)">
+  <h2>{{ '✅ Doble autenticación activada' if nueva else 'Códigos de emergencia nuevos' }}</h2>
+  <p><strong>Guarda estos 10 códigos de emergencia</strong> en un papel o imprímelos, y déjalos en un sitio seguro (no en el mismo
+    móvil). Sirven para entrar si un día no tienes el móvil. Cada uno vale una sola vez.
+    <strong>Solo se enseñan ahora.</strong>{% if not nueva %} Los anteriores ya no valen.{% endif %}</p>
+  <div class="codigos">{% for c in codigos %}<div>{{ c }}</div>{% endfor %}</div>
+  <div class="actions no-imprimir">
+    <button class="btn" type="button" onclick="window.print()">Imprimir</button>
+    <a class="btn btn-primary" href="{{ url_for('inicio') }}">Ya los he guardado</a>
+  </div>
+</div>
+
+{% else %}
+<div class="card">
+  <p>✅ <strong>Activada.</strong> Al entrar se pide el código de la app del móvil. Te quedan <strong>{{ quedan }}</strong> códigos de
+    emergencia{% if quedan < 4 %} <span style="color:var(--bad)">(quedan pocos: saca códigos nuevos)</span>{% endif %}.
+    <a href="{{ url_for('ayuda_2fa') }}">¿Cómo funciona?</a></p>
+  {% if obligatoria %}<p class="small muted">En este servidor es obligatoria para tu usuario.</p>{% endif %}
+</div>
+<div class="card">
+  <h2>Opciones</h2>
+  <p class="small muted">Para cualquiera de estas cosas hace falta el código que sale ahora en la app (o uno de emergencia).</p>
+  {% for accion, titulo, explica in [('cambiar_movil', 'Cambiar de móvil', 'Para pasarla a un móvil nuevo: después escaneas un código QR nuevo.'),
+                                      ('nuevos', 'Sacar códigos de emergencia nuevos', 'Si has gastado o perdido los del papel. Los anteriores dejan de valer.'),
+                                      ('desactivar', 'Desactivar', 'Entrar solo con la contraseña (menos seguro).')] %}
+  {% if not (accion == 'desactivar' and obligatoria) %}
+  <form method="post" action="{{ url_for('cuenta_2fa') }}" autocomplete="off" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:10px 0">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="accion" value="{{ accion }}">
+    <strong style="min-width:240px">{{ titulo }}</strong>
+    <input type="text" name="codigo" inputmode="numeric" placeholder="código" required style="max-width:140px" aria-label="Código para {{ titulo }}">
+    <button class="btn{{ ' btn-danger' if accion == 'desactivar' }}" type="submit">{{ titulo }}</button>
+    <span class="small muted" style="flex-basis:100%">{{ explica }}</span>
+  </form>{% endif %}
+  {% endfor %}
+  <form method="post" action="{{ url_for('cuenta_2fa') }}" style="margin-top:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="accion" value="olvidar">
+    <button class="btn" type="submit">Olvidar los navegadores recordados</button>
+    <span class="small muted">Todos los navegadores volverán a pedir el código (por si te dejaste uno recordado en otro sitio).</span>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

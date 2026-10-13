@@ -30,4 +30,6 @@ textual>=0.80
 
 # Entrar con los usuarios de la empresa (Ajustes -> Funciones): Active Directory/LDAP y OIDC (Microsoft 365, Google...)
 ldap3>=2.9
+# Codigo QR para activar la doble autenticacion (sin imagenes: SVG)
+qrcode>=7.4
 PyJWT[crypto]>=2.8

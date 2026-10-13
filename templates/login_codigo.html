@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Código del móvil{% endblock %}
+{% block content %}
+<div style="max-width: 400px; margin: 40px auto;">
+  <div style="text-align:center; margin-bottom: 24px;">
+    <div class="brand-logo" style="width:52px;height:52px;font-size:24px;margin:0 auto 12px;border-radius:14px;">O</div>
+    <h1>Código del móvil</h1>
+    <p class="muted">Abre la app de autenticación de tu móvil y escribe el número de 6 cifras de «OCTOPUS».</p>
+  </div>
+  <div class="card">
+    <form method="post" action="{{ url_for('login_codigo') }}" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="field">
+        <label for="codigo">Código</label>
+        <input type="text" id="codigo" name="codigo" inputmode="numeric" autocomplete="one-time-code" required autofocus
+               placeholder="123 456" style="font-size:24px; letter-spacing:4px; text-align:center">
+      </div>
+      <label style="font-weight:400; display:flex; gap:8px; margin-bottom:14px">
+        <input type="checkbox" name="recordar"> Recordar este navegador 30 días (solo en tu ordenador de siempre)</label>
+      <button class="btn btn-primary btn-big" type="submit" style="width:100%; justify-content:center;">Entrar</button>
+    </form>
+    <p class="small muted" style="margin-top:14px">¿No tienes el móvil? Escribe uno de tus <strong>códigos de emergencia</strong>
+      (los del papel, como <code>abcd-efgh</code>).</p>
+    <p class="small" style="margin-top:6px; text-align:center"><a href="{{ url_for('ayuda_2fa') }}">¿Cómo funciona esto? / Algo no va</a>
+      · <a href="{{ url_for('login') }}">Volver</a></p>
+  </div>
+</div>
+{% endblock %}

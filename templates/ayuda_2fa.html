@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Cómo funciona la doble autenticación{% endblock %}
+{% block content %}
+<style>
+.guia { max-width: 760px; }
+.guia .paso { display: flex; gap: 16px; margin: 0 0 22px; }
+.guia .num { flex: 0 0 38px; height: 38px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 700;
+             display: flex; align-items: center; justify-content: center; font-size: 18px; }
+.guia h2 { margin-top: 28px; }
+.guia .ej { white-space: nowrap; font-family: monospace; font-size: 20px; letter-spacing: 3px; background: var(--bg); padding: 4px 10px; border-radius: 6px; }
+.guia li { margin-bottom: 6px; }
+@media print { .no-imprimir, nav, header, footer { display: none !important; } .card { box-shadow: none; border: 1px solid #ccc; } }
+</style>
+<div class="guia">
+<p class="small no-imprimir"><a href="javascript:history.back()">← Volver</a> · <a href="javascript:window.print()">Imprimir esta guía</a></p>
+<h1>La doble autenticación, explicada fácil</h1>
+<p class="lead">Es como el banco en el móvil: además de la contraseña, te pide un número que solo tiene tu teléfono.
+  Aunque alguien averigüe tu contraseña, sin tu móvil no puede entrar en OCTOPUS (ni llevarse las copias).</p>
+
+<div class="card">
+<h2 style="margin-top:0">Lo que necesitas (una sola vez)</h2>
+<div class="paso"><div class="num">1</div><div>
+  <strong>Instala una app gratuita en tu móvil.</strong> Cualquiera de estas, desde la App Store (iPhone) o Google Play (Android):
+  <ul style="margin:8px 0 0 18px"><li><strong>Google Authenticator</strong></li><li><strong>Microsoft Authenticator</strong></li>
+  <li>o la que ya uses para el banco o el correo (Authy, 1Password, Bitwarden...)</li></ul></div></div>
+<div class="paso"><div class="num">2</div><div>
+  <strong>En OCTOPUS, ve a «Ajustes → Tu cuenta → Doble autenticación».</strong> Si es obligatoria para ti, OCTOPUS te lleva
+  allí solo la primera vez que entras. Verás un <strong>cuadrado de puntos (código QR)</strong>.</div></div>
+<div class="paso"><div class="num">3</div><div>
+  <strong>En la app del móvil, pulsa «+» o «Añadir cuenta» → «Escanear código QR»</strong> y apunta la cámara al cuadrado de la
+  pantalla. En la app aparece «OCTOPUS» con un número de 6 cifras que cambia cada 30 segundos.
+  <div class="small muted" style="margin-top:6px">¿No puedes escanear? Elige «Introducir clave» en la app y escribe las letras que salen
+    debajo del cuadrado.</div></div></div>
+<div class="paso"><div class="num">4</div><div>
+  <strong>Escribe en OCTOPUS el número que sale ahora en la app</strong> (por ejemplo <span class="ej">482 913</span>) y pulsa «Activar».</div></div>
+<div class="paso"><div class="num">5</div><div>
+  <strong>Guarda los 10 códigos de emergencia</strong> que te enseña OCTOPUS: apúntalos en un papel o imprímelos y guárdalos en un
+  cajón (no en el mismo móvil). Sirven para entrar si un día no tienes el móvil. <strong>Solo se enseñan una vez.</strong>
+  Cada código sirve una sola vez.</div></div>
+</div>
+
+<div class="card">
+<h2 style="margin-top:0">Cada vez que entres</h2>
+<div class="paso"><div class="num">1</div><div>Escribe tu usuario y tu contraseña, como siempre.</div></div>
+<div class="paso"><div class="num">2</div><div>OCTOPUS te pide el código: abre la app del móvil y escribe el número de 6 cifras de «OCTOPUS».</div></div>
+<div class="paso"><div class="num">3</div><div>Si es tu ordenador de siempre, marca <strong>«Recordar este navegador 30 días»</strong> y durante un mes no te lo
+  volverá a pedir en ese ordenador. En un ordenador que no es tuyo, <strong>no lo marques</strong>.</div></div>
+<p class="small muted">Para lo más delicado (descargar el kit de recuperación o cambiar la contraseña) se pide el código siempre,
+  aunque el navegador esté recordado.</p>
+</div>
+
+<div class="card">
+<h2 style="margin-top:0">Si algo no va</h2>
+<ul style="margin-left:18px">
+  <li><strong>«Ese código no vale»:</strong> escribe el número que sale <em>ahora</em> (cambian cada 30 segundos). Si sigue sin valer,
+    mira que la hora del móvil esté en automático (Ajustes del móvil → Fecha y hora → Automática).</li>
+  <li><strong>He cambiado de móvil:</strong> con el móvil antiguo todavía, entra en «Doble autenticación → Cambiar de móvil» y escanea el
+    código nuevo con el móvil nuevo. Si ya no tienes el antiguo, entra con un código de emergencia y haz lo mismo.</li>
+  <li><strong>He perdido el móvil:</strong> entra con uno de los códigos de emergencia del papel. Dentro, «Cambiar de móvil».</li>
+  <li><strong>He perdido el móvil y los códigos:</strong> otro administrador de OCTOPUS puede quitártela en «Ajustes → Usuarios»
+    (tendrás que volver a activarla). Si eres el único administrador: hace falta el <strong>código de recuperación de tu kit
+    de recuperación</strong> y entrar en la consola del servidor (<code>octopus.sh quitar-2fa tu_usuario</code>). Se avisa a todos los
+    administradores. Por eso el kit se guarda fuera del servidor.</li>
+  <li><strong>Me pide el código 5 veces mal:</strong> la cuenta se bloquea unos minutos por seguridad; espera y vuelve a probar.</li>
+</ul>
+</div>
+<p class="muted small">Consejo: guarda juntos, en un sitio seguro y fuera del ordenador, el papel con los códigos de emergencia y el kit
+  de recuperación.</p>
+</div>
+{% endblock %}

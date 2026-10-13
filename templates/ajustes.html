@@ -9,6 +9,7 @@
     <dl class="kv"><dt>Usuario</dt><dd>{{ user.username }}</dd><dt>Correo</dt><dd>{{ user.email }}</dd>
       <dt>Papel</dt><dd>{{ NOMBRE_ROL.get(user.role, user.role) }}</dd><dt>Último acceso</dt><dd>{{ user.last_login | hace }}</dd></dl>
     <p style="margin-top:14px"><a class="btn" href="{{ url_for('cambiar_password') }}">Cambiar contraseña</a>
+      <a class="btn" href="{{ url_for('cuenta_2fa') }}">Doble autenticación{{ ' ✓' if dosfa_activo() }}</a>
       {% if puede_actuar() %}<a class="btn" href="{{ url_for('usuarios') }}">Usuarios</a>{% endif %}</p>
   </div>
   <div class="card">
@@ -130,6 +131,8 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="field" style="margin:0"><label for="kitpw">Tu contraseña</label>
       <input type="password" id="kitpw" name="password" required autocomplete="current-password"></div>
+    {% if dosfa_activo() %}<div class="field" style="margin:0"><label for="kitcod">Código del móvil</label>
+      <input type="text" id="kitcod" name="codigo_2fa" inputmode="numeric" required autocomplete="one-time-code" style="max-width:130px"></div>{% endif %}
     <div class="field" style="margin:0"><label for="kitzip">Proteger el kit con una contraseña (opcional)</label>
       <input type="password" id="kitzip" name="clave_zip" minlength="8" autocomplete="new-password" placeholder="Déjalo vacío para texto normal"></div>
     <button class="btn" type="submit">Descargar kit</button>
