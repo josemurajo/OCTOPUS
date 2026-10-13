@@ -279,15 +279,16 @@ Bien "panel en marcha"
 Paso "Red"
 foreach ($p in @($pPanel, $pAlm)) {
     $nombre = "OCTOPUS $p"
-    if (-not (Get-NetFirewallRule -DisplayName $nombre -ErrorAction SilentlyContinue)) {
-        New-NetFirewallRule -DisplayName $nombre -Direction Inbound -Protocol TCP -LocalPort $p -Action Allow -Profile Domain, Private | Out-Null
+    # En todos los tipos de red: Windows marca muchas redes de oficina como "publicas" (red no identificada, o al cambiar
+    # de tarjeta o de router) y entonces los equipos dejarian de llegar sin que nadie toque nada. El panel y el almacen
+    # ya se protegen solos (contrasena, HTTPS, bloqueo de atacantes y, si se quiere, "solo desde la red de la oficina").
+    if (Get-NetFirewallRule -DisplayName $nombre -ErrorAction SilentlyContinue) {
+        Set-NetFirewallRule -DisplayName $nombre -Profile Any -Enabled True -Action Allow | Out-Null
+    } else {
+        New-NetFirewallRule -DisplayName $nombre -Direction Inbound -Protocol TCP -LocalPort $p -Action Allow -Profile Any | Out-Null
     }
 }
-Bien "Firewall de Windows: abiertos $pPanel y $pAlm (redes privadas y de dominio)"
-$perfil = (Get-NetConnectionProfile -ErrorAction SilentlyContinue | Select-Object -First 1).NetworkCategory
-if ("$perfil" -eq "Public") {
-    Aviso "La red de este equipo esta marcada como PUBLICA: los demas equipos no podran llegar. Marcala como privada en Configuracion > Red e Internet."
-}
+Bien "Firewall de Windows: abiertos $pPanel y $pAlm (en cualquier tipo de red, aunque Windows la marque como publica)"
 # un servidor no debe dormirse: sin suspension mientras este enchufado (la pantalla si se apaga)
 & powercfg /change standby-timeout-ac 0 2>$null | Out-Null
 & powercfg /change hibernate-timeout-ac 0 2>$null | Out-Null
