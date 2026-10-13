@@ -64,7 +64,9 @@ def main(argv):
         resultado(isinstance(r, dict) and r.get("status") == "ok", "el equipo responde a las ordenes del servidor", str(r)[:150])
     with sqlite3.connect(db) as c:
         reg = [f[0] for f in c.execute("SELECT details FROM audit_logs ORDER BY id DESC LIMIT 20")]
-    resultado(any("AGENT" in d or nombre in d for d in reg) and not any(password in (d or "") for d in reg),
+    # (en las maquinas de pruebas el usuario y la contrasena pueden ser iguales: se quita el «usuario X» antes de mirar)
+    limpio = [(d or "").replace(f"usuario {usuario}", "usuario ·") for d in reg]
+    resultado(any(nombre in d for d in limpio) and not any(password in d for d in limpio),
               "queda en el registro de actividad, sin la contrasena")
     print("RESUMEN:", "TODO CORRECTO" if not FALLOS else "FALLOS: " + ", ".join(FALLOS))
     return 1 if FALLOS else 0
