@@ -64,10 +64,24 @@ if (-not (Docker-Va)) {
     # WSL2: Rancher Desktop lo necesita
     $wslOk = $false
     try { & wsl.exe --status *> $null; $wslOk = ($LASTEXITCODE -eq 0) } catch { }
+    $marca = Join-Path $env:ProgramData "OctopusServidor_wsl_reinicio.txt"
+    if (-not $wslOk -and (Test-Path $marca)) {
+        # Ya se pidio reiniciar: si de verdad se ha reiniciado, terminar de instalar WSL sin pedir otro reinicio
+        $arranque = (Get-CimInstance Win32_OperatingSystem).LastBootUpTime
+        if ($arranque -gt (Get-Item $marca).LastWriteTime) {
+            Aviso "Terminando de instalar WSL2 despues del reinicio..."
+            & wsl.exe --install --no-distribution
+            & wsl.exe --update *> $null
+            try { & wsl.exe --status *> $null; $wslOk = ($LASTEXITCODE -eq 0) } catch { }
+            if (-not $wslOk) { Fallo "WSL2 sigue sin funcionar tras reiniciar. Comprueba que la virtualizacion esta activada en la BIOS." }
+            Remove-Item $marca -Force -ErrorAction SilentlyContinue
+        }
+    }
     if (-not $wslOk) {
         Aviso "Activando WSL2 (subsistema de Linux de Windows)..."
         & wsl.exe --install --no-distribution
-        if ($LASTEXITCODE -ne 0) {
+        Set-Content -Path $marca -Value (Get-Date) -ErrorAction SilentlyContinue
+        if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 3010) {
             Fallo "No se pudo activar WSL2. Comprueba que la virtualizacion esta activada en la BIOS y vuelve a intentarlo."
         }
         Write-Host ""
