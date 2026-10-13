@@ -147,6 +147,10 @@ jobs:
           python-version: "3.12"
       - run: pip install -r requirements.txt
       - run: python tests/ci/prueba_consola.py
+      - name: El panel arranca con una base de datos nueva y todas las pantallas compilan
+        run: |
+          export DB_PATH="$RUNNER_TEMP/nueva.db" OCTOPUS_DATA="$RUNNER_TEMP/odata"
+          python -c "import sys; sys.path.insert(0, 'lib'); import admin_panel as a; e = a.app.jinja_env; n = [e.get_template(t) for t in e.list_templates() if t.endswith('.html')]; print(len(n), 'pantallas OK')"
       - name: Entrar con OIDC (proveedor simulado)
         run: python tests/ci/prueba_oidc.py
 

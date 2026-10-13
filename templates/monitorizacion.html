@@ -54,6 +54,10 @@
   <p class="muted small" style="margin-top:6px">Elige uno arriba y pulsa «Instalar en un equipo» (o desde la ficha del equipo). No hace falta
     instalar nada más: lo hace el agente que ya tiene. Solo se recogen datos de los equipos donde la actives.</p></div>
 {% endif %}
+{% if puede_actuar() %}
+<p class="small muted" style="margin-top:14px">ℹ️ Si el equipo lo usa un trabajador, la ley obliga a informarle antes de monitorizarlo,
+  y solo se puede usar para el mantenimiento y la seguridad del equipo (no para controlar lo que hace).</p>
+{% endif %}
 {% endblock %}
 {% block scripts %}
 <script>

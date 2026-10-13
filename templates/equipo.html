@@ -88,6 +88,7 @@
     <form method="post" action="{{ url_for('monitorizacion_activar') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="system_id" value="{{ s.id }}">
       <input type="hidden" name="activar" value="1"><button class="btn btn-primary" type="submit">Activar monitorizacion</button></form>
+    <p class="hint" style="margin-top:8px">Si lo usa un trabajador, hay que informarle antes (lo pide la ley de protección de datos).</p>
     {% endif %}{% endif %}
   </div>
   {% endif %}
