@@ -71,6 +71,61 @@ CATALOGO: dict[str, dict] = {
         "pasos": ["Si tienes que recuperar algo, usa una copia limpia (en la ficha del equipo se ve cuál es).",
                   "Cuando el equipo esté limpio, haz una copia nueva."],
         "accion": None},
+    # ---------------------------------------------------------------- monitorizacion (solo equipos con la monitorizacion activada)
+    "OCT-MON-01": {
+        "nivel": "problema", "titulo": "El disco de {equipo} está fallando",
+        "por_que": "Un disco que falla puede dejar de funcionar en cualquier momento, y con él todo lo que no tenga copia.",
+        "pasos": ["Pulsa «Hacer copia ahora» en la ficha del equipo para tener lo último a salvo.",
+                  "Cambia el disco cuanto antes (con la copia completa se puede dejar el equipo como estaba).",
+                  "Disco: {detalle}"],
+        "accion": "copia_equipo", "boton": "Hacer copia ahora"},
+    "OCT-MON-02": {
+        "nivel": "atencion", "titulo": "El disco de {equipo} está muy gastado",
+        "por_que": "Ha usado casi toda la vida que da el fabricante: puede empezar a fallar.",
+        "pasos": ["Planifica cambiarlo en las próximas semanas.", "Mientras, comprueba que sus copias se hacen bien.",
+                  "Disco: {detalle}"],
+        "accion": None},
+    "OCT-MON-03": {
+        "nivel": "atencion", "titulo": "El disco de {equipo} está casi lleno",
+        "por_que": "Con el disco lleno el equipo va lento, algunos programas fallan y puede que no se puedan hacer copias.",
+        "pasos": ["Vacía la papelera y borra lo que no hace falta (descargas, temporales).",
+                  "Si siempre está lleno, amplía el disco.", "Dónde: {detalle}"],
+        "accion": None},
+    "OCT-MON-04": {
+        "nivel": "atencion", "titulo": "{equipo} se está calentando mucho",
+        "por_que": "El calor mantenido acorta la vida del equipo y puede hacer que se apague solo.",
+        "pasos": ["Comprueba que las rejillas de ventilación no estén tapadas.", "Limpia el polvo y comprueba que el ventilador gira.",
+                  "Detalle: {detalle}"],
+        "accion": None},
+    "OCT-MON-05": {
+        "nivel": "atencion", "titulo": "La batería de {equipo} está muy gastada",
+        "por_que": "Puede durar muy poco o apagarse de golpe sin avisar, perdiendo lo que no esté guardado.",
+        "pasos": ["Si el portátil dura poco o se apaga solo, cambia la batería.", "Detalle: {detalle}"],
+        "accion": None},
+    "OCT-MON-06": {
+        "nivel": "atencion", "titulo": "{equipo} va al límite de memoria",
+        "por_que": "Con la memoria llena todo va lento y los programas se pueden cerrar solos.",
+        "pasos": ["Mira en Monitorización qué procesos gastan más memoria y cierra lo que no se use.",
+                  "Si pasa a menudo, añade más memoria al equipo.", "Detalle: {detalle}"],
+        "accion": None},
+    "OCT-MON-07": {
+        "nivel": "atencion", "titulo": "El procesador de {equipo} lleva mucho rato al 100 %",
+        "por_que": "El equipo va lento, se calienta y gasta más; a veces es un programa colgado o algo que no debería estar ahí.",
+        "pasos": ["Mira en Monitorización qué proceso lo está usando.",
+                  "Si no lo conoces o no debería estar funcionando, pide ayuda: puede ser un virus o un minero.",
+                  "Detalle: {detalle}"],
+        "accion": None},
+    "OCT-MON-08": {
+        "nivel": "atencion", "titulo": "{equipo} ha dejado de mandar datos de monitorización",
+        "por_que": "Lleva más de 30 minutos sin mandar datos: puede estar apagado, sin red o con el agente parado.",
+        "pasos": ["Si está encendido y con red, reinicia el agente.", _REINICIO_AGENTE],
+        "accion": None},
+    "OCT-MON-09": {
+        "nivel": "problema", "titulo": "El antivirus de {equipo} está desactivado",
+        "por_que": "Sin protección en tiempo real, un virus puede entrar sin que nadie lo pare.",
+        "pasos": ["En el equipo: Seguridad de Windows → Protección antivirus → activar «Protección en tiempo real».",
+                  "Si lo ha desactivado un programa que no conoces, pide ayuda.", "Antivirus: {detalle}"],
+        "accion": None},
     "OCT-SEN-01": {
         "nivel": "problema", "titulo": "Alguien ha tocado un archivo señuelo en {equipo}",
         "por_que": "Los archivos señuelo no los usa nadie: si cambian, casi seguro es un ataque (ransomware).",

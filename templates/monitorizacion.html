@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Monitorización{% endblock %}
+{% block content %}
+<style>
+.mlista { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; font-variant-numeric: tabular-nums; }
+.meq { display: block; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px;
+       box-shadow: var(--shadow); color: var(--text); height: 196px; transition: border-color .3s; }
+.meq:hover { border-color: var(--accent); text-decoration: none; }
+.meq .t { display: flex; justify-content: space-between; align-items: center; font-weight: 650; margin-bottom: 8px; }
+.meq .punto { width: 9px; height: 9px; border-radius: 50%; background: #c3c9d2; display: inline-block; margin-right: 6px; transition: background .4s; }
+.meq .punto.vivo { background: var(--ok); }
+.meq .fila { display: grid; grid-template-columns: 92px 1fr 64px; gap: 8px; align-items: center; font-size: 13.5px; height: 24px; }
+.meq .fila span:first-child { color: var(--muted); } .meq .fila span:last-child { text-align: right; }
+.barra { height: 7px; border-radius: 4px; background: #e9edf3; overflow: hidden; }
+.barra > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .8s ease, background-color .6s; }
+.barra.warn > i { background: #d48806; } .barra.bad > i { background: var(--bad); }
+.chip { display: inline-block; padding: 1px 9px; border-radius: 10px; font-size: 12.5px; font-weight: 500; }
+.chip.ok { background: var(--ok-soft); color: var(--ok); } .chip.atencion { background: var(--warn-soft); color: var(--warn); }
+.chip.mal { background: var(--bad-soft); color: var(--bad); } .chip.gris { background: var(--bg); color: var(--muted); }
+.meq .pie { font-size: 12.5px; color: var(--muted); margin-top: 6px; display: flex; justify-content: space-between; }
+</style>
+<div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+  <div><h1>Monitorización</h1><p class="lead">Cómo están los equipos ahora mismo: uso, temperatura, discos y batería.</p></div>
+  {% if puede_actuar() and sin %}
+  <form method="post" action="{{ url_for('monitorizacion_activar') }}" style="display:flex; gap:8px; align-items:center">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="activar" value="1">
+    <select name="system_id" aria-label="Equipo" required style="max-width:240px">
+      <option value="">Elige un equipo…</option>{% for e in sin %}<option value="{{ e.id }}">{{ e.hostname }}</option>{% endfor %}</select>
+    <button class="btn btn-primary" type="submit">Instalar en un equipo</button>
+  </form>{% endif %}
+</div>
+
+{% if avisos %}
+<div class="card"><h2>Avisos</h2>
+  {% for a in avisos %}<p style="margin:4px 0"><span class="codigo">{{ a.codigo }}</span> <a href="{{ url_for('monitorizacion_equipo', system_id=a.system_id) }}">{{ a.hostname }}</a> — {{ a.detalle }}</p>{% endfor %}
+</div>{% endif %}
+
+{% if equipos %}
+<div class="mlista" id="mlista">
+  {% for e in equipos %}
+  <a class="meq" href="{{ url_for('monitorizacion_equipo', system_id=e.id) }}" data-id="{{ e.id }}">
+    <div class="t"><span><span class="punto"></span>{{ e.hostname }}</span><span class="chip gris" data-k="salud">…</span></div>
+    <div class="fila"><span>Procesador</span><div class="barra"><i data-k="cpu-b"></i></div><span data-k="cpu">–</span></div>
+    <div class="fila"><span>Memoria</span><div class="barra"><i data-k="ram-b"></i></div><span data-k="ram">–</span></div>
+    <div class="fila"><span>Disco más lleno</span><div class="barra"><i data-k="disco-b"></i></div><span data-k="disco">–</span></div>
+    <div class="fila"><span>Temperatura</span><div class="barra"><i data-k="temp-b"></i></div><span data-k="temp">–</span></div>
+    <div class="fila"><span>Batería</span><div class="barra"><i data-k="bat-b"></i></div><span data-k="bat">–</span></div>
+    <div class="pie"><span data-k="estado">esperando datos…</span><span data-k="avisos"></span></div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card"><p>Todavía no hay ningún equipo con la monitorización activada.</p>
+  <p class="muted small" style="margin-top:6px">Elige uno arriba y pulsa «Instalar en un equipo» (o desde la ficha del equipo). No hace falta
+    instalar nada más: lo hace el agente que ya tiene. Solo se recogen datos de los equipos donde la actives.</p></div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const lista = document.getElementById('mlista'); if (!lista) return;
+  const nf0 = new Intl.NumberFormat('es-ES', { maximumFractionDigits: 0 });
+  const nombres = { ok: 'Discos bien', atencion: 'Disco: atención', mal: 'Disco fallando' };
+  function poner(card, k, v) { const el = card.querySelector(`[data-k="${k}"]`); if (el && el.textContent !== v) el.textContent = v; }
+  function barra(card, k, p, a, b) { const el = card.querySelector(`[data-k="${k}"]`); if (!el) return;
+    const w = Math.max(0, Math.min(100, p || 0)).toFixed(1) + '%'; if (el.style.width !== w) el.style.width = w;
+    const c = 'barra' + (p == null ? '' : p >= b ? ' bad' : p >= a ? ' warn' : ''); if (el.parentNode.className !== c) el.parentNode.className = c; }
+  function dur(s) { s = Math.round(s); return s < 90 ? s + ' s' : s < 5400 ? Math.round(s / 60) + ' min' : Math.round(s / 3600) + ' h'; }
+  async function pedir() {
+    if (document.hidden) return;
+    try {
+      const r = await fetch("{{ url_for('api_monitor_resumen') }}", { headers: { 'X-Auto': '1' }, credentials: 'same-origin' });
+      if (r.redirected) { location.reload(); return; }
+      const j = await r.json();
+      lista.querySelectorAll('.meq').forEach(card => {
+        const d = (j.equipos || {})[card.dataset.id]; if (!d) return;
+        const edad = d.recibido ? j.ahora - d.recibido : null;
+        const p = card.querySelector('.punto'); const c = 'punto' + (edad != null && edad < 150 ? ' vivo' : ''); if (p.className !== c) p.className = c;
+        poner(card, 'cpu', d.cpu != null ? nf0.format(d.cpu) + ' %' : '–'); barra(card, 'cpu-b', d.cpu, 75, 92);
+        poner(card, 'ram', d.ram != null ? nf0.format(d.ram) + ' %' : '–'); barra(card, 'ram-b', d.ram, 85, 95);
+        poner(card, 'disco', d.disco != null ? nf0.format(d.disco) + ' %' : '–'); barra(card, 'disco-b', d.disco, 85, 95);
+        poner(card, 'temp', d.temp != null ? nf0.format(d.temp) + ' °C' : '–'); barra(card, 'temp-b', d.temp, 80, 92);
+        poner(card, 'bat', d.bateria != null ? nf0.format(d.bateria) + ' %' : 'sin batería'); barra(card, 'bat-b', d.bateria, 101, 101);
+        poner(card, 'estado', edad == null ? 'esperando datos…' : edad < 150 ? 'conectado' : 'último dato hace ' + dur(edad));
+        poner(card, 'avisos', d.avisos ? '⚠ ' + d.avisos + ' aviso' + (d.avisos > 1 ? 's' : '') : '');
+        const s = card.querySelector('[data-k="salud"]'); const sc = 'chip ' + (d.salud || 'gris'); if (s.className !== sc) s.className = sc;
+        poner(card, 'salud', d.salud ? nombres[d.salud] : 'salud del disco: …');
+      });
+    } catch (e) {}
+  }
+  pedir(); setInterval(pedir, 5000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) pedir(); });
+})();
+</script>
+{% endblock %}

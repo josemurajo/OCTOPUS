@@ -1,0 +1,389 @@
+{% extends "base.html" %}
+{% block title %}Monitorización · {{ s.hostname }}{% endblock %}
+{% block content %}
+<style>
+/* Todo con tamaño fijo y transiciones suaves: al actualizar solo cambian números y barras, nada salta. */
+.mon { --barra: #e9edf3; font-variant-numeric: tabular-nums; }
+.mon-cab { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.mon-cab h1 { margin: 0; }
+.estado { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); }
+.punto { width: 10px; height: 10px; border-radius: 50%; background: #c3c9d2; transition: background .4s; }
+.punto.vivo { background: var(--ok); box-shadow: 0 0 0 0 rgba(30,122,70,.4); animation: latido 2.4s ease-out infinite; }
+@keyframes latido { 0% { box-shadow: 0 0 0 0 rgba(30,122,70,.35); } 70% { box-shadow: 0 0 0 7px rgba(30,122,70,0); } 100% { box-shadow: 0 0 0 0 rgba(30,122,70,0); } }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.tile { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; height: 138px;
+        display: flex; flex-direction: column; box-shadow: var(--shadow); overflow: hidden; }
+.tile .et { font-size: 13px; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; white-space: nowrap; }
+.tile .val { font-size: 24px; font-weight: 650; line-height: 1.25; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile .sub { font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; height: 18px; }
+.tile canvas { width: 100%; height: 40px; margin-top: auto; display: block; }
+.barra { height: 8px; border-radius: 4px; background: var(--barra); overflow: hidden; }
+.barra > i { display: block; height: 100%; width: 0; border-radius: 4px; background: var(--accent); transition: width .8s ease, background-color .6s; }
+.barra.ok > i { background: var(--ok); } .barra.warn > i { background: #d48806; } .barra.bad > i { background: var(--bad); }
+.val.ok { color: var(--text); } .val.warn { color: var(--warn); } .val.bad { color: var(--bad); }
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 900px) { .cols { grid-template-columns: 1fr; } }
+.mon .card h2 { font-size: 17px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+.mon .card h2 small { font-size: 13px; font-weight: 400; color: var(--muted); }
+.nucleos { display: grid; grid-template-columns: repeat(auto-fill, minmax(26px, 1fr)); gap: 6px; height: 92px; align-items: end; }
+.nucleo { height: 92px; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 3px; }
+.nucleo .col { width: 100%; max-width: 22px; height: 70px; background: var(--barra); border-radius: 4px; position: relative; overflow: hidden; }
+.nucleo .col > i { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: var(--accent); transition: height .8s ease, background-color .6s; border-radius: 4px; }
+.nucleo span { font-size: 11px; color: var(--muted); }
+.fila { display: grid; grid-template-columns: minmax(90px, 1.2fr) 2fr 92px; gap: 10px; align-items: center; padding: 5px 0; font-size: 14px; }
+.fila .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fila .v { text-align: right; color: var(--muted); white-space: nowrap; }
+table.procs { width: 100%; table-layout: fixed; font-size: 14px; border-collapse: collapse; }
+table.procs th { text-align: left; color: var(--muted); font-weight: 500; font-size: 12.5px; padding: 4px 6px; cursor: pointer; user-select: none; }
+table.procs th.act { color: var(--accent); }
+table.procs td { padding: 0 6px; height: 30px; border-top: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+table.procs td.num { text-align: right; }
+table.procs .mini { display: inline-block; width: 46px; height: 6px; background: var(--barra); border-radius: 3px; vertical-align: middle; margin-left: 6px; overflow: hidden; }
+table.procs .mini > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .8s ease; }
+.discos-salud > span { grid-column: 1 / -1; }
+.discos-salud { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.disco { border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+.disco .t { display: flex; justify-content: space-between; gap: 8px; font-weight: 600; }
+.disco dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; font-size: 13.5px; margin-top: 8px; }
+.disco dt { color: var(--muted); } .disco dd { text-align: right; }
+.kv2 { display: grid; grid-template-columns: max-content 1fr; gap: 5px 16px; font-size: 14px; }
+.kv2 dt { color: var(--muted); } .kv2 dd { overflow-wrap: anywhere; }
+.rangos { display: inline-flex; gap: 4px; }
+.rangos button { border: 1px solid var(--line); background: var(--card); border-radius: 7px; padding: 3px 10px; font-size: 13px; cursor: pointer; color: var(--muted); }
+.rangos button.act { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-soft); }
+.graficas { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+.grafica .et { font-size: 13px; color: var(--muted); display: flex; justify-content: space-between; margin-bottom: 4px; }
+.grafica canvas { width: 100%; height: 130px; display: block; }
+.sin-datos { opacity: .55; transition: opacity .6s; }
+.chip { display: inline-block; padding: 1px 9px; border-radius: 10px; font-size: 12.5px; }
+.chip.ok { background: var(--ok-soft); color: var(--ok); } .chip.warn, .chip.atencion { background: var(--warn-soft); color: var(--warn); }
+.chip.bad, .chip.mal { background: var(--bad-soft); color: var(--bad); } .chip.gris { background: var(--bg); color: var(--muted); }
+.mon .muted { color: var(--muted); }
+</style>
+
+<div class="mon" id="mon">
+  <p class="small"><a href="{{ url_for('monitorizacion') }}">← Monitorización</a> · <a href="{{ url_for('equipo', system_id=s.id) }}">Ficha de {{ s.hostname }}</a></p>
+  <div class="mon-cab">
+    <div><h1>{{ s.hostname }}</h1>
+      <div class="muted small" id="m-cab">Esperando los primeros datos del equipo…</div></div>
+    <div class="estado"><span class="punto" id="m-punto"></span><span id="m-estado">conectando…</span></div>
+  </div>
+  <div id="m-avisos"></div>
+
+  <div class="tiles" id="m-tiles">
+    <div class="tile"><div class="et">Procesador <span id="t-cpu-mhz"></span></div><div class="val" id="t-cpu">–</div><div class="sub" id="t-cpu-sub">&nbsp;</div><canvas id="g-cpu"></canvas></div>
+    <div class="tile"><div class="et">Memoria</div><div class="val" id="t-ram">–</div><div class="sub" id="t-ram-sub">&nbsp;</div><canvas id="g-ram"></canvas></div>
+    <div class="tile"><div class="et" title="Lo que lee y escribe en disco por segundo">Disco</div><div class="val" id="t-io">–</div><div class="sub" id="t-io-sub">&nbsp;</div><canvas id="g-io"></canvas></div>
+    <div class="tile"><div class="et" title="Lo que baja (↓) y sube (↑) por segundo">Red <span>↓ bajada</span></div><div class="val" id="t-red">–</div><div class="sub" id="t-red-sub">&nbsp;</div><canvas id="g-red"></canvas></div>
+    <div class="tile"><div class="et" title="La temperatura más alta del equipo">Temperatura</div><div class="val" id="t-temp">–</div><div class="sub" id="t-temp-sub">&nbsp;</div><canvas id="g-temp"></canvas></div>
+    <div class="tile"><div class="et">Batería</div><div class="val" id="t-bat">–</div><div class="sub" id="t-bat-sub">&nbsp;</div>
+      <div class="barra" style="margin-top:auto"><i id="t-bat-b"></i></div></div>
+  </div>
+
+  <div class="cols">
+    <div class="card"><h2>Procesador <small id="p-modelo"></small></h2>
+      <div class="nucleos" id="p-nucleos"></div>
+      <div class="small muted" style="margin-top:8px" id="p-extra">&nbsp;</div></div>
+    <div class="card"><h2>Memoria <small id="r-total"></small></h2>
+      <div class="fila"><span class="n">En uso</span><div class="barra"><i id="r-uso"></i></div><span class="v" id="r-uso-v">–</span></div>
+      <div class="fila"><span class="n">Disponible</span><div class="barra ok"><i id="r-disp"></i></div><span class="v" id="r-disp-v">–</span></div>
+      <div class="fila"><span class="n">Intercambio (swap)</span><div class="barra"><i id="r-swap"></i></div><span class="v" id="r-swap-v">–</span></div>
+      <div class="small muted" style="margin-top:6px" id="r-extra">&nbsp;</div></div>
+  </div>
+
+  <div class="card"><h2>Lo que más está gastando <small><span id="pr-n"></span> procesos · pulsa en la columna para ordenar</small></h2>
+    <table class="procs"><colgroup><col style="width:46%"><col style="width:14%"><col style="width:20%"><col style="width:20%"></colgroup>
+      <thead><tr><th>Programa</th><th class="num">PID</th><th class="num act" data-orden="cpu">Procesador ▾</th><th class="num" data-orden="ram">Memoria</th></tr></thead>
+      <tbody id="pr-body"></tbody></table></div>
+
+  <div class="cols">
+    <div class="card"><h2>Espacio en disco</h2><div id="d-vol"><span class="muted small">–</span></div></div>
+    <div class="card"><h2>Red <small id="n-ips"></small></h2><div id="n-ifs"><span class="muted small">–</span></div></div>
+  </div>
+
+  <div class="card"><h2>Salud de los discos <small id="s-cuando"></small></h2>
+    <div class="discos-salud" id="s-discos"><span class="muted small">Se mira cada 10 minutos. Los primeros datos tardan un poco.</span></div></div>
+
+  <div class="cols">
+    <div class="card"><h2>Temperaturas y ventiladores</h2><div id="tv"><span class="muted small">–</span></div></div>
+    <div class="card"><h2>Batería</h2><div id="bat"><span class="muted small">Este equipo no tiene batería (o no la da a conocer).</span></div></div>
+  </div>
+
+  <div class="cols">
+    <div class="card"><h2>Seguridad y mantenimiento</h2><dl class="kv2" id="seg"><dt class="muted">–</dt><dd></dd></dl></div>
+    <div class="card"><h2>El equipo</h2><dl class="kv2" id="inv"><dt class="muted">–</dt><dd></dd></dl></div>
+  </div>
+
+  <div class="card"><h2>Historial <span class="rangos" id="rangos">
+      <button data-h="1" class="act">1 hora</button><button data-h="24">24 horas</button><button data-h="168">7 días</button><button data-h="720">30 días</button></span></h2>
+    <div class="graficas">
+      <div class="grafica"><div class="et">Procesador (%)<span id="h-cpu"></span></div><canvas id="h-g-cpu"></canvas></div>
+      <div class="grafica"><div class="et">Memoria (%)<span id="h-ram"></span></div><canvas id="h-g-ram"></canvas></div>
+      <div class="grafica"><div class="et">Temperatura (°C)<span id="h-temp"></span></div><canvas id="h-g-temp"></canvas></div>
+      <div class="grafica"><div class="et">Red (bajada y subida)<span id="h-red"></span></div><canvas id="h-g-red"></canvas></div>
+      <div class="grafica"><div class="et">Disco más lleno (%)<span id="h-disco"></span></div><canvas id="h-g-disco"></canvas></div>
+      <div class="grafica"><div class="et">Batería (%)<span id="h-bat"></span></div><canvas id="h-g-bat"></canvas></div>
+    </div>
+    <p class="small muted" style="margin-top:8px">Cada punto es el máximo de ese rato, para que no se escapen los picos.</p></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const API = "{{ url_for('api_monitor', system_id=s.id) }}";
+  const $ = (id) => document.getElementById(id);
+  const css = getComputedStyle(document.documentElement);
+  const C = { accent: css.getPropertyValue('--accent').trim() || '#2f5fd0', ok: css.getPropertyValue('--ok').trim() || '#1e7a46',
+              bad: css.getPropertyValue('--bad').trim() || '#b42318', warn: '#d48806', linea: css.getPropertyValue('--line').trim() || '#e4e7eb',
+              muted: css.getPropertyValue('--muted').trim() || '#616e7c' };
+  // ---------------------------------------------------------------- formatos
+  const nf1 = new Intl.NumberFormat('es-ES', { maximumFractionDigits: 1 });
+  const nf0 = new Intl.NumberFormat('es-ES', { maximumFractionDigits: 0 });
+  function bytes(b) { if (b == null || isNaN(b)) return '–'; const u = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']; let i = 0;
+    while (Math.abs(b) >= 1024 && i < u.length - 1) { b /= 1024; i++; } return (i >= 2 ? nf1 : nf0).format(b) + ' ' + u[i]; }
+  const vel = (b) => b == null ? '–' : bytes(b) + '/s';
+  const mbit = (b) => b == null ? '' : nf1.format(b * 8 / 1e6) + ' Mbit/s';
+  function dur(s) { if (s == null) return '–'; s = Math.round(s); const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+    return d ? `${d} día${d > 1 ? 's' : ''} ${h} h` : h ? `${h} h ${m} min` : `${m} min`; }
+  const pct = (v) => v == null ? '–' : nf0.format(v) + ' %';
+  const nivel = (v, a, b) => v == null ? '' : v >= b ? 'bad' : v >= a ? 'warn' : 'ok';
+  // solo se toca el DOM si el valor cambia (nada de repintar de más)
+  function txt(el, v) { if (typeof el === 'string') el = $(el); if (el && el.textContent !== String(v)) el.textContent = v; }
+  function cls(el, c) { if (typeof el === 'string') el = $(el); if (el && el.className !== c) el.className = c; }
+  function ancho(el, p) { if (typeof el === 'string') el = $(el); if (!el) return; const w = Math.max(0, Math.min(100, p || 0)).toFixed(1) + '%';
+    if (el.style.width !== w) el.style.width = w; }
+  function barra(i, p, a, b) { ancho(i, p); const n = nivel(p, a, b); cls(i.parentNode, 'barra ' + n); }
+
+  // ---------------------------------------------------------------- mini graficas (canvas: redibujar no mueve nada)
+  const serie = { cpu: [], ram: [], io: [], red: [], red2: [], temp: [] };
+  const MAXP = 60;
+  function lienzo(c) { const r = window.devicePixelRatio || 1, w = c.clientWidth, h = c.clientHeight;
+    if (c.width !== Math.round(w * r) || c.height !== Math.round(h * r)) { c.width = Math.round(w * r); c.height = Math.round(h * r); }
+    const x = c.getContext('2d'); x.setTransform(r, 0, 0, r, 0, 0); x.clearRect(0, 0, w, h); return [x, w, h]; }
+  function spark(id, datos, max, color, datos2, color2) {
+    const c = $(id); if (!c) return; const [x, w, h] = lienzo(c);
+    const tope = max || Math.max(1, ...datos.filter(v => v != null), ...(datos2 || []).filter(v => v != null)) * 1.15;
+    function linea(d, col, relleno) { const n = d.length; if (n < 2) return; x.beginPath();
+      d.forEach((v, i) => { const px = (i + MAXP - n) / (MAXP - 1) * w, py = h - 2 - (Math.min(v || 0, tope) / tope) * (h - 4); i ? x.lineTo(px, py) : x.moveTo(px, py); });
+      x.strokeStyle = col; x.lineWidth = 1.6; x.lineJoin = 'round'; x.stroke();
+      if (relleno) { x.lineTo(w, h); x.lineTo((MAXP - n) / (MAXP - 1) * w, h); x.closePath(); x.globalAlpha = .12; x.fillStyle = col; x.fill(); x.globalAlpha = 1; } }
+    linea(datos, color, true); if (datos2) linea(datos2, color2, false);
+  }
+  function empuja(k, v) { serie[k].push(v); if (serie[k].length > MAXP) serie[k].shift(); }
+
+  // ---------------------------------------------------------------- procesos: media suave para que la lista no baile
+  const ema = {}; let orden = 'cpu';
+  document.querySelectorAll('table.procs th[data-orden]').forEach(th => th.addEventListener('click', () => {
+    orden = th.dataset.orden; document.querySelectorAll('table.procs th[data-orden]').forEach(o => {
+      o.classList.toggle('act', o === th); o.textContent = o.textContent.replace(' ▾', '') + (o === th ? ' ▾' : ''); }); ultimoProcs && procesos(ultimoProcs); }));
+  const FILAS = 12; const tb = $('pr-body');
+  for (let i = 0; i < FILAS; i++) { const tr = document.createElement('tr');
+    tr.innerHTML = '<td>&nbsp;</td><td class="num muted"></td><td class="num"><span></span><span class="mini"><i></i></span></td><td class="num"></td>'; tb.appendChild(tr); }
+  let ultimoProcs = null;
+  function procesos(lista) {
+    ultimoProcs = lista; const vivos = new Set();
+    lista.forEach(p => { const k = p.pid + ':' + p.nombre; vivos.add(k); const e = ema[k] || { cpu: p.cpu, ram: p.ram };
+      e.cpu = e.cpu * .55 + p.cpu * .45; e.ram = p.ram; e.p = p; ema[k] = e; });
+    Object.keys(ema).forEach(k => { if (!vivos.has(k)) delete ema[k]; });
+    const top = Object.values(ema).sort((a, b) => orden === 'cpu' ? (b.cpu - a.cpu) || (b.ram - a.ram) : b.ram - a.ram).slice(0, FILAS);
+    const maxc = Math.max(25, ...top.map(e => e.p.cpu));
+    [...tb.rows].forEach((tr, i) => { const e = top[i]; const td = tr.cells;
+      td[2].querySelector('.mini').style.visibility = e ? 'visible' : 'hidden';
+      if (!e) { txt(td[0], ' '); txt(td[1], ''); txt(td[2].firstChild, ''); ancho(td[2].querySelector('i'), 0); txt(td[3], ''); return; }
+      txt(td[0], e.p.nombre); td[0].title = e.p.nombre; txt(td[1], e.p.pid); txt(td[2].firstChild, nf1.format(e.p.cpu) + ' %');
+      ancho(td[2].querySelector('i'), e.p.cpu / maxc * 100); txt(td[3], bytes(e.p.ram)); });
+  }
+
+  // ---------------------------------------------------------------- listas con clave (se añaden o quitan filas, no se rehacen)
+  function lista(cont, items, clave, crear, poner) {
+    if (typeof cont === 'string') cont = $(cont);
+    if (!items.length) return false;
+    if (cont.dataset.lista !== '1') { cont.innerHTML = ''; cont.dataset.lista = '1'; }
+    const hay = {}; [...cont.children].forEach(el => hay[el.dataset.k] = el);
+    const vistos = new Set();
+    items.forEach((it, i) => { const k = clave(it); vistos.add(k); let el = hay[k];
+      if (!el) { el = crear(it); el.dataset.k = k; cont.appendChild(el); } poner(el, it); if (cont.children[i] !== el) cont.insertBefore(el, cont.children[i]); });
+    Object.keys(hay).forEach(k => { if (!vistos.has(k)) hay[k].remove(); });
+    return true;
+  }
+  const filaBarra = () => { const d = document.createElement('div'); d.className = 'fila';
+    d.innerHTML = '<span class="n"></span><div class="barra"><i></i></div><span class="v"></span>'; return d; };
+
+  // ---------------------------------------------------------------- pintar
+  function pintar(r) {
+    const d = r.datos || {}, L = d.lento || {}, inv = L.inventario || {};
+    const edad = d.recibido ? r.ahora - d.recibido : null;
+    const vivo = edad != null && edad < 15;
+    cls('m-punto', 'punto' + (vivo ? ' vivo' : ''));
+    txt('m-estado', edad == null ? 'sin datos todavía' : vivo ? 'en directo' : 'último dato hace ' + dur(edad));
+    $('mon').classList.toggle('sin-datos', edad != null && edad > 180);
+    txt('m-cab', [inv.sistema || (d.so ? d.so : ''), d.uptime_s != null ? 'encendido hace ' + dur(d.uptime_s) : '',
+                  (d.usuarios || []).length ? 'usando: ' + d.usuarios.join(', ') : 'nadie con sesión iniciada'].filter(Boolean).join(' · '));
+    // avisos
+    const av = $('m-avisos'); const html = (r.avisos || []).map(a => `<div class="notice ${a.nivel === 'problema' ? 'problema' : 'atencion'}"><strong>${esc(a.titulo)}</strong>${esc(a.por_que)} ${esc(a.pasos.slice(0, 2).join(' '))}</div>`).join('');
+    if (av.dataset.h !== html) { av.innerHTML = html; av.dataset.h = html; }
+    // procesador
+    const cpu = d.cpu || {};
+    if (cpu.total != null) { txt('t-cpu', pct(cpu.total)); cls('t-cpu', 'val ' + nivel(cpu.total, 75, 92)); empuja('cpu', cpu.total); }
+    txt('t-cpu-mhz', cpu.mhz ? nf1.format(cpu.mhz / 1000) + ' GHz' : '');
+    txt('t-cpu-sub', cpu.carga ? 'carga ' + cpu.carga.map(v => nf1.format(v)).join(' · ') : (d.n_procesos ? d.n_procesos + ' procesos' : ' '));
+    spark('g-cpu', serie.cpu, 100, C.accent);
+    txt('p-modelo', [inv.cpu, inv.nucleos ? inv.nucleos + ' núcleos' : ''].filter(Boolean).join(' · '));
+    const nuc = cpu.nucleos || [], pn = $('p-nucleos');
+    if (pn.children.length !== nuc.length) { pn.innerHTML = nuc.map((_, i) => `<div class="nucleo" title="Núcleo ${i + 1}"><div class="col"><i></i></div><span>${i + 1}</span></div>`).join('');
+      pn.style.gridTemplateColumns = `repeat(${Math.min(nuc.length, 32)}, minmax(14px, 1fr))`; pn.style.height = nuc.length > 32 ? 'auto' : ''; }
+    nuc.forEach((v, i) => { const b = pn.children[i].querySelector('i'); const h = Math.max(2, v).toFixed(0) + '%'; if (b.style.height !== h) b.style.height = h;
+      const col = v >= 92 ? C.bad : v >= 75 ? C.warn : C.accent; if (b.style.backgroundColor !== col) b.style.backgroundColor = col; });
+    txt('p-extra', [d.n_procesos ? d.n_procesos + ' procesos' : '', cpu.carga ? 'carga media (1, 5, 15 min): ' + cpu.carga.map(v => nf1.format(v)).join(' · ') : ''].filter(Boolean).join(' · ') || ' ');
+    // memoria
+    const ram = d.ram || {};
+    if (ram.total) { const p = 100 * ram.usada / ram.total; txt('t-ram', pct(p)); cls('t-ram', 'val ' + nivel(p, 85, 95)); empuja('ram', p);
+      txt('t-ram-sub', bytes(ram.usada) + ' de ' + bytes(ram.total)); txt('r-total', bytes(ram.total));
+      barra($('r-uso'), p, 85, 95); txt('r-uso-v', bytes(ram.usada)); ancho('r-disp', 100 * ram.disponible / ram.total); txt('r-disp-v', bytes(ram.disponible));
+      const sp = ram.swap_total ? 100 * ram.swap_usada / ram.swap_total : 0; barra($('r-swap'), sp, 50, 80);
+      txt('r-swap-v', ram.swap_total ? bytes(ram.swap_usada) + ' / ' + bytes(ram.swap_total) : 'no tiene');
+      txt('r-extra', ram.cache ? 'En caché (se libera si hace falta): ' + bytes(ram.cache) : ' '); }
+    spark('g-ram', serie.ram, 100, '#7a4cc2');
+    // disco (lectura/escritura)
+    const io = d.io || {};
+    const ioTot = (io.lectura_bs || 0) + (io.escritura_bs || 0) + (io.total_bs || 0);
+    if (Object.keys(io).length) { empuja('io', ioTot); txt('t-io', vel(ioTot));
+      txt('t-io-sub', io.lectura_bs != null ? 'lee ' + vel(io.lectura_bs) + ' · escribe ' + vel(io.escritura_bs) : (io.ocupado_pct != null ? 'ocupado ' + pct(io.ocupado_pct) : ' ')); }
+    spark('g-io', serie.io, 0, '#0f8b8d');
+    // red
+    const red = d.red || {};
+    if (red.rx_bs != null) { empuja('red', red.rx_bs); empuja('red2', red.tx_bs); txt('t-red', vel(red.rx_bs)); txt('t-red-sub', '↑ ' + vel(red.tx_bs) + ' · ' + mbit(red.rx_bs)); }
+    spark('g-red', serie.red, 0, C.accent, serie.red2, '#e07b39');
+    lista('n-ifs', (red.interfaces || []).filter(i => i.rx_bs > 0 || i.tx_bs > 0 || (red.interfaces || []).length <= 4), i => i.nombre, filaBarra, (el, i) => {
+      txt(el.children[0], i.nombre); const tope = Math.max(1, ...(red.interfaces || []).map(x => x.rx_bs + x.tx_bs));
+      ancho(el.querySelector('i'), (i.rx_bs + i.tx_bs) / tope * 100); txt(el.children[2], '↓' + vel(i.rx_bs).replace('/s', '') + ' ↑' + vel(i.tx_bs).replace('/s', '')); });
+    txt('n-ips', (inv.ips || []).join(' · '));
+    // temperatura
+    const temps = (d.temperaturas || []).filter(t => t.c != null);
+    const tmax = temps.length ? Math.max(...temps.map(t => t.c)) : null;
+    if (tmax != null) { txt('t-temp', nf0.format(tmax) + ' °C'); cls('t-temp', 'val ' + nivel(tmax, 80, 92)); empuja('temp', tmax);
+      txt('t-temp-sub', temps.find(t => t.c === tmax).nombre); } else { txt('t-temp', '–'); txt('t-temp-sub', 'el equipo no la da a conocer'); }
+    spark('g-temp', serie.temp, 0, C.bad);
+    const tv = temps.map(t => ({ k: 't' + t.nombre, n: t.nombre, p: t.c, v: nf0.format(t.c) + ' °C', a: 75, b: 90 }))
+      .concat((d.ventiladores || []).map(f => ({ k: 'f' + f.nombre, n: '🌀 ' + f.nombre, p: Math.min(100, f.rpm / 50), v: nf0.format(f.rpm) + ' rpm', a: 101, b: 101 })));
+    if (!lista('tv', tv, x => x.k, filaBarra, (el, x) => { txt(el.children[0], x.n); barra(el.querySelector('i'), x.p, x.a, x.b); txt(el.children[2], x.v); }))
+      txt('tv', d.so === 'darwin' ? 'macOS no deja leer las temperaturas sin herramientas extra.' : 'Este equipo no da a conocer sus temperaturas.');
+    // bateria
+    const b = d.bateria;
+    if (b && b.porcentaje != null) {
+      txt('t-bat', pct(b.porcentaje)); cls('t-bat', 'val ' + (b.porcentaje < 15 && !b.enchufado ? 'bad' : b.porcentaje < 30 && !b.enchufado ? 'warn' : 'ok'));
+      txt('t-bat-sub', (b.cargando ? 'cargando' : b.enchufado ? 'enchufado' : 'con batería') + (b.minutos ? ' · ' + dur(b.minutos * 60) + (b.cargando ? ' para llenarse' : ' de uso') : ''));
+      barra($('t-bat-b'), b.porcentaje, 101, 101); cls($('t-bat-b').parentNode, 'barra ' + (b.porcentaje < 15 ? 'bad' : b.porcentaje < 30 ? 'warn' : 'ok'));
+      const salud = b.salud_pct, filas = [
+        ['Carga', pct(b.porcentaje)], ['Estado', b.cargando ? 'Cargando' : b.enchufado ? 'Enchufado' : 'Gastando batería'],
+        ['Tiempo', b.minutos ? dur(b.minutos * 60) + (b.cargando ? ' para llenarse' : ' de uso') : '–'],
+        ['Salud', salud != null ? `${nf0.format(salud)} % de cuando era nueva` : '–'], ['Ciclos de carga', b.ciclos ?? '–'],
+        ['Temperatura', b.temperatura != null ? nf1.format(b.temperatura) + ' °C' : null], ['Modelo', b.modelo || b.fabricante || null]].filter(f => f[1] != null);
+      const h = `<div class="fila"><span class="n">Salud</span><div class="barra ${salud == null ? '' : salud < 50 ? 'bad' : salud < 75 ? 'warn' : 'ok'}"><i style="width:${salud || 0}%"></i></div><span class="v">${salud != null ? nf0.format(salud) + ' %' : '–'}</span></div>
+        <dl class="kv2" style="margin-top:8px">${filas.map(f => `<dt>${f[0]}</dt><dd>${esc(String(f[1]))}</dd>`).join('')}</dl>`;
+      const bc = $('bat'); if (bc.dataset.h !== h) { bc.innerHTML = h; bc.dataset.h = h; }
+    } else { txt('t-bat', '–'); txt('t-bat-sub', 'sin batería'); }
+    // espacio en disco
+    lista('d-vol', (d.discos || []).filter(x => x.total), x => x.montaje, filaBarra, (el, x) => {
+      const p = 100 * x.usado / x.total; txt(el.children[0], (x.etiqueta ? x.etiqueta + ' ' : '') + x.montaje); el.children[0].title = (x.dispositivo || '') + ' ' + (x.fs || '');
+      barra(el.querySelector('i'), p, 85, 95); txt(el.children[2], bytes(x.libre) + ' libres'); el.title = `${bytes(x.usado)} usados de ${bytes(x.total)} (${nf0.format(p)} %)`; });
+    // salud de los discos
+    const sal = L.discos_salud || [];
+    txt('s-cuando', d.lento_t ? 'comprobado hace ' + dur(r.ahora - d.lento_t) : '');
+    if (sal.length) {
+      const nombreEst = { ok: 'Bien', atencion: 'Atención', mal: 'Fallando' };
+      const h = sal.map(x => { const vida = x.desgaste_pct != null ? Math.max(0, 100 - x.desgaste_pct) : null;
+        const fil = [['Tipo', x.tipo], ['Capacidad', x.capacidad ? bytes(x.capacidad) : null],
+          ['Vida restante', vida != null ? nf0.format(vida) + ' %' : null], ['Horas encendido', x.horas != null ? nf0.format(x.horas) + ' h (' + nf1.format(x.horas / 8760) + ' años)' : null],
+          ['Temperatura', x.temperatura != null ? x.temperatura + ' °C' : null], ['Datos escritos', x.escritos ? bytes(x.escritos) : null],
+          ['Veces encendido', x.encendidos], ['Sectores dañados', x.reasignados != null ? x.reasignados + (x.pendientes ? ' (+' + x.pendientes + ' pendientes)' : '') : null],
+          ['Errores', (x.errores_medio || x.incorregibles || x.errores_lectura || x.errores_escritura) ? (x.errores_medio || 0) + (x.incorregibles || 0) + (x.errores_lectura || 0) + (x.errores_escritura || 0) : (x.errores_medio != null || x.errores_lectura != null ? 0 : null)],
+          ['Reserva', x.reserva_pct != null ? x.reserva_pct + ' %' : null], ['Nº de serie', x.serie]].filter(f => f[1] != null && f[1] !== '');
+        return `<div class="disco"><div class="t"><span>${esc(x.modelo || x.disco)}</span><span class="chip ${x.estado}">${nombreEst[x.estado] || '–'}</span></div>
+          ${vida != null ? `<div class="fila" style="grid-template-columns:auto 1fr 50px"><span class="n small muted">Vida</span><div class="barra ${vida < 10 ? 'bad' : vida < 25 ? 'warn' : 'ok'}"><i style="width:${vida}%"></i></div><span class="v small">${nf0.format(vida)} %</span></div>` : ''}
+          <dl>${fil.map(f => `<dt>${f[0]}</dt><dd>${esc(String(f[1]))}</dd>`).join('')}</dl></div>`; }).join('');
+      const sc = $('s-discos'); if (sc.dataset.h !== h) { sc.innerHTML = h; sc.dataset.h = h; }
+    } else if (L.inventario) { const m = '<span class="muted small">' + (d.so === 'linux' ? 'Para ver la salud de los discos hace falta smartmontools en el equipo (se instala solo con el agente; o: sudo apt install smartmontools).' : 'Este equipo no da a conocer la salud de sus discos.') + '</span>';
+      const sc = $('s-discos'); if (sc.dataset.h !== m) { sc.innerHTML = m; sc.dataset.h = m; } }
+    // seguridad y mantenimiento
+    if (L.inventario || L.actualizaciones) {
+      const a = L.actualizaciones || {}, v = L.antivirus || {}, sc = L.servicios_caidos || [];
+      const segF = [
+        ['Actualizaciones', a.pendientes == null ? 'comprobando…' : a.pendientes === 0 ? '<span class="chip ok">Al día</span>' : `<span class="chip warn">${a.pendientes} pendientes</span>${a.seguridad ? ` <span class="chip bad">${a.seguridad} de seguridad</span>` : ''}`],
+        ['Reinicio pendiente', a.reinicio ? '<span class="chip warn">Sí, hay que reiniciar</span>' : 'No'],
+        ['Antivirus', v.aplica === false && !v.nombre ? 'No aplica' : `${esc(v.nombre || 'ninguno')} ${v.tiempo_real === false ? '<span class="chip bad">protección apagada</span>' : v.activo ? '<span class="chip ok">activo</span>' : ''}`],
+        ['Firmas del antivirus', v.firmas ? new Date(v.firmas).toLocaleString('es-ES') : null],
+        ['Cortafuegos', v.cortafuegos === undefined ? null : v.cortafuegos ? 'Activado' : '<span class="chip warn">Apagado</span>'],
+        ['Servicios parados', sc.length ? `<span class="chip warn">${sc.length}</span> ${esc(sc.slice(0, 6).join(', '))}${sc.length > 6 ? '…' : ''}` : 'Ninguno']].filter(f => f[1] != null);
+      const h = segF.map(f => `<dt>${f[0]}</dt><dd>${f[1]}</dd>`).join(''); const e = $('seg'); if (e.dataset.h !== h) { e.innerHTML = h; e.dataset.h = h; }
+    }
+    if (L.inventario) {
+      const f = [['Fabricante', inv.fabricante], ['Modelo', inv.modelo], ['Nº de serie', inv.serie], ['Procesador', inv.cpu],
+        ['Núcleos', inv.nucleos ? inv.nucleos + (inv.nucleos_fisicos ? ` (${inv.nucleos_fisicos} físicos)` : '') : null], ['Memoria', inv.ram_total ? bytes(inv.ram_total) : null],
+        ['Gráfica', (inv.graficas || []).join(', ')], ['Sistema', inv.sistema + (inv.compilacion ? ' (compilación ' + inv.compilacion + ')' : '')],
+        ['Arquitectura', inv.arquitectura], ['Placa base', inv.placa], ['BIOS / firmware', inv.bios], ['Nombre en la red', inv.nombre],
+        ['Dominio', inv.dominio], ['Encendido desde', d.uptime_s != null ? new Date((r.ahora - d.uptime_s) * 1000).toLocaleString('es-ES') : null]]
+        .filter(x => x[1] != null && x[1] !== '' && x[1] !== 'undefined');
+      const h = f.map(x => `<dt>${x[0]}</dt><dd>${esc(String(x[1]))}</dd>`).join(''); const e = $('inv'); if (e.dataset.h !== h) { e.innerHTML = h; e.dataset.h = h; }
+    }
+    if (d.procesos) { procesos(d.procesos); txt('pr-n', d.n_procesos || d.procesos.length); }
+  }
+  function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]); }
+
+  // ---------------------------------------------------------------- historial
+  let horas = 1, histCuando = 0;
+  document.querySelectorAll('#rangos button').forEach(bt => bt.addEventListener('click', () => {
+    horas = +bt.dataset.h; document.querySelectorAll('#rangos button').forEach(o => o.classList.toggle('act', o === bt)); histCuando = 0; pedir(true); }));
+  function grafica(id, ts, datos, color, max, datos2, color2, fmt) {
+    const c = $(id); if (!c) return; const [x, w, h] = lienzo(c);
+    const izq = 4, abajo = 16, alto = h - abajo - 4;
+    const t0 = Date.now() / 1000 - horas * 3600, t1 = Date.now() / 1000;
+    const vals = datos.concat(datos2 || []).filter(v => v != null);
+    const tope = max || Math.max(1, ...vals) * 1.15;
+    x.strokeStyle = C.linea; x.lineWidth = 1; x.fillStyle = C.muted; x.font = '11px system-ui'; x.textBaseline = 'top';
+    [0, .5, 1].forEach(f => { const y = 4 + alto * (1 - f); x.beginPath(); x.moveTo(izq, y); x.lineTo(w, y); x.stroke(); });
+    x.fillText(fmt ? fmt(tope) : nf0.format(tope), izq + 2, 5);
+    const et = horas <= 24 ? (t => new Date(t * 1000).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }))
+                           : (t => new Date(t * 1000).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }));
+    [0, .5, 1].forEach(f => { const t = t0 + (t1 - t0) * f; const s = et(t); const tw = x.measureText(s).width;
+      x.fillText(s, Math.min(w - tw, Math.max(izq, izq + (w - izq) * f - tw / 2)), h - abajo + 3); });
+    function linea(d, col, relleno) { x.beginPath(); let empezado = false, ant = null;
+      d.forEach((v, i) => { if (v == null) { empezado = false; return; } const px = izq + (ts[i] - t0) / (t1 - t0) * (w - izq), py = 4 + alto * (1 - Math.min(v, tope) / tope);
+        if (!empezado || (ant != null && ts[i] - ant > 3 * pasoH)) { x.moveTo(px, py); empezado = true; } else x.lineTo(px, py); ant = ts[i]; });
+      x.strokeStyle = col; x.lineWidth = 1.6; x.lineJoin = 'round'; x.stroke(); }
+    linea(datos, color); if (datos2) linea(datos2, color2);
+  }
+  let pasoH = 60;
+  function pintarHist(hh) {
+    pasoH = hh.paso || 60; const ts = hh.t;
+    const ult = (a) => { for (let i = a.length - 1; i >= 0; i--) if (a[i] != null) return a[i]; return null; };
+    const maxv = (a) => { const v = a.filter(x => x != null); return v.length ? Math.max(...v) : null; };
+    grafica('h-g-cpu', ts, hh.cpu, C.accent, 100); txt('h-cpu', maxv(hh.cpu) != null ? 'máx. ' + pct(maxv(hh.cpu)) : 'sin datos');
+    grafica('h-g-ram', ts, hh.ram, '#7a4cc2', 100); txt('h-ram', maxv(hh.ram) != null ? 'máx. ' + pct(maxv(hh.ram)) : 'sin datos');
+    grafica('h-g-temp', ts, hh.temp, C.bad, 0); txt('h-temp', maxv(hh.temp) != null ? 'máx. ' + nf0.format(maxv(hh.temp)) + ' °C' : 'sin datos');
+    grafica('h-g-red', ts, hh.rx, C.accent, 0, hh.tx, '#e07b39', vel); txt('h-red', maxv(hh.rx) != null ? 'máx. ↓' + vel(maxv(hh.rx)) : 'sin datos');
+    grafica('h-g-disco', ts, hh.disco, '#0f8b8d', 100); txt('h-disco', ult(hh.disco) != null ? 'ahora ' + pct(ult(hh.disco)) : 'sin datos');
+    grafica('h-g-bat', ts, hh.bateria, C.ok, 100); txt('h-bat', ult(hh.bateria) != null ? 'ahora ' + pct(ult(hh.bateria)) : 'sin batería');
+  }
+
+  // ---------------------------------------------------------------- bucle (se para si la pestaña no se ve)
+  let pidiendo = false, ultimaHist = null;
+  async function pedir(forzarHist) {
+    if (pidiendo || document.hidden) return; pidiendo = true;
+    const conHist = forzarHist || Date.now() - histCuando > 60000;
+    try {
+      const r = await fetch(API + (conHist ? '?horas=' + horas : ''), { headers: { 'X-Auto': '1' }, credentials: 'same-origin' });
+      if (r.status === 401 || r.redirected) { location.reload(); return; }
+      const j = await r.json();
+      pintar(j);
+      if (j.historial) { ultimaHist = j.historial; histCuando = Date.now(); pintarHist(j.historial); }
+    } catch (e) { txt('m-estado', 'sin conexión con el servidor…'); cls('m-punto', 'punto'); }
+    finally { pidiendo = false; }
+  }
+  pedir(true);
+  setInterval(pedir, 2500);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) pedir(); });
+  window.addEventListener('resize', () => { if (ultimaHist) pintarHist(ultimaHist); });
+})();
+</script>
+{% endblock %}

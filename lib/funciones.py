@@ -152,6 +152,10 @@ FUNCIONES: list[dict] = [
     {"clave": "buscar_equipos", "grupo": "equipos", "nivel": "basico", "defecto": True,
      "nombre": "Buscar equipos en la red",
      "explica": "Botón para encontrar los equipos de la red y protegerlos en grupo."},
+    {"clave": "monitorizacion", "grupo": "equipos", "nivel": "basico", "defecto": True,
+     "nombre": "Monitorización de equipos",
+     "explica": "Ver en directo el uso de cada equipo (procesador, memoria, discos, red, temperatura, batería, procesos) y la "
+                "salud de sus discos, con historial y avisos. Solo en los equipos donde se active (Monitorización → Activar)."},
     {"clave": "usb_rescate", "grupo": "equipos", "nivel": "basico", "defecto": False, "en_pruebas": True,
      "nombre": "USB de rescate",
      "explica": "Crear un pendrive que arranca un equipo que ya no enciende Windows o Linux y lo deja como estaba, "

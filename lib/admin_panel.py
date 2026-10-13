@@ -44,6 +44,7 @@ import avisos as _av
 import banderines as _ban
 import autoarreglo as _aa
 import registro as _registro
+import monitor as _mon
 from datetime import timezone
 from pathlib import Path
 
@@ -1281,6 +1282,11 @@ def _avisos(lista):
             avisos.append(_aviso('OCT-EQ-05', nombre, sid, sol, detalle=p.get('detalle', '')))
         if est['copias'] and _inc.marcar_copias(sid, est['copias'][:1])[0]['sospechosa']:
             avisos.append(_aviso('OCT-EQ-06', nombre, sid, sol))
+    try:   # monitorización (solo equipos con ella activada)
+        for m in _mon.avisos():
+            avisos.append(_aviso(m['codigo'], m['hostname'], m['system_id'], sol, detalle=m['detalle']))
+    except Exception:
+        pass
     # Avisos generales (no de un equipo concreto): id=None
     if lista:
         mant = _mant.leer_estado()
@@ -1497,6 +1503,10 @@ def _autoarreglo_ciclo():
 
 
 def _autoarreglo_ciclo_sin_lock():
+    try:
+        _mon.revisar_silencio()      # equipos monitorizados que dejaron de mandar datos (aviso OCT-MON-08)
+    except Exception:
+        pass
     activado = config_manager.get_config('autoarreglo') is not False
     with app.test_request_context():
         lista = _equipos_con_estado()
@@ -1662,7 +1672,7 @@ def equipo(system_id):
     est = agentes.estado_equipo(row, force=request.args.get('refrescar') == '1')
     import mantenimiento as _mant
     copias = _inc.marcar_copias(row['id'], est['copias'])
-    return render_template('equipo.html', s=row, est=est, copias=copias, trabajos=agentes.trabajos_de(row['id'], 5),
+    return render_template('equipo.html', monitor_activa=_mon.activa(system_id), s=row, est=est, copias=copias, trabajos=agentes.trabajos_de(row['id'], 5),
                            prueba=_mant.leer_pruebas().get(row['hostname'].lower()),
                            horas_sin_copia=agentes.horas_sin_copia(row),
                            horas_propias=agentes.notas_equipo(row).get('horas_sin_copia'),
@@ -2335,6 +2345,7 @@ import ordenes as _ordenes
 init_db()
 _ordenes.init(DB_FILE)
 _seg.init(DB_FILE)
+_mon.init(DB_FILE)
 
 
 def _agente_autenticado():
@@ -2362,8 +2373,11 @@ def api_agente_ordenes():
                 c.execute('UPDATE systems SET agent_info = ? WHERE id = ?', (json.dumps(info['info'])[:20000], row['id']))
         except sqlite3.Error:
             pass
+    mon_activa = _fun.activa('monitorizacion') and _mon.activa(row['id'])
     return jsonify({'ordenes': _ordenes.pendientes(row['hostname']), 'espera': _ordenes.INTERVALO_AGENTE,
-                    'ajustes': _ajustes_agente(row)})
+                    'ajustes': _ajustes_agente(row),
+                    # al momento: si se activa la monitorización o alguien abre su pantalla, el agente lo sabe ya
+                    'monitor': {'activa': mon_activa, 'intervalo': _mon.intervalo(row['id']) if mon_activa else 300}})
 
 
 @app.route('/api/agente/ajustes', methods=['POST'])
@@ -2431,6 +2445,102 @@ def api_agente_alerta():
     _ban.marcar('incidentes', f'Alerta del equipo: {data.get("motivo", "")} (incidente #{inc_id})', equipo=host,
                 codigo='OCT-SEN-01' if senuelo else None, nivel='aviso' if severidad == 'aviso' else 'error')
     return jsonify({'incidente': inc_id, 'nuevo': nuevo})
+
+
+@app.route('/api/agente/metricas', methods=['POST'])
+@limiter.exempt
+def api_agente_metricas():
+    """El agente manda lo que mide (solo si la monitorización está activada para ese equipo)."""
+    row = _agente_autenticado()
+    if not row:
+        return jsonify({'error': 'no autorizado'}), 401
+    if not _fun.activa('monitorizacion'):
+        return jsonify({'activa': False, 'intervalo': 600})
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'error': 'datos no validos'}), 400
+    return jsonify(_mon.recibir(row['id'], data))
+
+
+# ------------------------------------------------------------------ Monitorización
+def _monitorizables():
+    with get_db_connection() as c:
+        return c.execute('SELECT id, hostname, os_family FROM systems ORDER BY hostname').fetchall()
+
+
+@app.route('/monitorizacion')
+@login_required
+def monitorizacion():
+    if not _fun.activa('monitorizacion'):
+        flash('La monitorización está apagada en Ajustes → Funciones.', 'error')
+        return redirect(url_for('inicio'))
+    act = set(_mon.activos())
+    equipos = _monitorizables()
+    return render_template('monitorizacion.html', equipos=[e for e in equipos if e['id'] in act],
+                           sin=[e for e in equipos if e['id'] not in act], avisos=_mon.avisos())
+
+
+@app.route('/monitorizacion/activar', methods=['POST'])
+@login_required
+@role_required('admin', 'supremo')
+def monitorizacion_activar():
+    sid = request.form.get('system_id', type=int)
+    si = request.form.get('activar') == '1'
+    row = _get_system(sid) if sid else None
+    if not row:
+        flash('Elige un equipo.', 'error')
+        return redirect(url_for('monitorizacion'))
+    _mon.activar(sid, si, session.get('username', ''))
+    log_audit(session['user_id'], 'MONITOR_ON' if si else 'MONITOR_OFF', row['hostname'], request.remote_addr)
+    flash(f'Monitorización {"activada" if si else "quitada"} en {row["hostname"]}.'
+          + (' Los primeros datos llegan en menos de un minuto.' if si else ' Ya no se recogen datos de ese equipo.'), 'success')
+    destino = request.form.get('volver', '')
+    return redirect(destino if destino.startswith('/') and not destino.startswith('//') else
+                    url_for('monitorizacion_equipo', system_id=sid) if si else url_for('monitorizacion'))
+
+
+@app.route('/monitorizacion/<int:system_id>')
+@login_required
+def monitorizacion_equipo(system_id):
+    row = _get_system(system_id)
+    if not row or not _fun.activa('monitorizacion'):
+        return redirect(url_for('monitorizacion'))
+    if not _mon.activa(system_id):
+        flash(f'La monitorización no está activada en {row["hostname"]}.', 'info')
+        return redirect(url_for('equipo', system_id=system_id))
+    _mon.mirar(system_id)
+    return render_template('monitor_equipo.html', s=row)
+
+
+@app.route('/api/monitor/<int:system_id>')
+@login_required
+def api_monitor(system_id):
+    """Lo último que ha mandado el equipo (y, si se pide, el historial). Mirar esto pone el equipo «en vivo»."""
+    if not _fun.activa('monitorizacion') or not _mon.activa(system_id):
+        return jsonify({'error': 'no activa'}), 404
+    _mon.mirar(system_id)
+    d = _mon.ultimo(system_id) or {}
+    out = {'datos': d, 'ahora': datetime.now().timestamp(),
+           'avisos': [_aviso(a['codigo'], None, system_id, None, detalle=a['detalle']) for a in _mon.avisos(system_id)]}
+    if request.args.get('horas'):
+        out['historial'] = _mon.historial(system_id, min(24 * 90, max(0.25, request.args.get('horas', type=float) or 1)))
+    return jsonify(out)
+
+
+@app.route('/api/monitor/resumen')
+@login_required
+def api_monitor_resumen():
+    """Unos pocos números de cada equipo monitorizado, para la lista."""
+    if not _fun.activa('monitorizacion'):
+        return jsonify({})
+    res = {}
+    for sid in _mon.activos():
+        d = _mon.ultimo(sid) or {}
+        res[sid] = {'recibido': d.get('recibido'), **_mon._resumen(d),
+                    'salud': min((x.get('estado') for x in (d.get('lento') or {}).get('discos_salud') or []),
+                                 key=lambda e: {'mal': 0, 'atencion': 1, 'ok': 2}.get(e, 3), default=None),
+                    'avisos': len(_mon.avisos(sid))}
+    return jsonify({'equipos': res, 'ahora': datetime.now().timestamp()})
 
 
 @app.route('/equipos/<int:system_id>/incidente', methods=['POST'])

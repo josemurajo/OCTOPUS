@@ -70,6 +70,27 @@
       <dt>Aviso sin copia</dt><dd>si pasa más de {% if horas_sin_copia < 48 %}{{ horas_sin_copia | int }} horas{% else %}{{ (horas_sin_copia / 24) | int }} días{% endif %}</dd>
     </dl>
   </div>
+  {% if funcion_activa('monitorizacion') %}
+  <div class="card">
+    <h2>Monitorizacion</h2>
+    {% if monitor_activa %}
+    <p class="muted small" style="margin-bottom:10px">Uso del procesador, memoria, discos, red, temperatura, batería, procesos y salud de los discos, en directo.</p>
+    <a class="btn btn-primary" href="{{ url_for('monitorizacion_equipo', system_id=s.id) }}">Ver en directo</a>
+    {% if puede_actuar() %}
+    <form method="post" action="{{ url_for('monitorizacion_activar') }}" style="margin-top:10px" data-confirm="¿Dejar de monitorizar {{ s.hostname }}?">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="system_id" value="{{ s.id }}">
+      <input type="hidden" name="activar" value="0"><input type="hidden" name="volver" value="{{ url_for('equipo', system_id=s.id) }}">
+      <button class="btn btn-small" type="submit">Quitar la monitorización</button></form>{% endif %}
+    {% else %}
+    <p class="muted small" style="margin-bottom:10px">Ver en directo cómo está este equipo: uso, temperatura, discos, batería y procesos.
+      No instala nada más: lo hace el agente que ya tiene.</p>
+    {% if puede_actuar() %}
+    <form method="post" action="{{ url_for('monitorizacion_activar') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="system_id" value="{{ s.id }}">
+      <input type="hidden" name="activar" value="1"><button class="btn btn-primary" type="submit">Activar monitorizacion</button></form>
+    {% endif %}{% endif %}
+  </div>
+  {% endif %}
 </div>
 
 <div class="card">

@@ -98,6 +98,7 @@ paso "Agente OCTOPUS"
 launchctl bootout system "$PLIST" 2>/dev/null || launchctl unload "$PLIST" 2>/dev/null || true
 mkdir -p "$DATOS" "$LOGS"
 install -m 0755 "$AQUI/zerotouch_agent.py" "$DIR/zerotouch_agent.py"
+[ -f "$AQUI/octopus_monitor.py" ] && install -m 0644 "$AQUI/octopus_monitor.py" "$DIR/octopus_monitor.py"
 "$PY" - "$AQUI/config.json" "$DATOS/config.json" "$DIR/restic" <<'PYEOF'
 import json, sys
 cfg = json.load(open(sys.argv[1]))

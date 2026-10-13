@@ -21,7 +21,7 @@ if [ "${1:-}" = "--quitar" ]; then
     systemctl disable --now octopus-agent 2>/dev/null || true
     systemctl disable --now wg-quick@octopus 2>/dev/null || true
     rm -f /etc/systemd/system/octopus-agent.service /etc/cron.d/octopus /etc/wireguard/octopus.conf
-    rm -rf "$DIR/zerotouch_agent.py" /etc/octopus
+    rm -rf "$DIR/zerotouch_agent.py" "$DIR/octopus_monitor.py" /etc/octopus
     # por si estaba aislado por un incidente
     nft delete table inet octopus 2>/dev/null || true
     iptables -D OUTPUT -j OCTOPUS_OUT 2>/dev/null || true; iptables -D INPUT -j OCTOPUS_IN 2>/dev/null || true
@@ -41,8 +41,11 @@ if command -v apt-get >/dev/null; then
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq || true
     apt-get install -y -qq python3 curl bzip2 iputils-ping $([ $TUNEL = 1 ] && echo wireguard-tools) >/dev/null
+    # salud de los discos para la monitorizacion (sin paquetes recomendados: nada de servidores de correo); si no se puede, sigue
+    apt-get install -y -qq --no-install-recommends smartmontools >/dev/null 2>&1 || true
 elif command -v dnf >/dev/null; then
     dnf install -y -q python3 curl bzip2 iputils $([ $TUNEL = 1 ] && echo wireguard-tools) >/dev/null
+    dnf install -y -q --setopt=install_weak_deps=False smartmontools >/dev/null 2>&1 || true
 else
     fallo "Distribucion no soportada (hace falta apt o dnf)"
 fi
@@ -70,6 +73,7 @@ fi
 paso "Agente OCTOPUS"
 mkdir -p "$DIR" /etc/octopus /var/log/octopus
 install -m 0755 "$AQUI/zerotouch_agent.py" "$DIR/zerotouch_agent.py"
+[ -f "$AQUI/octopus_monitor.py" ] && install -m 0644 "$AQUI/octopus_monitor.py" "$DIR/octopus_monitor.py"
 install -m 0600 "$AQUI/config.json" /etc/octopus/config.json
 cat > /etc/systemd/system/octopus-agent.service <<EOF
 [Unit]

@@ -1368,12 +1368,57 @@ def bucle_ordenes() -> None:
             if len(en_curso) > 1000:
                 en_curso.clear()
             espera = float(r.get("espera", 2))
+            m = r.get("monitor")
+            if isinstance(m, dict):
+                antes = dict(MONITOR_ESTADO)
+                MONITOR_ESTADO.update(activa=bool(m.get("activa")), intervalo=int(m.get("intervalo") or 60))
+                if antes.get("activa") != MONITOR_ESTADO["activa"] or MONITOR_ESTADO["intervalo"] < antes.get("intervalo", 60):
+                    MONITOR_EVENTO.set()     # despierta a la monitorizacion ya (no espera a su siguiente vuelta)
         except Exception as exc:
             fallos += 1
             if fallos in (1, 5) or fallos % 60 == 0:
                 log(f"No se puede contactar con el servidor ({exc.__class__.__name__}: {exc}); se reintenta")
             espera = min(5 * fallos, 60)
         time.sleep(max(espera, 0.5))
+
+
+MONITOR_ESTADO: dict = {}
+MONITOR_EVENTO = threading.Event()
+
+
+def monitor_loop() -> None:
+    """Monitorizacion (solo si esta activada para este equipo en el panel). El servidor dice cada cuanto mandar:
+    unos segundos mientras alguien mira la pantalla del equipo, cada minuto si no, y nada si esta desactivada."""
+    try:
+        import octopus_monitor
+    except ImportError:
+        log("Monitorizacion no disponible (falta octopus_monitor.py junto al agente)")
+        return
+    mon, espera, activa = None, 30, False
+    while True:
+        MONITOR_EVENTO.wait(espera)
+        MONITOR_EVENTO.clear()
+        if MONITOR_ESTADO:
+            activa = MONITOR_ESTADO.get("activa", activa)
+        try:
+            cfg = load_config()
+            nuevo = activa and mon is None
+            if activa:
+                mon = mon or octopus_monitor.Monitor()
+                datos = mon.muestra()
+            else:
+                datos = {"t": time.time(), "inactivo": True}
+            r = _https(cfg, "/api/agente/metricas", datos, timeout=20)
+            activa = bool(r.get("activa"))
+            espera = max(2, min(600, int(r.get("intervalo") or (60 if activa else 300))))
+            if nuevo:     # recien activada: la segunda muestra enseguida (las velocidades necesitan dos)
+                espera = 2
+            if not activa:
+                mon = None
+        except Exception as exc:  # sin conexion: se reintenta sin molestar
+            espera = 120
+            if "urlopen" not in str(exc):
+                log(f"Monitorizacion: {exc.__class__.__name__}")
 
 
 def main() -> None:
@@ -1388,6 +1433,7 @@ def main() -> None:
     threading.Thread(target=detector_loop, daemon=True).start()
     threading.Thread(target=bucle_ordenes, daemon=True).start()
     threading.Thread(target=copia_atrasada_loop, daemon=True).start()
+    threading.Thread(target=monitor_loop, daemon=True).start()
     binds = load_config().get("bind_addresses") or ["127.0.0.1"]
 
     def escuchar(addr: str) -> None:
