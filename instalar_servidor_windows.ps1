@@ -146,7 +146,15 @@ if (-not (Docker-Va)) {
             Marca ("esperando a Docker ({0} s): procesos=[{1}] docker dice: {2}" -f (($i + 1) * 5), $procs, $err)
         }
     }
-    if (-not (Docker-Va)) { Fallo "Docker no arranca. Abre Rancher Desktop desde el menu Inicio, espera a que termine y vuelve a ejecutar esto." }
+    if (-not (Docker-Va)) {
+        # Banderines de diagnostico: estado de WSL y ultimas lineas de los registros de Rancher Desktop
+        Marca ("wsl -l -v: " + (((& wsl.exe -l -v) 2>&1 | ForEach-Object { "$_" -replace "`0", "" } | Where-Object { $_.Trim() }) -join " | "))
+        $rdLogs = Join-Path $env:LOCALAPPDATA "rancher-desktop\logs"
+        foreach ($n in @("background.log", "wsl.log", "k8s.log", "dockerd.log", "wsl-exec.log")) {
+            $f = Join-Path $rdLogs $n
+            if (Test-Path $f) { Get-Content $f -Tail 8 | ForEach-Object { Marca "  [$n] $_" } }
+        }
+        Fallo "Docker no arranca. Abre Rancher Desktop desde el menu Inicio, espera a que termine y vuelve a ejecutar esto." }
 } elseif ($rdBin) {
     & (Join-Path $rdBin "rdctl.exe") set --application.auto-start=true 2>&1 | Out-Null
 }
