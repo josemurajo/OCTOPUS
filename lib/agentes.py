@@ -299,7 +299,7 @@ def listar_en_servidor(system, snapshot, path):
 SENUELOS = {".octopus_no_tocar.docx", "~octopus_no_tocar.docx"}   # archivos trampa de los agentes (no se enseñan)
 
 
-def buscar_en_servidor(system, texto, exacta=None, max_copias=30, max_rutas=40):
+def buscar_en_servidor(system, texto, exacta=None, max_copias=None, max_rutas=40):
     """Busca un archivo o carpeta por su nombre (o parte) en las copias de un equipo, directamente en el servidor.
     Devuelve cada ruta encontrada con sus versiones (de que copia, fecha, tamano), la mas reciente primero.
     Con exacta=<ruta> solo devuelve esa ruta (para elegir de cuando recuperarla)."""
@@ -307,6 +307,8 @@ def buscar_en_servidor(system, texto, exacta=None, max_copias=30, max_rutas=40):
     if not texto:
         return {"status": "error", "message": "Escribe el nombre (o parte del nombre) de lo que buscas"}
     copias, _ = copias_por_equipo()
+    # buscar: en las copias mas recientes (rapido); elegir de cuando: en mas copias para ver mas versiones
+    max_copias = max_copias or (30 if exacta else 6)
     mias = [c for c in copias.get(system["hostname"].lower(), []) if "forense" not in c["tags"]][:max_copias]
     if not mias:
         return {"status": "error", "message": "Este equipo todavía no tiene copias"}
@@ -349,5 +351,13 @@ def buscar_en_servidor(system, texto, exacta=None, max_copias=30, max_rutas=40):
     resultados = list(por_ruta.values())
     for e in resultados:
         e["versiones"].sort(key=lambda v: v["fecha"] or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
-    resultados.sort(key=lambda e: (e["tipo"] != "file", len(e["path"])))
+    t = texto.lower()
+
+    def orden(e):
+        # primero lo de las carpetas protegidas de siempre (no solo de la copia completa de todo el disco),
+        # luego lo que se llama como lo buscado, los archivos antes que las carpetas y las rutas mas cortas
+        solo_completa = all("completa" in (v["etiquetas"] or []) for v in e["versiones"])
+        nombre = e["nombre"].lower()
+        return (solo_completa, not nombre.startswith(t), t not in nombre, e["tipo"] != "file", len(e["path"]))
+    resultados.sort(key=orden)
     return {"status": "success", "resultados": resultados[:max_rutas], "total": len(resultados)}
