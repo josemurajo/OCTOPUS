@@ -20,6 +20,26 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR / "lib"))
 
 
+def _nombres(db_file: Path) -> dict:
+    """{nombre real del equipo: equipo-N} para no enviar nunca los nombres de los equipos."""
+    try:
+        conn = sqlite3.connect(str(db_file))
+        filas = [r[0] for r in conn.execute("SELECT hostname FROM systems ORDER BY id")]
+        conn.close()
+    except sqlite3.Error:
+        return {}
+    return {h: f"equipo-{i}" for i, h in enumerate(filas, 1) if h}
+
+
+def anonimizar(texto: str, nombres: dict) -> str:
+    import re
+    t = str(texto or "")
+    for real in sorted(nombres, key=len, reverse=True):
+        if len(real) >= 2:
+            t = re.sub(r"(?<![\w-])" + re.escape(real) + r"(?![\w-])", nombres[real], t, flags=re.IGNORECASE)
+    return t
+
+
 def _equipos(db_file: Path) -> list[dict]:
     try:
         conn = sqlite3.connect(str(db_file))
@@ -41,6 +61,12 @@ def _equipos(db_file: Path) -> list[dict]:
 
 
 def datos(db_file: Path) -> dict:
+    nombres = _nombres(db_file)
+    d = _datos(db_file)
+    return json.loads(anonimizar(json.dumps(d, ensure_ascii=False, default=str), nombres))
+
+
+def _datos(db_file: Path) -> dict:
     import avisos
     import banderines
     import mantenimiento as mant
@@ -79,6 +105,7 @@ def resumen_texto(db_file: Path) -> str:
 
 def zip_bytes(db_file: Path) -> bytes:
     import banderines
+    nombres = _nombres(db_file)
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("diagnostico.json", json.dumps(datos(db_file), indent=2, ensure_ascii=False))
@@ -93,7 +120,7 @@ def zip_bytes(db_file: Path) -> bytes:
                     except ValueError:
                         continue
                     p.pop("equipo", None)
-                    p["texto"] = banderines.limpiar(p.get("texto", ""))
+                    p["texto"] = anonimizar(banderines.limpiar(p.get("texto", "")), nombres)
                     limpio.append(json.dumps(p, ensure_ascii=False))
                 z.writestr(f"banderines/{f.name}", "\n".join(limpio) + "\n")
             except OSError:
