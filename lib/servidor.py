@@ -30,6 +30,16 @@ _procesos: dict[str, subprocess.Popen] = {}
 _inicios: dict[str, float] = {}
 
 
+def programa(nombre: str) -> str:
+    """Ruta de restic / rest-server: la carpeta bin de la instalacion (Windows y Mac sin Docker) o el PATH."""
+    for carpeta in (os.environ.get("OCTOPUS_BIN"), str(BASE_DIR / "bin")):
+        if carpeta:
+            for n in (nombre + ".exe", nombre) if os.name == "nt" else (nombre,):
+                if (Path(carpeta) / n).is_file():
+                    return str(Path(carpeta) / n)
+    return shutil.which(nombre) or nombre
+
+
 def log(msg: str) -> None:
     print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] [octopus] {msg}", flush=True)
 
@@ -37,8 +47,11 @@ def log(msg: str) -> None:
 def preparar_carpetas() -> None:
     for d in ("panel", "ssh", "logs", "ansible", "sandbox"):
         (DATA / d).mkdir(parents=True, exist_ok=True)
-    os.chmod(DATA, 0o700)
-    os.chmod(DATA / "ssh", 0o700)
+    for d in (DATA, DATA / "ssh"):
+        try:
+            os.chmod(d, 0o700)
+        except OSError:
+            pass
     BOVEDA.mkdir(parents=True, exist_ok=True)
 
 
@@ -59,15 +72,25 @@ def actualizar_ip() -> None:
     log(f"Los equipos llegan a este servidor por: {configuracion.leer_env().get('OCTOPUS_PUBLIC_HOST') or ip or '(sin fijar)'}")
 
 
+def _comando_panel(py: str) -> list[str]:
+    """gunicorn en Linux/Mac; en Windows (sin gunicorn) cheroot, que tambien es de produccion y lleva HTTPS."""
+    if shutil.which("gunicorn") and os.name != "nt":
+        return ["gunicorn", "-c", str(BASE_DIR / "install" / "gunicorn_panel.py"), "admin_panel:app"]
+    try:
+        import cheroot  # noqa: F401
+        return [py, str(BASE_DIR / "lib" / "panel_cheroot.py")]
+    except ImportError:
+        return [py, str(BASE_DIR / "lib" / "admin_panel.py")]
+
+
 def comandos() -> dict[str, list[str]]:
     py = sys.executable
     return {
-        "almacen": ["rest-server", "--path", str(BOVEDA), "--listen", ":8000", "--append-only",
+        "almacen": [programa("rest-server"), "--path", str(BOVEDA), "--listen", ":8000", "--append-only",
                     "--htpasswd-file", str(HTPASSWD), "--tls",
                     "--tls-cert", str(BASE_DIR / "data" / "tls" / "panel.crt"),
                     "--tls-key", str(BASE_DIR / "data" / "tls" / "panel.key")],
-        "panel": (["gunicorn", "-c", str(BASE_DIR / "install" / "gunicorn_panel.py"), "admin_panel:app"]
-                  if shutil.which("gunicorn") else [py, str(BASE_DIR / "lib" / "admin_panel.py")]),
+        "panel": _comando_panel(py),
         "api": [py, str(BASE_DIR / "lib" / "api.py")],
     }
 
@@ -105,8 +128,8 @@ def iniciar_repositorios() -> None:
             continue
         e = dict(os.environ, RESTIC_REPOSITORY=repo, RESTIC_PASSWORD=clave,
                  RESTIC_CACERT=env.get("RESTIC_CACERT", ""), RESTIC_CACHE_DIR=str(DATA / ".cache" / "restic"))
-        if subprocess.run(["restic", "cat", "config"], env=e, capture_output=True, timeout=120).returncode != 0:
-            r = subprocess.run(["restic", "init"], env=e, capture_output=True, text=True, timeout=300)
+        if subprocess.run([programa("restic"), "cat", "config"], env=e, capture_output=True, timeout=120).returncode != 0:
+            r = subprocess.run([programa("restic"), "init"], env=e, capture_output=True, text=True, timeout=300)
             nombre = repo.rsplit("/", 1)[-1]
             log(f"Repositorio {nombre}: {'creado' if r.returncode == 0 else 'ERROR ' + r.stderr.strip()[-200:]}")
 
@@ -160,7 +183,8 @@ def main() -> int:
     threading.Thread(target=imagen_sandbox, daemon=True).start()
     cred = BASE_DIR / "data" / "CREDENCIALES_INICIALES.txt"
     if cred.is_file():
-        log(f"Acceso inicial: ver {cred} (docker exec octopus cat /data/panel/CREDENCIALES_INICIALES.txt)")
+        log(f"Acceso inicial: ver {cred}" + ("" if os.environ.get("OCTOPUS_NATIVO")
+                                               else " (docker exec octopus cat /data/panel/CREDENCIALES_INICIALES.txt)"))
     espera: dict[str, float] = {}
     flag = DATA / "reiniciar_servicios"   # lo pone el panel tras renovar el certificado (boton Solucionar)
     while not _parar.wait(2):

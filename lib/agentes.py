@@ -111,7 +111,8 @@ def _restic_servidor():
     if os.environ.get("OCTOPUS_BOVEDA_DIR") and os.path.isdir(repo_disco):
         env["RESTIC_REPOSITORY"] = repo_disco
     env.setdefault("RESTIC_PASSWORD", os.environ.get("RESTIC_PASSWORD", ""))
-    return shutil.which("restic") or "/usr/local/bin/restic", env, subprocess
+    import mantenimiento as _m
+    return _m.restic_bin(), env, subprocess
 
 
 def copias_por_equipo(force=False):

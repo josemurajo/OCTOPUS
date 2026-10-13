@@ -7,25 +7,26 @@ El administrador escribe UNA vez la IP, el usuario y la contrasena del equipo. E
   3. deja autorizada la clave SSH del servidor (y, si se pide, desactiva el acceso con contrasena)
   4. espera a que el agente se conecte
 
-La contrasena nunca se guarda ni se escribe en ningun registro: viaja por la entrada estandar de ssh/sudo
-y por la variable SSHPASS del proceso hijo, y se olvida al terminar.
+La contrasena nunca se guarda ni se escribe en ningun registro: solo viaja dentro de la conexion SSH cifrada
+(para entrar y por la entrada estandar de sudo) y se olvida al terminar.
+
+La conexion se hace con paramiko (SSH escrito en Python): funciona igual con el servidor en Linux, Mac o Windows,
+sin necesitar los programas ssh/scp/sshpass.
 """
 from __future__ import annotations
 
 import os
 import secrets
 import shlex
-import subprocess
-import tempfile
+import socket
 import threading
 import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-CLAVE = Path("/root/.ssh/octopus_ed25519")
-SSH_OPC = ["-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-o", "LogLevel=ERROR",
-           "-o", "ConnectTimeout=15", "-o", "ServerAliveInterval=10", "-o", "ServerAliveCountMax=6"]
+# En el contenedor /data/ssh es la misma carpeta que /root/.ssh (la clave de siempre)
+CLAVE = Path(os.environ.get("OCTOPUS_DATA", "/data")) / "ssh" / "octopus_ed25519"
 
 # Se ejecuta EN EL EQUIPO como root (sudo). Argumentos: <carpeta> <usuario> <so> <solo_clave 0|1>
 REMOTO = r'''
@@ -63,26 +64,105 @@ exit $RC
 
 
 def _clave_servidor() -> None:
-    if not CLAVE.is_file():
-        CLAVE.parent.mkdir(parents=True, exist_ok=True)
+    """Clave SSH propia del servidor (ed25519), para volver a entrar en los equipos sin contrasena."""
+    if CLAVE.is_file():
+        return
+    from cryptography.hazmat.primitives import serialization as s
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+    k = ed25519.Ed25519PrivateKey.generate()
+    CLAVE.parent.mkdir(parents=True, exist_ok=True)
+    try:
         os.chmod(CLAVE.parent, 0o700)
-        subprocess.run(["ssh-keygen", "-t", "ed25519", "-N", "", "-C", "octopus-servidor", "-f", str(CLAVE), "-q"],
-                       check=True, capture_output=True, timeout=60)
+    except OSError:
+        pass
+    for ruta, datos, modo in (
+            (CLAVE, k.private_bytes(s.Encoding.PEM, s.PrivateFormat.OpenSSH, s.NoEncryption()), 0o600),
+            (Path(str(CLAVE) + ".pub"), k.public_key().public_bytes(s.Encoding.OpenSSH, s.PublicFormat.OpenSSH)
+             + b" octopus-servidor\n", 0o644)):
+        fd = os.open(ruta, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, modo)
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(datos)
 
 
-def _con_clave(destino: str) -> bool:
-    r = subprocess.run(["ssh", "-i", str(CLAVE), "-o", "BatchMode=yes", *SSH_OPC, destino, "true"],
-                       capture_output=True, timeout=40)
-    return r.returncode == 0
+class ErrorSSH(Exception):
+    """Fallo al conectar, con un mensaje ya explicado para el panel."""
 
 
-def _cmd(base: list[str], usar_clave: bool, password: str) -> tuple[list[str], dict]:
-    env = dict(os.environ)
-    if usar_clave:
-        return [base[0], "-i", str(CLAVE), "-o", "BatchMode=yes", *base[1:]], env
-    env["SSHPASS"] = password
-    return ["sshpass", "-e", base[0], "-o", "PubkeyAuthentication=no", "-o", "PreferredAuthentications=password,keyboard-interactive",
-            *base[1:]], env
+class _Conexion:
+    """Una conexion SSH al equipo (con la clave del servidor o con usuario y contrasena)."""
+
+    def __init__(self, ip: str, usuario: str, password: str | None = None, usar_clave: bool = False):
+        import paramiko
+        self.c = paramiko.SSHClient()
+        # igual que antes (StrictHostKeyChecking=no): es la primera vez que se entra en un equipo de la oficina
+        self.c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        kw = dict(hostname=ip, port=int(os.environ.get("OCTOPUS_SSH_PUERTO", "22")), username=usuario, timeout=15, banner_timeout=20, auth_timeout=25,
+                  allow_agent=False, look_for_keys=False)
+        if usar_clave:
+            kw["pkey"] = paramiko.Ed25519Key.from_private_key_file(str(CLAVE))
+        else:
+            kw["password"] = password or ""
+        try:
+            self.c.connect(**kw)
+        except paramiko.AuthenticationException as exc:
+            self.c.close()
+            raise ErrorSSH("auth") from exc
+        except (socket.timeout, TimeoutError, paramiko.ssh_exception.NoValidConnectionsError, OSError) as exc:
+            self.c.close()
+            raise ErrorSSH(f"red: {exc.__class__.__name__} {exc}") from exc
+        except paramiko.SSHException as exc:
+            self.c.close()
+            raise ErrorSSH(f"ssh: {exc}") from exc
+        self.c.get_transport().set_keepalive(10)
+
+    def ejecutar(self, comando: str, entrada: str = "", timeout: int = 60) -> tuple[int, str]:
+        """Ejecuta un comando y devuelve (codigo, salida+errores)."""
+        canal = self.c.get_transport().open_session()
+        canal.set_combine_stderr(True)
+        canal.settimeout(timeout)
+        canal.exec_command(comando)
+        if entrada:
+            canal.sendall(entrada.encode("utf-8"))
+        canal.shutdown_write()
+        trozos, fin = [], time.time() + timeout
+        try:
+            while True:
+                d = canal.recv(65536)
+                if not d:
+                    break
+                trozos.append(d)
+                if time.time() > fin:
+                    raise socket.timeout()
+        except socket.timeout:
+            canal.close()
+            return 124, b"".join(trozos).decode("utf-8", "replace") + "\n(tiempo agotado)"
+        codigo = canal.recv_exit_status()
+        canal.close()
+        return codigo, b"".join(trozos).decode("utf-8", "replace")
+
+    def subir(self, datos: bytes, remoto: str, modo: int | None = 0o600) -> None:
+        sftp = self.c.open_sftp()
+        try:
+            with sftp.open(remoto, "wb") as fh:
+                fh.write(datos)
+            if modo is not None:
+                try:
+                    sftp.chmod(remoto, modo)
+                except OSError:
+                    pass
+        finally:
+            sftp.close()
+
+    def cerrar(self) -> None:
+        self.c.close()
+
+
+def _con_clave(ip: str, usuario: str) -> bool:
+    try:
+        _Conexion(ip, usuario, usar_clave=True).cerrar()
+        return True
+    except Exception:
+        return False
 
 
 def _limpiar(texto: str, password: str) -> str:
@@ -98,42 +178,39 @@ def instalar(equipo: str, so: str, ip: str, usuario: str, password: str, paquete
     if so not in ("linux", "macos"):
         return False, "Sistema no reconocido: elige Windows, Linux o Mac."
     _clave_servidor()
-    destino = f"{usuario}@{ip}"
     paso(f"Conectando con {ip}...")
-    usar_clave = _con_clave(destino)
+    usar_clave = _con_clave(ip, usuario)
     if not usar_clave and not password:
         return False, "Hace falta la contrasena del equipo (el servidor aun no tiene acceso con su clave)."
-    carpeta = f"/tmp/octopus_inst_{secrets.token_hex(6)}"
-    with tempfile.TemporaryDirectory(prefix="octopus_remoto_") as tmp:
-        t = Path(tmp)
-        (t / "octopus.zip").write_bytes(paquete)
-        (t / "servidor.pub").write_text(Path(str(CLAVE) + ".pub").read_text())
-        (t / "remoto.sh").write_text(REMOTO)
-        for f in t.iterdir():
-            os.chmod(f, 0o600)
-        cmd, env = _cmd(["ssh", *SSH_OPC, destino, f"mkdir -m 700 {carpeta}"], usar_clave, password)
-        r = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=60)
-        if r.returncode != 0:
-            err = _limpiar(r.stderr or r.stdout, password).strip()
-            if "Permission denied" in err or r.returncode == 5:
-                return False, "Usuario o contrasena incorrectos (o el equipo no permite entrar por SSH con contrasena)."
-            if "timed out" in err or "No route" in err or "refused" in err:
-                return False, f"No se puede llegar a {ip} por SSH (puerto 22). ¿Esta encendido y con SSH activado? {err[-150:]}"
-            return False, f"No se pudo entrar en el equipo: {err[-300:]}"
+    try:
+        con = _Conexion(ip, usuario, password, usar_clave)
+    except ErrorSSH as exc:
+        if str(exc) == "auth":
+            return False, "Usuario o contrasena incorrectos (o el equipo no permite entrar por SSH con contrasena)."
+        if str(exc).startswith("red"):
+            return False, (f"No se puede llegar a {ip} por SSH (puerto 22). ¿Esta encendido y con SSH activado? "
+                           f"{_limpiar(str(exc), password)[-150:]}")
+        return False, f"No se pudo entrar en el equipo: {_limpiar(str(exc), password)[-300:]}"
+    try:
+        carpeta = f"/tmp/octopus_inst_{secrets.token_hex(6)}"
+        rc, salida = con.ejecutar(f"mkdir -m 700 {carpeta}")
+        if rc != 0:
+            return False, f"No se pudo preparar el equipo: {_limpiar(salida, password)[-300:]}"
         paso("Copiando el instalador al equipo...")
-        cmd, env = _cmd(["scp", *SSH_OPC, str(t / "octopus.zip"), str(t / "servidor.pub"), str(t / "remoto.sh"),
-                         f"{destino}:{carpeta}/"], usar_clave, password)
-        r = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=300)
-        if r.returncode != 0:
-            return False, "No se pudo copiar el instalador: " + _limpiar(r.stderr, password)[-300:]
-    paso("Instalando OCTOPUS en el equipo (1-5 minutos)...")
-    remoto = (f"sudo -S -p '' bash {carpeta}/remoto.sh {carpeta} {shlex.quote(usuario)} {so} {1 if solo_clave else 0}")
-    cmd, env = _cmd(["ssh", *SSH_OPC, destino, remoto], usar_clave, password)
-    # la contrasena de sudo va por la entrada estandar (no aparece en la lista de procesos del equipo)
-    r = subprocess.run(cmd, env=env, input=(password + "\n") if password else "", capture_output=True, text=True,
-                       timeout=1800)
-    salida = _limpiar((r.stdout or "") + "\n" + (r.stderr or ""), password)
-    if r.returncode != 0:
+        try:
+            con.subir(paquete, f"{carpeta}/octopus.zip")
+            con.subir(Path(str(CLAVE) + ".pub").read_bytes(), f"{carpeta}/servidor.pub")
+            con.subir(REMOTO.encode("utf-8"), f"{carpeta}/remoto.sh")
+        except Exception as exc:
+            return False, "No se pudo copiar el instalador: " + _limpiar(str(exc), password)[-300:]
+        paso("Instalando OCTOPUS en el equipo (1-5 minutos)...")
+        remoto = f"sudo -S -p '' bash {carpeta}/remoto.sh {carpeta} {shlex.quote(usuario)} {so} {1 if solo_clave else 0}"
+        # la contrasena de sudo va por la entrada estandar (no aparece en la lista de procesos del equipo)
+        rc, salida = con.ejecutar(remoto, entrada=(password + "\n") if password else "", timeout=1800)
+    finally:
+        con.cerrar()
+    salida = _limpiar(salida, password)
+    if rc != 0:
         if "incorrect password" in salida.lower() or "contraseña incorrecta" in salida.lower() or "sorry, try again" in salida.lower():
             return False, "La contrasena no vale para sudo (el usuario debe ser administrador del equipo)."
         lineas = [l for l in salida.splitlines() if l.strip()]
@@ -153,42 +230,42 @@ def instalar_windows(equipo: str, ip: str, usuario: str, password: str, paquete:
     El usuario tiene que ser administrador del equipo (por SSH, Windows le da permisos completos)."""
     if not password:
         return False, "Hace falta la contrasena de un administrador del equipo Windows."
-    destino = f"{usuario}@{ip}"
     carpeta_win = f"C:\\Windows\\Temp\\octopus_inst_{secrets.token_hex(6)}"
-    carpeta_scp = carpeta_win.replace("\\", "/")
+    carpeta_sftp = "/" + carpeta_win.replace("\\", "/")     # el SFTP de Windows usa /C:/Windows/...
     paso(f"Conectando con {ip} (Windows, SSH)...")
-    ps = (f"New-Item -ItemType Directory -Force -Path '{carpeta_win}' | Out-Null; "
-          f"$a=([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent())"
-          f".IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator); Write-Output \"ADMIN=$a\"")
-    cmd, env = _cmd(["ssh", *SSH_OPC, destino, f'powershell -NoProfile -NonInteractive -Command "{ps}"'], False, password)
-    r = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=90)
-    salida = _limpiar((r.stdout or "") + (r.stderr or ""), password)
-    if r.returncode != 0:
-        if "Permission denied" in salida or r.returncode == 5:
+    try:
+        con = _Conexion(ip, usuario, password)
+    except ErrorSSH as exc:
+        if str(exc) == "auth":
             return False, "Usuario o contrasena incorrectos (en Windows: usa EQUIPO\\usuario o el usuario de la cuenta local)."
-        if "timed out" in salida or "refused" in salida or "No route" in salida:
+        if str(exc).startswith("red"):
             return False, (f"No se puede llegar a {ip} por SSH. En Windows hay que activar el «Servidor OpenSSH» "
                            f"(Configuracion > Sistema > Caracteristicas opcionales) o usar el instalador de doble clic.")
-        return False, f"No se pudo entrar en el equipo Windows: {salida[-300:]}"
-    if "ADMIN=False" in salida:
-        return False, "Ese usuario no es administrador del equipo Windows. Usa una cuenta de administrador."
-    paso("Copiando el instalador al equipo...")
-    with tempfile.TemporaryDirectory(prefix="octopus_remoto_") as tmp:
-        z = Path(tmp) / "octopus.zip"
-        z.write_bytes(paquete)
-        os.chmod(z, 0o600)
-        cmd, env = _cmd(["scp", *SSH_OPC, str(z), f"{destino}:{carpeta_scp}/octopus.zip"], False, password)
-        r = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=300)
-        if r.returncode != 0:
-            return False, "No se pudo copiar el instalador: " + _limpiar(r.stderr, password)[-300:]
-    paso("Instalando OCTOPUS en el equipo Windows (2-8 minutos)...")
-    ps = (f"$ProgressPreference='SilentlyContinue'; Expand-Archive -Force '{carpeta_win}\\octopus.zip' '{carpeta_win}\\inst'; "
-          f"& powershell -NoProfile -ExecutionPolicy Bypass -File '{carpeta_win}\\inst\\instalar_windows.ps1' 2>&1 | "
-          f"ForEach-Object {{ \"$_\" }}; $rc=$LASTEXITCODE; Remove-Item -Recurse -Force '{carpeta_win}' -ErrorAction SilentlyContinue; exit $rc")
-    cmd, env = _cmd(["ssh", *SSH_OPC, destino, f'powershell -NoProfile -NonInteractive -Command "{ps}"'], False, password)
-    r = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=1800)
-    salida = _limpiar((r.stdout or "") + "\n" + (r.stderr or ""), password)
-    if r.returncode != 0:
+        return False, f"No se pudo entrar en el equipo Windows: {_limpiar(str(exc), password)[-300:]}"
+    try:
+        ps = (f"New-Item -ItemType Directory -Force -Path '{carpeta_win}' | Out-Null; "
+              f"$a=([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent())"
+              f".IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator); Write-Output \"ADMIN=$a\"")
+        rc, salida = con.ejecutar(f'powershell -NoProfile -NonInteractive -Command "{ps}"', timeout=90)
+        salida = _limpiar(salida, password)
+        if rc != 0:
+            return False, f"No se pudo preparar el equipo Windows: {salida[-300:]}"
+        if "ADMIN=False" in salida:
+            return False, "Ese usuario no es administrador del equipo Windows. Usa una cuenta de administrador."
+        paso("Copiando el instalador al equipo...")
+        try:
+            con.subir(paquete, f"{carpeta_sftp}/octopus.zip", modo=None)
+        except Exception as exc:
+            return False, "No se pudo copiar el instalador: " + _limpiar(str(exc), password)[-300:]
+        paso("Instalando OCTOPUS en el equipo Windows (2-8 minutos)...")
+        ps = (f"$ProgressPreference='SilentlyContinue'; Expand-Archive -Force '{carpeta_win}\\octopus.zip' '{carpeta_win}\\inst'; "
+              f"& powershell -NoProfile -ExecutionPolicy Bypass -File '{carpeta_win}\\inst\\instalar_windows.ps1' 2>&1 | "
+              f"ForEach-Object {{ \"$_\" }}; $rc=$LASTEXITCODE; Remove-Item -Recurse -Force '{carpeta_win}' -ErrorAction SilentlyContinue; exit $rc")
+        rc, salida = con.ejecutar(f'powershell -NoProfile -NonInteractive -Command "{ps}"', timeout=1800)
+    finally:
+        con.cerrar()
+    salida = _limpiar(salida, password)
+    if rc != 0:
         lineas = [l for l in salida.splitlines() if l.strip()]
         return False, "La instalacion en Windows fallo: " + " | ".join(lineas[-4:])[-400:]
     paso("Instalado. Esperando a que el equipo se conecte...")

@@ -224,11 +224,9 @@ def caducidad_certificado() -> int | None:
     if not crt.is_file():
         return None
     try:
-        r = subprocess.run(["openssl", "x509", "-enddate", "-noout", "-in", str(crt)],
-                           capture_output=True, text=True, timeout=20)
-        fin = datetime.strptime(r.stdout.strip().split("=", 1)[1], "%b %d %H:%M:%S %Y %Z").replace(tzinfo=timezone.utc)
-        return int((fin - datetime.now(timezone.utc)).total_seconds() // 86400)
-    except (OSError, IndexError, ValueError, subprocess.SubprocessError):
+        import configuracion
+        return configuracion.caducidad(crt)
+    except Exception:
         return None
 
 

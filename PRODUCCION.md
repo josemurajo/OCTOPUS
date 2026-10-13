@@ -30,16 +30,24 @@ la dirección del panel y la **contraseña inicial** (de un solo uso). Si la pie
 
 **Linux es lo recomendado** para el servidor. También se puede instalar en:
 
-- **Windows 10 (22H2) / 11 / Server:** doble clic en `INSTALAR_SERVIDOR_WINDOWS.bat`. Activa WSL2 (la primera vez
-  puede pedir reiniciar y volver a ejecutarlo), instala Rancher Desktop (gratis, de código abierto) si no hay Docker,
-  arranca OCTOPUS, abre los puertos en el Firewall de Windows y comprueba que se llega desde la red.
-  Gestión: `octopus.ps1` (lo mismo que `octopus.sh`). *Probado solo en la sintaxis: falta probarlo en un Windows real.*
-- **Mac (macOS 13 o posterior):** `bash instalar_servidor_mac.sh` con tu usuario (sin sudo). Instala con Homebrew
-  Colima + Docker (gratis, sin Docker Desktop) y arranca OCTOPUS. Gestión: `bash octopus.sh ...` (sin sudo).
-  *Probado en un Mac real de GitHub.*
+- **Windows 10 / 11 / Server 2019-2025:** doble clic en `INSTALAR_SERVIDOR_WINDOWS.bat`. Windows pide permiso de
+  administrador **una vez** y ya está: **sin WSL2, sin Docker y sin reiniciar**. Descarga un Python portátil, restic y
+  rest-server (versiones fijas, comprobando su huella SHA-256), lo deja todo en `C:\ProgramData\OCTOPUS-Servidor`
+  (las copias en `...\boveda`, o donde digas con `-Boveda D:\Copias`), abre los puertos en el Firewall y abre el panel.
+  Gestión: `C:\ProgramData\OCTOPUS-Servidor\octopus.ps1` (estado, logs, parar, arrancar, mantenimiento, desinstalar...).
+- **Mac (macOS 12 o posterior, Intel y Apple Silicon):** doble clic en `INSTALAR_SERVIDOR_MAC.command` (o
+  `sudo bash instalar_servidor_mac.sh`). El Mac pide la contraseña **una vez**: **sin Docker, sin Colima y sin
+  Homebrew**. Lo deja en `/usr/local/octopus-servidor`. Gestión: `sudo bash /usr/local/octopus-servidor/octopus.sh ...`.
 
-En Windows y Mac el equipo tiene que quedarse **encendido y con la sesión iniciada** (Rancher Desktop / Colima
-arrancan al iniciar sesión) y sin entrar en reposo.
+En Windows y Mac OCTOPUS queda como **servicio del sistema**: arranca solo al encender el equipo, **aunque nadie
+inicie sesión**, y si se para por lo que sea se vuelve a levantar solo. El instalador también evita que el equipo
+entre en reposo mientras esté enchufado (la pantalla se sigue apagando). Volver a ejecutar el instalador actualiza sin
+perder nada y, si la versión nueva no arranca, vuelve sola a la anterior. Las dos se prueban en cada cambio en un
+Windows y un Mac reales de GitHub (instalar, caída y arranque solo, copia y restauración de un agente, reinstalar y
+actualización a distancia firmada).
+
+*Opcional, para quien ya use Docker:* `instalar_servidor_windows_docker.ps1` (WSL2 + Rancher Desktop) y
+`instalar_servidor_mac_docker.sh` (Colima). No hacen falta para nada.
 
 ## 3. Primeros pasos en el panel
 
@@ -170,8 +178,8 @@ que ha hecho OCTOPUS y el resultado. Un mensaje por problema, sin repetidos. Cop
 - **Ajustes → Mantenimiento → Descargar diagnóstico**: un .zip para el soporte, sin contraseñas, claves ni nombres
   de archivos (los equipos salen como equipo-1, equipo-2...).
 - **Ajustes → Avisos por correo**: se puede elegir quién recibe cada tipo de aviso (ataques, copias, servidor, informe).
-- Los instaladores dejan también sus banderines: `C:\ProgramData\OCTOPUS\instalacion_*progreso.txt` en Windows,
-  `/var/log/octopus/instalacion*_progreso.txt` en Linux y `~/Library/Logs/OCTOPUS/` en Mac.
+- Los instaladores dejan también sus banderines: `C:\ProgramData\OCTOPUS-Servidor-instalacion.txt` en Windows,
+  `/var/log/octopus/instalacion*_progreso.txt` en Linux y `/Library/Logs/OCTOPUS-Servidor-instalacion.txt` en Mac.
 
 ## 7. Si atacan un equipo (ransomware)
 
@@ -206,7 +214,8 @@ versión falla al instalarse sola, se reintenta como mucho 3 veces (cada 2 días
 «Buscar actualizaciones»). Con «Actualizar ahora» (pide tu contraseña) el servidor la descarga de GitHub, **comprueba que
 está firmada con la clave de publicación de OCTOPUS** y la instala sola; si no está firmada o algo no coincide, no instala
 nada. El panel no ejecuta nada en el equipo: solo deja la petición, y la recoge un temporizador del sistema
-(`octopus-actualizador.timer` en Linux, un LaunchAgent en Mac; en Windows de momento se actualiza a mano).
+(`octopus-actualizador.timer` en Linux, el servicio `com.octopus.actualizador` en Mac y la tarea «OCTOPUS Actualizador»
+en Windows; en Windows la firma la comprueba el propio OCTOPUS ya instalado, sin depender de programas de fuera).
 
 Para **actualizar a mano**: copia la carpeta nueva de OCTOPUS al servidor y ejecuta `sudo bash instalar_servidor.sh`
 (o `octopus.sh actualizar`). Los equipos se actualizan solos. **Si la versión nueva no arranca bien, el instalador

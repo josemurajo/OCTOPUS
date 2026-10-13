@@ -14,7 +14,6 @@ import os
 import re
 import secrets
 import string
-import subprocess
 import time
 from pathlib import Path
 
@@ -52,7 +51,10 @@ def _escribir(ruta: Path, texto: str, modo: int = 0o600) -> None:
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         fh.write(texto)
     os.replace(tmp, ruta)
-    os.chmod(ruta, modo)
+    try:
+        os.chmod(ruta, modo)
+    except OSError:
+        pass
 
 
 def crear_env() -> bool:
@@ -131,7 +133,10 @@ def migrar_env() -> None:
             fijar(k, secreto(n))
     if os.environ.get("OCTOPUS_IP") and not env.get("OCTOPUS_IP"):
         fijar("OCTOPUS_IP", os.environ["OCTOPUS_IP"])
-    os.chmod(ENV_FILE, 0o600)
+    try:
+        os.chmod(ENV_FILE, 0o600)
+    except OSError:
+        pass
 
 
 def htpasswd(ruta: Path) -> None:
@@ -149,14 +154,37 @@ def htpasswd(ruta: Path) -> None:
         linea = ruta.read_text(encoding="utf-8").strip().split("\n")[0]
         if linea.startswith(usuario + ":"):
             h = linea.split(":", 1)[1].replace("$2y$", "$2b$", 1)
-            if bcrypt.checkpw(clave.encode(), h.encode()):
-                return
+            try:
+                if bcrypt.checkpw(clave.encode(), h.encode()):
+                    return
+            except ValueError:
+                pass  # formato antiguo o estropeado ({SHA}, a medias...): se vuelve a crear abajo
     h = bcrypt.hashpw(clave.encode(), bcrypt.gensalt(rounds=10)).decode().replace("$2b$", "$2y$", 1)
     _escribir(ruta, f"{usuario}:{h}\n")
 
 
-def _openssl(*args: str) -> None:
-    subprocess.run(["openssl", *args], check=True, capture_output=True, timeout=120)
+def _clave_rsa():
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    return rsa.generate_private_key(public_exponent=65537, key_size=3072)
+
+
+def _guardar_clave(ruta: Path, clave) -> None:
+    from cryptography.hazmat.primitives import serialization
+    _escribir_bytes(ruta, clave.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.TraditionalOpenSSL,
+                                              serialization.NoEncryption()), 0o600)
+
+
+def _escribir_bytes(ruta: Path, datos: bytes, modo: int = 0o644) -> None:
+    ruta.parent.mkdir(parents=True, exist_ok=True)
+    tmp = ruta.with_name(ruta.name + ".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, modo)
+    with os.fdopen(fd, "wb") as fh:
+        fh.write(datos)
+    os.replace(tmp, ruta)
+    try:
+        os.chmod(ruta, modo)
+    except OSError:
+        pass
 
 
 def nombres_servidor() -> list[str]:
@@ -175,34 +203,79 @@ def nombres_servidor() -> list[str]:
 def certificado_tls() -> None:
     """Autoridad propia de OCTOPUS + certificado del servidor firmado por ella.
     Los agentes solo confian en esta autoridad. Si cambia la IP o el nombre del servidor se emite otro
-    certificado con la misma autoridad y los equipos siguen confiando sin tocarlos."""
+    certificado con la misma autoridad y los equipos siguen confiando sin tocarlos.
+    Se hace con la libreria `cryptography` (sin el programa openssl), asi funciona igual en Linux, Mac y Windows."""
+    import datetime as _dt
+    import ipaddress
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
+
     tls = BASE_DIR / "data" / "tls"
     tls.mkdir(parents=True, exist_ok=True)
     ca_crt, ca_key = tls / "ca.crt", tls / "ca.key"
     crt, key, san_file = tls / "panel.crt", tls / "panel.key", tls / "nombres.txt"
+    ahora = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(minutes=5)
     nueva_ca = False
     if not (ca_crt.is_file() and ca_key.is_file()):
-        _openssl("req", "-x509", "-newkey", "rsa:3072", "-sha256", "-days", "3650", "-nodes",
-                 "-keyout", str(ca_key), "-out", str(ca_crt), "-subj", "/CN=OCTOPUS Autoridad privada",
-                 "-addext", "basicConstraints=critical,CA:TRUE", "-addext", "keyUsage=critical,keyCertSign,cRLSign")
-        os.chmod(ca_key, 0o600)
+        clave_ca = _clave_rsa()
+        nombre_ca = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "OCTOPUS Autoridad privada")])
+        cert_ca = (x509.CertificateBuilder().subject_name(nombre_ca).issuer_name(nombre_ca)
+                   .public_key(clave_ca.public_key()).serial_number(x509.random_serial_number())
+                   .not_valid_before(ahora).not_valid_after(ahora + _dt.timedelta(days=3650))
+                   .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+                   .add_extension(x509.KeyUsage(digital_signature=False, content_commitment=False, key_encipherment=False,
+                                                data_encipherment=False, key_agreement=False, key_cert_sign=True,
+                                                crl_sign=True, encipher_only=False, decipher_only=False), critical=True)
+                   .add_extension(x509.SubjectKeyIdentifier.from_public_key(clave_ca.public_key()), critical=False)
+                   .sign(clave_ca, hashes.SHA256()))
+        _guardar_clave(ca_key, clave_ca)
+        _escribir_bytes(ca_crt, cert_ca.public_bytes(serialization.Encoding.PEM))
         nueva_ca = True
     nombres = ",".join(nombres_servidor())
     vigente = crt.is_file() and key.is_file() and san_file.is_file() and san_file.read_text().strip() == nombres
     if vigente and not nueva_ca:
         return
-    csr = tls / "panel.csr"
-    ext = tls / "panel.ext"
-    ext.write_text(f"basicConstraints=CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\n"
-                   f"extendedKeyUsage=serverAuth\nsubjectAltName={nombres}\n")
-    _openssl("req", "-newkey", "rsa:3072", "-sha256", "-nodes", "-keyout", str(key), "-out", str(csr),
-             "-subj", "/CN=OCTOPUS")
-    _openssl("x509", "-req", "-in", str(csr), "-CA", str(ca_crt), "-CAkey", str(ca_key), "-CAcreateserial",
-             "-days", "825", "-sha256", "-out", str(crt), "-extfile", str(ext))
-    os.chmod(key, 0o600)
+    clave_ca = serialization.load_pem_private_key(ca_key.read_bytes(), password=None)
+    cert_ca = x509.load_pem_x509_certificate(ca_crt.read_bytes())
+    alt = []
+    for n in nombres.split(","):
+        tipo, _, valor = n.partition(":")
+        if tipo == "IP":
+            try:
+                alt.append(x509.IPAddress(ipaddress.ip_address(valor)))
+            except ValueError:
+                continue
+        elif valor:
+            alt.append(x509.DNSName(valor))
+    clave = _clave_rsa()
+    cert = (x509.CertificateBuilder()
+            .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "OCTOPUS")]))
+            .issuer_name(cert_ca.subject).public_key(clave.public_key()).serial_number(x509.random_serial_number())
+            .not_valid_before(ahora).not_valid_after(ahora + _dt.timedelta(days=825))
+            .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=False)
+            .add_extension(x509.KeyUsage(digital_signature=True, content_commitment=False, key_encipherment=True,
+                                         data_encipherment=False, key_agreement=False, key_cert_sign=False,
+                                         crl_sign=False, encipher_only=False, decipher_only=False), critical=True)
+            .add_extension(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False)
+            .add_extension(x509.SubjectAlternativeName(alt), critical=False)
+            .add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(clave_ca.public_key()), critical=False)
+            .sign(clave_ca, hashes.SHA256()))
+    _guardar_clave(key, clave)
+    _escribir_bytes(crt, cert.public_bytes(serialization.Encoding.PEM))
     san_file.write_text(nombres)
-    for f in (csr, ext):
-        f.unlink(missing_ok=True)
+
+
+def caducidad(crt: Path) -> int | None:
+    """Dias que le quedan a un certificado (None si no se puede leer)."""
+    import datetime as _dt
+    from cryptography import x509
+    try:
+        cert = x509.load_pem_x509_certificate(crt.read_bytes())
+    except (OSError, ValueError):
+        return None
+    fin = getattr(cert, "not_valid_after_utc", None) or cert.not_valid_after.replace(tzinfo=_dt.timezone.utc)
+    return int((fin - _dt.datetime.now(_dt.timezone.utc)).total_seconds() // 86400)
 
 
 def config_agentes() -> dict:

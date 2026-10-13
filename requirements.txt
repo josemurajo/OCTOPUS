@@ -19,3 +19,8 @@ pyyaml>=6.0
 
 # Servidor de produccion del panel (Linux)
 gunicorn>=21.2; sys_platform != "win32"
+# Servidor de produccion del panel en Windows (gunicorn no existe alli; cheroot lleva HTTPS)
+cheroot>=10.0; sys_platform == "win32"
+
+# Instalar en otros equipos por SSH desde el panel (sin depender de los programas ssh/sshpass)
+paramiko>=3.4

@@ -134,15 +134,54 @@ jobs:
           for f in $(git ls-files '*.sh' '*.command'); do bash -n "$f" && echo "bien $f" || { echo "MAL  $f"; mal=1; }; done
           exit $mal
 
+  servidor-windows-nativo:
+    name: Servidor en Windows (nativo, sin WSL2 ni Docker)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instalar como un usuario y probarlo todo
+        shell: pwsh
+        run: ./tests/ci/prueba_servidor_windows.ps1
+      - name: Registros si algo falla
+        if: failure()
+        shell: pwsh
+        run: |
+          foreach ($f in @("$env:ProgramData\OCTOPUS-Servidor-instalacion.txt", "$env:RUNNER_TEMP\instalacion.log",
+                           "$env:ProgramData\OCTOPUS-Servidor\datos\logs\servidor.log", "$env:ProgramData\OCTOPUS-Servidor\datos\logs\actualizador.log",
+                           "C:\ProgramData\Octopus\agent.log")) {
+            if (Test-Path $f) { Write-Host "===== $f"; Get-Content $f -Tail 80 }
+          }
+          Get-ChildItem "$env:ProgramData\OCTOPUS-Servidor\datos\logs" -Filter "actualizacion_*.log" -ErrorAction SilentlyContinue |
+            ForEach-Object { Write-Host "===== $($_.FullName)"; Get-Content $_.FullName -Tail 40 }
+
+  servidor-mac-nativo:
+    name: Servidor en Mac (nativo, sin Docker ni Homebrew)
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instalar como un usuario y probarlo todo
+        run: bash tests/ci/prueba_servidor_mac.sh
+      - name: Registros si algo falla
+        if: failure()
+        run: |
+          for f in /Library/Logs/OCTOPUS-Servidor-instalacion.txt /usr/local/octopus-servidor/datos/logs/servidor.log \
+                   /usr/local/octopus-servidor/datos/logs/com.octopus.servidor.log /usr/local/octopus-servidor/datos/logs/pip.log \
+                   /usr/local/octopus-servidor/datos/logs/actualizacion_*.log /Library/Logs/Octopus/agent.log; do
+            sudo test -f "$f" && { echo "===== $f"; sudo tail -n 80 "$f"; }
+          done
+          true
+
   servidor-mac:
-    name: Instalador del servidor en Mac (Colima)
+    name: Servidor en Mac con Docker (opcional, Colima)
     runs-on: macos-15-intel
     timeout-minutes: 60
     continue-on-error: true   # depende de que el Mac de GitHub permita maquinas virtuales (Colima)
     steps:
       - uses: actions/checkout@v4
       - name: Instalar el servidor como lo haria un usuario
-        run: OCTOPUS_IP=127.0.0.1 bash instalar_servidor_mac.sh
+        run: OCTOPUS_IP=127.0.0.1 bash instalar_servidor_mac_docker.sh
       - name: Comprobar
         run: |
           curl -fsk https://127.0.0.1:8080/healthz

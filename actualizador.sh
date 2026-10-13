@@ -19,12 +19,16 @@ URL="$(leer OCTOPUS_URL_CODIGO)"; URL="${URL:-https://codeload.github.com/josemu
 CLAVE="$RAIZ/install/firma_publicacion.pub"
 D=/data/actualizacion
 C=octopus
+NATIVO=0
+# servidor nativo de Mac (sin Docker): la peticion del panel esta directamente en la carpeta de datos
+PY3=python3
+if [ -x "$RAIZ/python/bin/python3" ]; then NATIVO=1; D="$RAIZ/datos/actualizacion"; PY3="$RAIZ/python/bin/python3"; fi
 
-en_c() { docker exec -i "$C" sh -c "$1"; }
+en_c() { if [ $NATIVO = 1 ]; then sh -c "$1"; else docker exec -i "$C" sh -c "$1"; fi; }
 estado() { printf '%s' "$1" | en_c "mkdir -p $D && cat > $D/estado"; echo "[$(date '+%F %T')] $1"; }
 resultado() { # resultado <ok|error> <texto>
     printf '{"ok": %s, "fecha": "%s", "detalle": %s}' "$( [ "$1" = ok ] && echo true || echo false )" "$(date -Iseconds 2>/dev/null || date)" \
-        "$(printf '%s' "$2" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))' 2>/dev/null || printf '"%s"' "$2")" \
+        "$(printf '%s' "$2" | "$PY3" -c 'import json,sys; print(json.dumps(sys.stdin.read()))' 2>/dev/null || printf '"%s"' "$2")" \
         | en_c "cat > $D/resultado.json; rm -f $D/pedida"
     estado "$2"
 }
@@ -32,7 +36,7 @@ version_mayor() { # version_mayor A B -> 0 si A > B
     [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -1)" = "$1" ]
 }
 
-docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$C" || exit 0
+[ $NATIVO = 1 ] || docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$C" || exit 0
 # señal de vida: el panel sabe que el actualizador está activado en este equipo
 date -Iseconds 2>/dev/null | en_c "mkdir -p $D && cat > $D/actualizador_vivo" || true
 en_c "test -f $D/pedida" 2>/dev/null || exit 0
@@ -65,6 +69,16 @@ EN_DISCO="$(cd "$NUEVO" && find . -type f ! -name MANIFIESTO ! -name MANIFIESTO.
 VNUEVA="$(tr -cd '0-9.' < "$NUEVO/VERSION")"
 version_mayor "$VNUEVA" "$ACTUAL" || { resultado error "La versión publicada ($VNUEVA) no es más nueva que la instalada ($ACTUAL): no hay nada que actualizar."; exit 0; }
 
+if [ $NATIVO = 1 ]; then
+    # el instalador de la version nueva (ya comprobada) guarda la actual, instala y, si no arranca, vuelve sola a ella
+    estado "Firma correcta (versión $VNUEVA). Instalando (unos minutos; el panel se reinicia)..."
+    if OCTOPUS_DESTINO="$RAIZ" bash "${OCTOPUS_INSTALADOR:-$NUEVO/instalar_servidor_mac.sh}" --sin-preguntas > "$RAIZ/datos/logs/actualizacion_$VNUEVA.log" 2>&1; then
+        resultado ok "Actualizado a la versión $VNUEVA. Todo funciona. (Copia de la versión anterior en $RAIZ.anterior)"
+        exit 0
+    fi
+    resultado error "La instalación de $VNUEVA dio problemas y se ha dejado todo como estaba: $(tail -3 "$RAIZ/datos/logs/actualizacion_$VNUEVA.log" | tr '\n' ' ' | cut -c1-300)"
+    exit 1
+fi
 estado "Firma correcta (versión $VNUEVA). Guardando la versión actual por si hay que volver..."
 COPIA="$RAIZ/../$(basename "$RAIZ").antes-de-$VNUEVA"
 rm -rf "$COPIA"; cp -a "$RAIZ" "$COPIA" || { resultado error "No se pudo guardar la versión actual (¿disco lleno?): no se actualiza."; exit 1; }

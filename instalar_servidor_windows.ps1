@@ -1,255 +1,281 @@
-# OCTOPUS Zero-Touch - Instalador del SERVIDOR para Windows 10 (22H2) / 11 / Server 2022-2025
+# OCTOPUS Zero-Touch - Instalador del SERVIDOR para Windows 10 / 11 / Server 2019-2025 (NATIVO: sin WSL2 ni Docker)
 #
-#   Doble clic en INSTALAR_SERVIDOR_WINDOWS.bat (pide permiso de administrador)
-#   o:  powershell -ExecutionPolicy Bypass -File instalar_servidor_windows.ps1 [-IP 192.168.1.10]
+#   Doble clic en INSTALAR_SERVIDOR_WINDOWS.bat. Windows pide permiso de administrador una vez y ya esta.
+#   o:  powershell -ExecutionPolicy Bypass -File instalar_servidor_windows.ps1 [-IP 192.168.1.10] [-Boveda D:\Copias]
 #
-# Que hace:
-#   1. Activa WSL2 si falta (la primera vez puede pedir reiniciar; despues se vuelve a ejecutar).
-#   2. Si no hay Docker, instala Rancher Desktop (gratis y de codigo abierto) con el motor "moby" (Docker)
-#      y sin Kubernetes, y lo deja arrancando solo con Windows.
-#   3. Construye y arranca OCTOPUS en un contenedor (el mismo que en Linux).
-#   4. Abre los puertos 8080 y 8000 en el Firewall de Windows y comprueba que se llega a ellos desde la red
-#      (si Docker solo escucha en esta maquina, crea el reenvio necesario con netsh portproxy).
-#   Volver a ejecutarlo actualiza a la version de esta carpeta sin perder datos ni copias.
-param([string]$IP = "", [switch]$SinPreguntas, [string]$Registro = "")
-# -SinPreguntas: no espera a que se pulse Intro (instalaciones automaticas). -Registro <archivo>: guarda toda la salida
-# "Continue": en PowerShell 5.1 el texto que Docker escribe en la salida de errores se volveria "error" con "Stop".
-# Los fallos se comprueban uno a uno con $LASTEXITCODE.
+# Que hace (sin preguntar nada ni reiniciar):
+#   1. Descarga Python portatil, restic y rest-server (versiones fijas, comprobando su huella SHA-256: si una
+#      descarga no coincide, no se instala nada).
+#   2. Copia OCTOPUS a C:\ProgramData\OCTOPUS-Servidor e instala lo que necesita (solo dentro de esa carpeta).
+#   3. Lo deja como tarea del sistema: arranca solo al encender el equipo, aunque nadie inicie sesion, y se vuelve
+#      a levantar solo si se para.
+#   4. Abre los puertos 8080 (panel) y 8000 (almacen) en el Firewall de Windows y abre el panel en el navegador.
+#   Volver a ejecutarlo actualiza a la version de esta carpeta sin perder datos ni copias (y si la nueva no arranca,
+#   vuelve sola a la anterior).
+param(
+    [string]$IP = "",
+    [string]$Boveda = "",
+    [switch]$SinPreguntas,
+    [string]$Registro = "",
+    [string]$Destino = "$env:ProgramData\OCTOPUS-Servidor",
+    [string]$Descargas = ""      # carpeta con las descargas ya hechas (instalar sin Internet); se comprueban igual
+)
 $ErrorActionPreference = "Continue"
 $ProgressPreference = "SilentlyContinue"
 $Raiz = Split-Path -Parent $MyInvocation.MyCommand.Path
-$ComposeFile = Join-Path $Raiz "install\docker-compose.yml"
-$HostEnv = Join-Path $Raiz "install\.env"
+$R = $Destino.TrimEnd('\')
+$Tarea = "OCTOPUS Servidor"
 
-# Banderines: cada paso queda apuntado con la hora en un archivo aparte (aunque el registro completo falle o se
-# quede bloqueado), para saber siempre hasta donde llego la instalacion y por que se paro.
-$Progreso = Join-Path $env:ProgramData "OCTOPUS\instalacion_progreso.txt"
+# Versiones fijas y sus huellas (si GitHub o alguien por el camino cambiara un archivo, no se instala)
+$PYTHON_URL = "https://github.com/astral-sh/python-build-standalone/releases/download/20250818/cpython-3.12.11%2B20250818-x86_64-pc-windows-msvc-install_only.tar.gz"
+$PYTHON_SHA = "a6bc8c4658a758ec0c111b5f887f80595943fd84f28bbbaea6e7e30c7815dd26"
+$RESTIC_URL = "https://github.com/restic/restic/releases/download/v0.16.4/restic_0.16.4_windows_amd64.zip"
+$RESTIC_SHA = "911a1b84f2100d2ac691c0bb28955fd2ab65e76cb2dbe651b21f6072a508e2be"
+$REST_URL   = "https://github.com/restic/rest-server/releases/download/v0.13.0/rest-server_0.13.0_windows_amd64.tar.gz"
+$REST_SHA   = "b8c465acfc242985767ed53297eb71ee48eba666d16fafbe324a8883a59251d4"
+
+# Banderines: cada paso queda apuntado con la hora, para saber siempre hasta donde llego y por que se paro
+$Progreso = Join-Path $env:ProgramData "OCTOPUS-Servidor-instalacion.txt"
 function Marca($t) {
-    try {
-        New-Item -ItemType Directory -Force -Path (Split-Path $Progreso) | Out-Null
-        Add-Content -Path $Progreso -Value ("[{0}] {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $t) -Encoding UTF8
-    } catch { }
+    try { Add-Content -Path $Progreso -Value ("[{0}] {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $t) -Encoding UTF8 } catch { }
 }
 function Paso($t)  { Marca "==> $t"; Write-Host ""; Write-Host "==> $t" -ForegroundColor Cyan }
 function Bien($t)  { Marca "OK  $t"; Write-Host "    $t" -ForegroundColor Green }
 function Aviso($t) { Marca "..  $t"; Write-Host "    $t" -ForegroundColor Yellow }
 function Pausa { if (-not $SinPreguntas) { Read-Host "Pulsa Intro para cerrar" | Out-Null } }
 function Fallo($t) { Marca "ERROR $t"; Write-Host ""; Write-Host "ERROR: $t" -ForegroundColor Red; Pausa; if ($Registro) { Stop-Transcript | Out-Null }; exit 1 }
-function Refrescar-Path {
-    $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
-}
 
-# ------------------------------------------------------------------ administrador
+# ------------------------------------------------------------------ administrador (Windows lo pide una vez)
 $yo = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $yo.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    $args2 = "-NoProfile -ExecutionPolicy Bypass -File `"$($MyInvocation.MyCommand.Path)`""
-    if ($IP) { $args2 += " -IP $IP" }
-    if ($SinPreguntas) { $args2 += " -SinPreguntas" }
-    if ($Registro) { $args2 += " -Registro `"$Registro`"" }
-    Start-Process powershell -Verb RunAs -ArgumentList $args2
+    $a = "-NoProfile -ExecutionPolicy Bypass -File `"$($MyInvocation.MyCommand.Path)`""
+    if ($IP) { $a += " -IP `"$IP`"" }
+    if ($Boveda) { $a += " -Boveda `"$Boveda`"" }
+    if ($SinPreguntas) { $a += " -SinPreguntas" }
+    if ($Registro) { $a += " -Registro `"$Registro`"" }
+    if ($Descargas) { $a += " -Descargas `"$Descargas`"" }
+    if ($Destino -ne "$env:ProgramData\OCTOPUS-Servidor") { $a += " -Destino `"$Destino`"" }
+    Start-Process powershell -Verb RunAs -ArgumentList $a
     exit 0
 }
 Marca "---- inicio de la instalacion (PID $PID, usuario $env:USERNAME) ----"
-if ($Registro) {
-    try { Start-Transcript -Path $Registro -Append -ErrorAction Stop | Out-Null; Marca "registro completo en $Registro" }
-    catch { Marca "no se pudo abrir el registro completo ($Registro): $($_.Exception.Message)" }
-}
-if (-not (Test-Path $ComposeFile)) { Fallo "No encuentro $ComposeFile. Ejecuta este archivo desde la carpeta de OCTOPUS." }
+if ($Registro) { try { Start-Transcript -Path $Registro -Append -ErrorAction Stop | Out-Null } catch { } }
+if (-not (Test-Path (Join-Path $Raiz "lib\servidor.py"))) { Fallo "No encuentro lib\servidor.py. Ejecuta este archivo desde la carpeta de OCTOPUS." }
 $os = Get-CimInstance Win32_OperatingSystem
 Write-Host "OCTOPUS Zero-Touch - instalacion del servidor en Windows   ($($os.Caption), compilacion $($os.BuildNumber))" -ForegroundColor White
-if ([int]$os.BuildNumber -lt 19045) { Fallo "Hace falta Windows 10 22H2 (compilacion 19045) o posterior." }
+if ([int]$os.BuildNumber -lt 17763) { Fallo "Hace falta Windows 10 (1809) / Server 2019 o posterior." }
+if (-not [Environment]::Is64BitOperatingSystem) { Fallo "Hace falta un Windows de 64 bits." }
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-# ------------------------------------------------------------------ Docker / Rancher Desktop
-function Buscar-RD {
-    foreach ($d in @("$env:ProgramFiles\Rancher Desktop", "$env:LOCALAPPDATA\Programs\Rancher Desktop")) {
-        $bin = Join-Path $d "resources\resources\win32\bin"
-        if (Test-Path (Join-Path $bin "rdctl.exe")) { return $bin }
-    }
-    return $null
+# ------------------------------------------------------------------ utilidades
+function Leer-Ajuste($archivo, $clave) {
+    if (-not (Test-Path $archivo)) { return "" }
+    $l = Get-Content $archivo -ErrorAction SilentlyContinue | Where-Object { $_ -match "^$clave=" } | Select-Object -Last 1
+    if ($l) { return ($l -split "=", 2)[1].Trim().Trim('"') } else { return "" }
 }
-function Docker-Va { try { & docker info *> $null; return ($LASTEXITCODE -eq 0) } catch { return $false } }
-
-Paso "Docker"
-Refrescar-Path
-$rdBin = Buscar-RD
-if ($rdBin) { $env:Path = "$rdBin;$env:Path" }
-if (-not (Docker-Va)) {
-    # WSL2: Rancher Desktop lo necesita
-    $wslOk = $false
-    try { & wsl.exe --status *> $null; $wslOk = ($LASTEXITCODE -eq 0) } catch { }
-    Marca "WSL listo: $wslOk"
-    $marca = Join-Path $env:ProgramData "OctopusServidor_wsl_reinicio.txt"
-    if (-not $wslOk -and (Test-Path $marca)) {
-        # Ya se pidio reiniciar: si de verdad se ha reiniciado, terminar de instalar WSL sin pedir otro reinicio
-        $arranque = (Get-CimInstance Win32_OperatingSystem).LastBootUpTime
-        if ($arranque -gt (Get-Item $marca).LastWriteTime) {
-            Aviso "Terminando de instalar WSL2 despues del reinicio..."
-            & wsl.exe --install --no-distribution
-            & wsl.exe --update *> $null
-            try { & wsl.exe --status *> $null; $wslOk = ($LASTEXITCODE -eq 0) } catch { }
-            if (-not $wslOk) { Fallo "WSL2 sigue sin funcionar tras reiniciar. Comprueba que la virtualizacion esta activada en la BIOS." }
-            Remove-Item $marca -Force -ErrorAction SilentlyContinue
-        }
-    }
-    if (-not $wslOk) {
-        Aviso "Activando WSL2 (subsistema de Linux de Windows)..."
-        & wsl.exe --install --no-distribution
-        Set-Content -Path $marca -Value (Get-Date) -ErrorAction SilentlyContinue
-        if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 3010) {
-            Fallo "No se pudo activar WSL2. Comprueba que la virtualizacion esta activada en la BIOS y vuelve a intentarlo."
-        }
-        Write-Host ""
-        Write-Host "WSL2 activado. REINICIA el equipo y vuelve a hacer doble clic en INSTALAR_SERVIDOR_WINDOWS.bat." -ForegroundColor Yellow
-        Pausa
-        if ($Registro) { Stop-Transcript | Out-Null }
-        Marca "WSL2 activado: pide reiniciar (3010)"
-        exit 3010
-    }
-    & wsl.exe --update *> $null
-    if (-not $rdBin) {
-        Aviso "Instalando Rancher Desktop (gratis, de codigo abierto; 3-5 minutos)..."
-        $hecho = $false
-        if (Get-Command winget -ErrorAction SilentlyContinue) {
-            Marca "winget: instalando Rancher Desktop..."
-            & winget install -e --id SUSE.RancherDesktop --source winget --silent --scope machine --accept-package-agreements --accept-source-agreements
-            $hecho = ($LASTEXITCODE -eq 0) -or [bool](Buscar-RD)
-            Marca "winget termino con codigo $LASTEXITCODE (instalado: $hecho)"
-        }
-        if (-not $hecho) {
-            # sin winget: el .msi de la ultima version, desde GitHub
-            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-            $rel = Invoke-RestMethod "https://api.github.com/repos/rancher-sandbox/rancher-desktop/releases/latest" -UseBasicParsing -ErrorAction Stop
-            $msi = $rel.assets | Where-Object { $_.name -like "*.msi" } | Select-Object -First 1
-            if (-not $msi) { Fallo "No se encontro el instalador de Rancher Desktop. Instalalo a mano desde rancherdesktop.io" }
-            $dest = Join-Path $env:TEMP $msi.name
-            Invoke-WebRequest $msi.browser_download_url -OutFile $dest -UseBasicParsing -ErrorAction Stop
-            Marca "msi: descargado $($msi.name), instalando..."
-            $p = Start-Process msiexec.exe -Wait -PassThru -ArgumentList "/i `"$dest`" /qn /norestart WSLINSTALLED=1 MSIINSTALLPERUSER=0"
-            Marca "msi termino con codigo $($p.ExitCode)"
-            if ($p.ExitCode -notin 0, 3010) { Fallo "El instalador de Rancher Desktop termino con codigo $($p.ExitCode)" }
-        }
-        $rdBin = Buscar-RD
-        if (-not $rdBin) { Fallo "Rancher Desktop no aparece instalado. Instalalo a mano desde rancherdesktop.io y vuelve a ejecutar esto." }
-        $env:Path = "$rdBin;$env:Path"
-    }
-    Aviso "Arrancando Rancher Desktop con Docker (moby) y sin Kubernetes (la primera vez 2-5 minutos)..."
-    # En segundo plano: "rdctl start" puede quedarse esperando a la ventana de Rancher Desktop y no volver nunca
-    Start-Process -FilePath (Join-Path $rdBin "rdctl.exe") -WindowStyle Hidden -ArgumentList @(
-        "start", "--container-engine.name=moby", "--kubernetes.enabled=false",
-        "--application.start-in-background=true", "--application.auto-start=true") | Out-Null
-    Marca "rdctl start lanzado en segundo plano ($rdBin)"
-    for ($i = 0; $i -lt 120 -and -not (Docker-Va); $i++) {
-        Start-Sleep -Seconds 5
-        if ($i % 6 -eq 5) {
-            $err = ((& docker info 2>&1) | Select-Object -Last 1) -join " "
-            $procs = (Get-Process "Rancher Desktop", rdctl, wsl -ErrorAction SilentlyContinue | ForEach-Object { $_.ProcessName } | Sort-Object -Unique) -join ","
-            Marca ("esperando a Docker ({0} s): procesos=[{1}] docker dice: {2}" -f (($i + 1) * 5), $procs, $err)
-        }
-    }
-    if (-not (Docker-Va)) {
-        # Banderines de diagnostico: estado de WSL y ultimas lineas de los registros de Rancher Desktop
-        Marca ("wsl -l -v: " + (((& wsl.exe -l -v) 2>&1 | ForEach-Object { "$_" -replace "`0", "" } | Where-Object { $_.Trim() }) -join " | "))
-        $rdLogs = Join-Path $env:LOCALAPPDATA "rancher-desktop\logs"
-        foreach ($n in @("background.log", "wsl.log", "k8s.log", "dockerd.log", "wsl-exec.log")) {
-            $f = Join-Path $rdLogs $n
-            if (Test-Path $f) { Get-Content $f -Tail 8 | ForEach-Object { Marca "  [$n] $_" } }
-        }
-        $wslLog = Join-Path $rdLogs "wsl.log"
-        if ((Test-Path $wslLog) -and (Select-String -Path $wslLog -Pattern "failed to execute wsl.exe --import" -Quiet)) {
-            Fallo ("WSL2 no puede crear su maquina virtual en este equipo, asi que Docker no puede arrancar. " +
-                   "Suele pasar si la virtualizacion (Intel VT-x / AMD-V) esta desactivada en la BIOS, o si este Windows ya es " +
-                   "una maquina virtual. Solucion: activa la virtualizacion en la BIOS (o usa un PC fisico) y vuelve a ejecutar esto. " +
-                   "Alternativa: instala el servidor en un Linux (instalar_servidor.sh).")
-        }
-        Fallo "Docker no arranca. Abre Rancher Desktop desde el menu Inicio, espera a que termine y vuelve a ejecutar esto." }
-} elseif ($rdBin) {
-    & (Join-Path $rdBin "rdctl.exe") set --application.auto-start=true 2>&1 | Out-Null
+function Escribir-Texto($ruta, $texto) {
+    [IO.File]::WriteAllText($ruta, ($texto -replace "`r`n", "`n"), (New-Object Text.UTF8Encoding($false)))
 }
-& docker compose version *> $null
-if ($LASTEXITCODE -ne 0) { Fallo "Falta 'docker compose'." }
-Bien ((& docker version --format "Docker {{.Server.Version}}") 2>$null)
-
-# ------------------------------------------------------------------ direccion
-Paso "Direccion del servidor"
-function Leer($clave) {
-    if (-not (Test-Path $HostEnv)) { return "" }
-    $l = Get-Content $HostEnv | Where-Object { $_ -match "^$clave=" } | Select-Object -Last 1
-    if ($l) { return ($l -split "=", 2)[1].Trim('"') } else { return "" }
+function Descargar($url, $sha, $nombre) {
+    $dest = Join-Path $script:Tmp $nombre
+    if ($Descargas -and (Test-Path (Join-Path $Descargas $nombre))) { Copy-Item (Join-Path $Descargas $nombre) $dest -Force }
+    else {
+        for ($i = 1; $i -le 3; $i++) {
+            try { Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing -TimeoutSec 600 -ErrorAction Stop; break }
+            catch { Marca "descarga de $nombre fallida (intento $i): $($_.Exception.Message)"; Start-Sleep -Seconds (5 * $i) }
+        }
+    }
+    if (-not (Test-Path $dest)) { Fallo "No se pudo descargar $nombre. Comprueba la conexion a Internet y vuelve a intentarlo." }
+    $h = (Get-FileHash -Algorithm SHA256 $dest).Hash.ToLower()
+    if ($h -ne $sha) { Remove-Item $dest -Force; Fallo "La descarga de $nombre no es la oficial (huella distinta): por seguridad no se instala nada." }
+    Bien "$nombre descargado y comprobado"
+    return $dest
 }
-if (-not $IP) { $IP = Leer "OCTOPUS_IP" }
-if (-not $IP) {
-    $IP = (Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway -and $_.NetAdapter.Status -eq "Up" } |
-           Select-Object -First 1).IPv4Address.IPAddress
+function Procesos-Octopus {
+    # todo lo que esta corriendo desde la carpeta de OCTOPUS (python del servidor, rest-server, el lanzador)
+    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+        ($_.ExecutablePath -and $_.ExecutablePath.StartsWith($R, [StringComparison]::OrdinalIgnoreCase)) -or
+        ($_.CommandLine -and $_.CommandLine -like "*$R\arrancar_servidor.ps1*") }
 }
-if (-not $IP) { Fallo "No se pudo averiguar la IP. Ejecuta: instalar_servidor_windows.ps1 -IP <ip>" }
-Bien "Los equipos llegaran al servidor por $IP (cambialo con -IP si usas otra IP o un nombre)"
-
-$pPanel = Leer "PANEL_PUERTO"; if (-not $pPanel) { $pPanel = "8080" }
-$pAlm = Leer "ALMACEN_PUERTO"; if (-not $pAlm) { $pAlm = "8000" }
-$vol = Leer "OCTOPUS_VOLUMEN_BOVEDA"; if (-not $vol) { $vol = "octopus_boveda" }
-$tz = "Europe/Madrid"
-try { $iana = $null; if ([TimeZoneInfo]::TryConvertWindowsIdToIanaId((Get-TimeZone).Id, [ref]$iana)) { $tz = $iana } } catch { }
-$version = (Get-Content (Join-Path $Raiz "VERSION") -ErrorAction SilentlyContinue | Select-Object -First 1)
-if (-not $version) { $version = "local" }
-$contenido = @"
-# OCTOPUS - ajustes del anfitrion (los usa docker compose). Cambia y vuelve a ejecutar el instalador
-OCTOPUS_IP=$IP
-OCTOPUS_PUBLIC_HOST=$(Leer "OCTOPUS_PUBLIC_HOST")
-OCTOPUS_NOMBRES_EXTRA=$(Leer "OCTOPUS_NOMBRES_EXTRA")
-PANEL_PUERTO=$pPanel
-ALMACEN_PUERTO=$pAlm
-TZ=$tz
-OCTOPUS_VOLUMEN_BOVEDA=$vol
-OCTOPUS_VERSION=$($version.Trim())
-"@
-[IO.File]::WriteAllText($HostEnv, ($contenido -replace "`r`n", "`n"), (New-Object Text.UTF8Encoding($false)))
-
-# ------------------------------------------------------------------ imagen y arranque
-Paso "Construyendo OCTOPUS (la primera vez tarda unos minutos)"
-$dc = @("compose", "--env-file", $HostEnv, "-f", $ComposeFile)
-$ant = (& docker image inspect -f "{{.Id}}" "octopus-servidor:$($version.Trim())" 2>$null)
-if ($ant) { & docker tag $ant octopus-servidor:anterior 2>$null | Out-Null }
-& docker @dc build --pull
-Marca "docker build termino con codigo $LASTEXITCODE"
-if ($LASTEXITCODE -ne 0) { Fallo "No se pudo construir la imagen" }
-Paso "Arrancando OCTOPUS"
-& docker @dc up -d --remove-orphans octopus
-Marca "docker up termino con codigo $LASTEXITCODE"
-if ($LASTEXITCODE -ne 0) { Fallo "No se pudo arrancar el contenedor" }
-
-# los certificados son propios: para comprobar que responde no se valida el certificado
+function Parar-Octopus {
+    Stop-ScheduledTask -TaskName $Tarea -ErrorAction SilentlyContinue
+    for ($i = 0; $i -lt 3; $i++) {
+        $p = @(Procesos-Octopus)
+        if ($p.Count -eq 0) { return }
+        $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+        Start-Sleep -Seconds 2
+    }
+}
+# los certificados son propios de OCTOPUS: para comprobar que responde no se valida el certificado
 Add-Type @"
 using System.Net; using System.Security.Cryptography.X509Certificates;
 public class OctopusSinValidar : ICertificatePolicy {
   public bool CheckValidationResult(ServicePoint s, X509Certificate c, WebRequest r, int p) { return true; } }
 "@ -ErrorAction SilentlyContinue
-[Net.ServicePointManager]::CertificatePolicy = New-Object OctopusSinValidar
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-function Responde($url) { try { $r = Invoke-WebRequest $url -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop; return $r.StatusCode -lt 500 } catch { return $false } }
+function Responde($url) {
+    $ant = [Net.ServicePointManager]::CertificatePolicy
+    try { [Net.ServicePointManager]::CertificatePolicy = New-Object OctopusSinValidar
+          $r = Invoke-WebRequest $url -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop; return $r.StatusCode -lt 500 }
+    catch { return $false } finally { [Net.ServicePointManager]::CertificatePolicy = $ant }
+}
+
+$script:Tmp = Join-Path $env:TEMP ("octopus_inst_" + [guid]::NewGuid().ToString("N").Substring(0, 8))
+New-Item -ItemType Directory -Force -Path $script:Tmp | Out-Null
+$HostEnv = Join-Path $R "install\.env"
+$yaEstaba = Test-Path (Join-Path $R "lib\servidor.py")
+
+# ------------------------------------------------------------------ direccion y ajustes
+Paso "Direccion del servidor"
+if (-not $IP) { $IP = Leer-Ajuste $HostEnv "OCTOPUS_IP" }
+if (-not $IP) {
+    $IP = (Get-NetIPConfiguration -ErrorAction SilentlyContinue | Where-Object { $_.IPv4DefaultGateway -and $_.NetAdapter.Status -eq "Up" } |
+           Select-Object -First 1).IPv4Address.IPAddress
+}
+if (-not $IP) { Fallo "No se pudo averiguar la IP de este equipo. Ejecuta: instalar_servidor_windows.ps1 -IP <ip>" }
+Bien "Los equipos llegaran al servidor por $IP"
+if (-not $Boveda) { $Boveda = Leer-Ajuste $HostEnv "OCTOPUS_BOVEDA_DIR" }
+if (-not $Boveda) { $Boveda = Join-Path $R "boveda" }
+$pPanel = Leer-Ajuste $HostEnv "ADMIN_PORT"; if (-not $pPanel) { $pPanel = "8080" }
+$pAlm = "8000"
+
+# ------------------------------------------------------------------ descargas
+Paso "Descargando lo necesario (Python portatil, restic y rest-server)"
+$fPy = Descargar $PYTHON_URL $PYTHON_SHA "python.tar.gz"
+$fRestic = Descargar $RESTIC_URL $RESTIC_SHA "restic.zip"
+$fRest = Descargar $REST_URL $REST_SHA "rest-server.tar.gz"
+
+# ------------------------------------------------------------------ copia de la version actual (por si hay que volver)
+$Anterior = "$R.anterior"
+$Excluir = @("datos", "boveda", "python", "bin", "data", ".git", "__pycache__")
+if ($yaEstaba) {
+    Paso "Guardando la version instalada por si hay que volver a ella"
+    Parar-Octopus
+    if (Test-Path $Anterior) { Remove-Item -Recurse -Force $Anterior -ErrorAction SilentlyContinue }
+    & robocopy $R $Anterior /E /NFL /NDL /NJH /NJS /NP /XD @Excluir | Out-Null
+    Bien "copia guardada en $Anterior"
+}
+
+# ------------------------------------------------------------------ instalar
+Paso "Instalando OCTOPUS en $R"
+New-Item -ItemType Directory -Force -Path $R, "$R\bin", "$R\datos\logs", "$R\install", $Boveda | Out-Null
+if ($Raiz.TrimEnd('\') -ne $R) {
+    & robocopy $Raiz $R /E /NFL /NDL /NJH /NJS /NP /XD @Excluir "tests" /XF ".env" "CREDENCIALES_INICIALES.txt" "*.pyc" | Out-Null
+    if ($LASTEXITCODE -ge 8) { Fallo "No se pudieron copiar los archivos de OCTOPUS (robocopy $LASTEXITCODE)" }
+}
+# Python portatil (solo dentro de la carpeta de OCTOPUS: no toca ningun otro Python del equipo)
+if (Test-Path "$R\python") { Remove-Item -Recurse -Force "$R\python" -ErrorAction SilentlyContinue }
+& tar.exe -xzf $fPy -C $R
+if (-not (Test-Path "$R\python\python.exe")) { Fallo "No se pudo descomprimir Python" }
+# restic y rest-server
+$t = Join-Path $script:Tmp "restic"; Expand-Archive -Force $fRestic $t
+Copy-Item (Get-ChildItem $t -Filter "restic*.exe" -Recurse | Select-Object -First 1).FullName "$R\bin\restic.exe" -Force
+$t = Join-Path $script:Tmp "rest"; New-Item -ItemType Directory -Force $t | Out-Null; & tar.exe -xzf $fRest -C $t
+Copy-Item (Get-ChildItem $t -Filter "rest-server.exe" -Recurse | Select-Object -First 1).FullName "$R\bin\rest-server.exe" -Force
+if (-not ((Test-Path "$R\bin\restic.exe") -and (Test-Path "$R\bin\rest-server.exe"))) { Fallo "No se pudieron preparar restic y rest-server" }
+Bien ((& "$R\bin\restic.exe" version) -join " ")
+Aviso "Instalando las librerias de Python (1-3 minutos)..."
+& "$R\python\python.exe" -m pip install --disable-pip-version-check --no-warn-script-location -q -r "$R\requirements.txt" 2>&1 |
+    ForEach-Object { Marca "pip: $_" }
+& "$R\python\python.exe" -c "import flask, cheroot, paramiko, cryptography, bcrypt" 2>$null
+if ($LASTEXITCODE -ne 0) { Fallo "No se pudieron instalar las librerias de Python (mira $Progreso)" }
+Bien "librerias instaladas"
+
+# ajustes del equipo (los lee el lanzador cada vez que arranca)
+$tz = "Europe/Madrid"
+try { $iana = $null; if ([TimeZoneInfo]::TryConvertWindowsIdToIanaId((Get-TimeZone).Id, [ref]$iana)) { $tz = $iana } } catch { }
+$gestionadas = @("OCTOPUS_NATIVO", "OCTOPUS_IP", "OCTOPUS_PUBLIC_HOST", "OCTOPUS_NOMBRES_EXTRA", "OCTOPUS_BOVEDA_DIR", "ADMIN_PORT", "TZ")
+$extra = @(Get-Content $HostEnv -ErrorAction SilentlyContinue | Where-Object {
+    $_ -match '^[A-Z_][A-Z0-9_]*=' -and (($_ -split '=', 2)[0] -notin $gestionadas) }) -join "`n"   # ajustes anadidos a mano: se conservan
+Escribir-Texto $HostEnv @"
+# OCTOPUS - ajustes de este equipo (servidor nativo de Windows). Cambia y vuelve a ejecutar el instalador.
+OCTOPUS_NATIVO=1
+OCTOPUS_IP=$IP
+OCTOPUS_PUBLIC_HOST=$(Leer-Ajuste $HostEnv "OCTOPUS_PUBLIC_HOST")
+OCTOPUS_NOMBRES_EXTRA=$(Leer-Ajuste $HostEnv "OCTOPUS_NOMBRES_EXTRA")
+OCTOPUS_BOVEDA_DIR=$Boveda
+ADMIN_PORT=$pPanel
+TZ=$tz
+$extra
+"@
+# lanzador: pone los ajustes y arranca el servidor (que vigila el panel, el almacen y el mantenimiento)
+Escribir-Texto "$R\arrancar_servidor.ps1" @'
+# OCTOPUS - arranca el servidor (lo lanza la tarea "OCTOPUS Servidor" al encender el equipo). No hace falta tocarlo.
+$ErrorActionPreference = "Continue"
+$R = Split-Path -Parent $MyInvocation.MyCommand.Path
+New-Item -ItemType Directory -Force -Path "$R\datos\logs" | Out-Null
+$log = "$R\datos\logs\servidor.log"
+if ((Test-Path $log) -and (Get-Item $log).Length -gt 10MB) { Move-Item -Force $log "$log.1" }
+foreach ($l in (Get-Content "$R\install\.env" -ErrorAction SilentlyContinue)) {
+    if ($l -match '^\s*([A-Z_][A-Z0-9_]*)=(.*)$' -and $Matches[2].Trim()) { Set-Item -Path "env:$($Matches[1])" -Value $Matches[2].Trim().Trim('"') }
+}
+$env:OCTOPUS_NATIVO = "1"
+$env:OCTOPUS_DATA = "$R\datos"
+if (-not $env:OCTOPUS_BOVEDA_DIR) { $env:OCTOPUS_BOVEDA_DIR = "$R\boveda" }
+$env:OCTOPUS_BIN = "$R\bin"
+$env:RESTIC_CACHE_DIR = "$R\datos\.cache\restic"
+$env:PYTHONUTF8 = "1"; $env:PYTHONUNBUFFERED = "1"; $env:PYTHONDONTWRITEBYTECODE = "1"
+$env:PATH = "$R\bin;$R\python;$env:PATH"
+# si el servidor se para por lo que sea, se vuelve a arrancar a los 10 segundos (octopus.ps1 parar para este lanzador)
+while ($true) {
+    Add-Content -Path $log -Value ("===== {0} arrancando OCTOPUS" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss")) -Encoding UTF8
+    & cmd.exe /c "`"$R\python\python.exe`" `"$R\lib\servidor.py`" >> `"$log`" 2>&1"
+    Add-Content -Path $log -Value ("===== {0} OCTOPUS se ha parado (codigo {1}); se vuelve a arrancar en 10 s" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $LASTEXITCODE) -Encoding UTF8
+    Start-Sleep -Seconds 10
+    if ((Test-Path $log) -and (Get-Item $log).Length -gt 10MB) { Move-Item -Force $log "$log.1" }
+}
+'@
+Bien "archivos en su sitio"
+
+# ------------------------------------------------------------------ tarea del sistema (arranca sola con Windows)
+Paso "Dejando OCTOPUS en marcha (arranca solo al encender el equipo)"
+$ocupado = Get-NetTCPConnection -LocalPort ([int]$pPanel) -State Listen -ErrorAction SilentlyContinue |
+    Where-Object { $p = Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue; -not ($p.Path -and $p.Path.StartsWith($R, [StringComparison]::OrdinalIgnoreCase)) }
+if ($ocupado) {
+    $quien = (Get-Process -Id ($ocupado | Select-Object -First 1).OwningProcess -ErrorAction SilentlyContinue).ProcessName
+    Fallo "El puerto $pPanel lo esta usando otro programa ($quien). Si es la version antigua de OCTOPUS con Docker, paralo (octopus.ps1 parar) y vuelve a ejecutar esto."
+}
+$accion = New-ScheduledTaskAction -Execute "powershell.exe" -WorkingDirectory $R `
+    -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$R\arrancar_servidor.ps1`""
+$cuando = New-ScheduledTaskTrigger -AtStartup
+$quien = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+$como = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable `
+    -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew
+Register-ScheduledTask -TaskName $Tarea -Action $accion -Trigger $cuando -Principal $quien -Settings $como `
+    -Description "Servidor de copias OCTOPUS (panel, almacen y mantenimiento)" -Force | Out-Null
+# actualizador seguro: cada 5 minutos mira si se ha pedido una actualizacion desde el panel (solo instala versiones firmadas)
+$accionA = New-ScheduledTaskAction -Execute "powershell.exe" -WorkingDirectory $R `
+    -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$R\actualizador.ps1`""
+$cadaRato = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) -RepetitionInterval (New-TimeSpan -Minutes 5) `
+    -RepetitionDuration (New-TimeSpan -Days 3650)
+$comoA = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable `
+    -ExecutionTimeLimit (New-TimeSpan -Hours 2) -MultipleInstances IgnoreNew
+Register-ScheduledTask -TaskName "OCTOPUS Actualizador" -Action $accionA -Trigger $cadaRato -Principal $quien -Settings $comoA `
+    -Description "Instala las actualizaciones de OCTOPUS que se piden desde el panel (solo versiones firmadas)" -Force | Out-Null
+Parar-Octopus
+Start-ScheduledTask -TaskName $Tarea
 $ok = $false
-for ($i = 0; $i -lt 90; $i++) {
-    if (Responde "https://127.0.0.1:$pPanel/login") { $ok = $true; break }
+for ($i = 0; $i -lt 120; $i++) {
+    if (Responde "https://127.0.0.1:$pPanel/healthz") { $ok = $true; break }
     Start-Sleep -Seconds 2
 }
 if (-not $ok) {
-    & docker logs --tail 40 octopus
-    Marca ("estado del contenedor: " + ((& docker ps -a --filter name=octopus --format "{{.Status}}") -join " "))
-    # Una actualizacion nunca debe dejar el servidor sin funcionar: se vuelve sola a la version anterior
-    if ($ant) {
+    Get-Content "$R\datos\logs\servidor.log" -Tail 30 -ErrorAction SilentlyContinue | ForEach-Object { Marca "  [servidor] $_"; Write-Host "  $_" }
+    if ($yaEstaba -and (Test-Path $Anterior)) {
+        # una actualizacion nunca debe dejar el servidor sin funcionar: se vuelve sola a la version anterior
         Aviso "La version nueva no arranca bien: volviendo a la anterior automaticamente..."
-        $txt = (Get-Content $HostEnv) -replace '^OCTOPUS_VERSION=.*', 'OCTOPUS_VERSION=anterior'
-        [IO.File]::WriteAllText($HostEnv, (($txt -join "`n") + "`n"), (New-Object Text.UTF8Encoding($false)))
-        & docker @dc up -d --no-build octopus 2>&1 | Out-Null
-        Start-Sleep -Seconds 20
-        if (Responde "https://127.0.0.1:$pPanel/login") {
+        Parar-Octopus
+        & robocopy $Anterior $R /E /NFL /NDL /NJH /NJS /NP | Out-Null
+        Start-ScheduledTask -TaskName $Tarea
+        for ($i = 0; $i -lt 60; $i++) { if (Responde "https://127.0.0.1:$pPanel/healthz") { break }; Start-Sleep -Seconds 2 }
+        if (Responde "https://127.0.0.1:$pPanel/healthz") {
             Fallo "La version nueva no arrancaba y se ha vuelto a la anterior (todo sigue funcionando como antes). Manda el diagnostico al soporte."
         }
     }
-    Fallo "El panel no responde"
+    Fallo "El panel no responde. Mira $R\datos\logs\servidor.log"
 }
 Bien "panel en marcha"
 
-# ------------------------------------------------------------------ red: cortafuegos y reenvio
+# ------------------------------------------------------------------ red y energia
 Paso "Red"
 foreach ($p in @($pPanel, $pAlm)) {
     $nombre = "OCTOPUS $p"
@@ -258,34 +284,33 @@ foreach ($p in @($pPanel, $pAlm)) {
     }
 }
 Bien "Firewall de Windows: abiertos $pPanel y $pAlm (redes privadas y de dominio)"
-# Con WSL2, Docker a veces solo escucha en 127.0.0.1: se comprueba por la IP de la red y, si no llega, se reenvia
-foreach ($p in @($pPanel, $pAlm)) {
-    $t = Test-NetConnection -ComputerName $IP -Port $p -WarningAction SilentlyContinue
-    if (-not $t.TcpTestSucceeded) {
-        & netsh interface portproxy delete v4tov4 listenport=$p listenaddress=$IP 2>$null | Out-Null
-        & netsh interface portproxy add v4tov4 listenport=$p listenaddress=$IP connectport=$p connectaddress=127.0.0.1 | Out-Null
-        Set-Service iphlpsvc -StartupType Automatic -ErrorAction SilentlyContinue
-        Start-Service iphlpsvc -ErrorAction SilentlyContinue
-        Start-Sleep -Seconds 2
-        $t = Test-NetConnection -ComputerName $IP -Port $p -WarningAction SilentlyContinue
-        if ($t.TcpTestSucceeded) { Bien "puerto $p reenviado a Docker (netsh portproxy)" } else { Aviso "No se llega al puerto $p por $($IP): revisa el antivirus o el firewall" }
-    } else {
-        Bien "puerto $p accesible por $IP"
-    }
+$perfil = (Get-NetConnectionProfile -ErrorAction SilentlyContinue | Select-Object -First 1).NetworkCategory
+if ("$perfil" -eq "Public") {
+    Aviso "La red de este equipo esta marcada como PUBLICA: los demas equipos no podran llegar. Marcala como privada en Configuracion > Red e Internet."
 }
+# un servidor no debe dormirse: sin suspension mientras este enchufado (la pantalla si se apaga)
+& powercfg /change standby-timeout-ac 0 2>$null | Out-Null
+& powercfg /change hibernate-timeout-ac 0 2>$null | Out-Null
+Bien "Este equipo ya no se suspende mientras este enchufado (la pantalla se sigue apagando)"
 
+$credOrig = Join-Path $R "data\CREDENCIALES_INICIALES.txt"
 $cred = Join-Path $Raiz "CREDENCIALES_INICIALES.txt"
-$txt = (& docker exec octopus cat /data/panel/CREDENCIALES_INICIALES.txt 2>$null)
-if ($txt) { [IO.File]::WriteAllText($cred, ($txt -join "`r`n")) }
+if ((Test-Path $credOrig) -and ($Raiz.TrimEnd('\') -ne $R)) { Copy-Item $credOrig $cred -Force -ErrorAction SilentlyContinue }
+Remove-Item -Recurse -Force $script:Tmp -ErrorAction SilentlyContinue
 
 Write-Host ""
 Write-Host "=== OCTOPUS instalado ===" -ForegroundColor Green
 Write-Host "  Panel:        https://$($IP):$pPanel   (el navegador avisara del certificado propio la primera vez)"
 Write-Host "  Usuario:      admin"
-if (Test-Path $cred) { Write-Host "  Contrasena:   en $cred (un solo uso; borralo despues de entrar)" }
-Write-Host "  Gestion:      octopus.ps1 (clic derecho -> Ejecutar con PowerShell, o: powershell -File octopus.ps1 ayuda)"
-Write-Host "  IMPORTANTE:   este equipo tiene que quedarse encendido y con la sesion iniciada (Rancher Desktop"
-Write-Host "                arranca al iniciar sesion). Desactiva la suspension en Configuracion -> Sistema -> Energia."
+if (Test-Path $credOrig) { Write-Host "  Contrasena:   en $credOrig (un solo uso; borralo despues de entrar)" }
+Write-Host "  Copias en:    $Boveda"
+Write-Host "  Gestion:      $R\octopus.ps1 (estado, registros, parar, arrancar, mantenimiento...)"
+Write-Host "  Arranca solo al encender el equipo, aunque nadie inicie sesion."
 Marca "---- instalacion terminada correctamente ----"
+if (-not $SinPreguntas) {
+    if (Test-Path $credOrig) { Start-Process notepad.exe $credOrig -ErrorAction SilentlyContinue }
+    Start-Process "https://$($IP):$pPanel" -ErrorAction SilentlyContinue
+}
 if ($Registro) { Stop-Transcript | Out-Null }
 Pausa
+exit 0

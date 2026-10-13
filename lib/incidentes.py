@@ -327,7 +327,8 @@ def preparar_sala(inc_id):
     destino = os.path.join(base, "muestras")
     shutil.rmtree(base, ignore_errors=True)
     os.makedirs(destino, mode=0o750)
-    restic = shutil.which("restic") or "/usr/local/bin/restic"
+    import mantenimiento as _m
+    restic = _m.restic_bin()
     r = subprocess.run([restic, "restore", inc["snapshot_forense"], "--target", destino],
                        env=_restic_cuarentena_env(), capture_output=True, text=True, timeout=3600)
     if r.returncode != 0:
@@ -586,7 +587,8 @@ def destruir_forense(inc_id):
     env = os.environ.copy()
     env.pop("RESTIC_REPOSITORY", None)
     env["RESTIC_PASSWORD"] = _env("RESTIC_PASSWORD_CUARENTENA") or _env("RESTIC_PASSWORD")
-    restic = shutil.which("restic") or "/usr/local/bin/restic"
+    import mantenimiento as _m
+    restic = _m.restic_bin()
     r = subprocess.run([restic, "-r", repo, "forget", snap, "--prune"], env=env, capture_output=True, text=True, timeout=1800)
     ok = r.returncode == 0
     if ok:

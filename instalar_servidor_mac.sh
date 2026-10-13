@@ -1,184 +1,238 @@
 #!/bin/bash
-# OCTOPUS Zero-Touch - Instalador del SERVIDOR para macOS 13 (Ventura) o posterior, Intel y Apple Silicon
+# OCTOPUS Zero-Touch - Instalador del SERVIDOR para macOS 12 (Monterey) o posterior, Intel y Apple Silicon
+# NATIVO: sin Docker, sin Colima y sin Homebrew.
 #
-#   bash instalar_servidor_mac.sh                     instalar o actualizar (con tu usuario, NO con sudo)
-#   OCTOPUS_IP=192.168.1.10 bash instalar_servidor_mac.sh
+#   Doble clic en INSTALAR_SERVIDOR_MAC.command (pide la contrasena del Mac una vez)
+#   o:  sudo bash instalar_servidor_mac.sh            [OCTOPUS_IP=192.168.1.10] [OCTOPUS_BOVEDA_DIR=/Volumes/Copias]
 #
-# Instala con Homebrew (si falta, lo instala tambien) Colima + Docker: gratis y de codigo abierto, sin
-# Docker Desktop. Colima arranca solo al iniciar sesion. Despues arranca OCTOPUS en un contenedor (el mismo
-# que en Linux) y comprueba que los equipos de la red llegan a los puertos 8080 y 8000; si Docker solo
-# escucha en este Mac, crea un reenvio (socat) que arranca solo.
-# Volver a ejecutarlo actualiza a la version de esta carpeta sin perder datos ni copias.
+# Que hace (sin preguntar nada mas):
+#   1. Descarga Python portatil, restic y rest-server (versiones fijas, comprobando su huella SHA-256: si una
+#      descarga no coincide, no se instala nada).
+#   2. Copia OCTOPUS a /usr/local/octopus-servidor e instala lo que necesita (solo dentro de esa carpeta).
+#   3. Lo deja como servicio del sistema (LaunchDaemon): arranca solo al encender el Mac, aunque nadie inicie
+#      sesion, y se vuelve a levantar solo si se para.
+#   4. Deja pasar los puertos 8080 (panel) y 8000 (almacen) si el cortafuegos del Mac esta activado, y abre el panel.
+#   Volver a ejecutarlo actualiza a la version de esta carpeta sin perder datos ni copias (y si la nueva no arranca,
+#   vuelve sola a la anterior).
 set -uo pipefail
 RAIZ="$(cd "$(dirname "$0")" && pwd)"
-COMPOSE_FILE="$RAIZ/install/docker-compose.yml"
-HOST_ENV="$RAIZ/install/.env"
+R="${OCTOPUS_DESTINO:-/usr/local/octopus-servidor}"
+SIN_PREGUNTAS=0
+for a in "$@"; do [ "$a" = "--sin-preguntas" ] && SIN_PREGUNTAS=1; done
 
-PROGRESO="${OCTOPUS_PROGRESO:-$HOME/Library/Logs/OCTOPUS/instalacion_progreso.txt}"   # banderines: cada paso con la hora (para saber donde se paro)
-marca() { { mkdir -p "$(dirname "$PROGRESO")" && echo "[$(date '+%F %T')] $*" >> "$PROGRESO"; } 2>/dev/null || true; }
+PY_TAG=20250818; PY_VER=3.12.11
+case "$(uname -m)" in
+    arm64)  PY_ARCH=aarch64-apple-darwin; PY_SHA=fabb5fd4de54c68ce7e70d19fb08127549da5787cd38a34d00000749f4fde478
+            RA=arm64; RESTIC_SHA=10b3f5491e54c82b421980e848542f8f589ad6635f83fb2d89d9996cb37ac9c7
+            REST_SHA=87dc3e4d76d848b18d8026eda874c1d698abc268a822e2e5c41c2fc8b63208a6 ;;
+    x86_64) PY_ARCH=x86_64-apple-darwin;  PY_SHA=896add7763faa8012ba6a37346718b32ed0ac041230979cfe8fc802fbb0daeef
+            RA=amd64; RESTIC_SHA=6b2fc43f794182788aaa8dae50f1f731c33c5126558e621d693c18455aae92cc
+            REST_SHA=da87e744a772ddf9b14b8ffbf1b9d2ce99b7081ef217f4e6d6c8c2765cd4c4db ;;
+    *) echo "Procesador no soportado: $(uname -m)"; exit 1 ;;
+esac
+PY_URL="https://github.com/astral-sh/python-build-standalone/releases/download/$PY_TAG/cpython-$PY_VER%2B$PY_TAG-$PY_ARCH-install_only.tar.gz"
+RESTIC_URL="https://github.com/restic/restic/releases/download/v0.16.4/restic_0.16.4_darwin_$RA.bz2"
+REST_URL="https://github.com/restic/rest-server/releases/download/v0.13.0/rest-server_0.13.0_darwin_$RA.tar.gz"
+
+PROGRESO="/Library/Logs/OCTOPUS-Servidor-instalacion.txt"   # banderines: cada paso con la hora
+marca() { { echo "[$(date '+%F %T')] $*" >> "$PROGRESO"; } 2>/dev/null || true; }
 paso() { marca "==> $*"; echo; printf '\033[1;36m==> %s\033[0m\n' "$*"; }
 bien() { marca "OK  $*"; printf '    \033[32m%s\033[0m\n' "$*"; }
 aviso() { marca "..  $*"; printf '    \033[33m%s\033[0m\n' "$*"; }
 fallo() { marca "ERROR $*"; printf '\n\033[1;31mERROR: %s\033[0m\n' "$*"; exit 1; }
 
 [ "$(uname -s)" = "Darwin" ] || fallo "Este instalador es para Mac. En Linux: sudo bash instalar_servidor.sh"
-[ "$(id -u)" -ne 0 ] || fallo "Ejecutalo con tu usuario, sin sudo (Homebrew no funciona como root): bash $0"
-[ -f "$COMPOSE_FILE" ] || fallo "No encuentro $COMPOSE_FILE: ejecuta el script desde la carpeta de OCTOPUS"
+if [ "$(id -u)" -ne 0 ]; then
+    echo "OCTOPUS necesita permiso de administrador una vez para instalarse como servicio del Mac."
+    exec sudo OCTOPUS_IP="${OCTOPUS_IP:-}" OCTOPUS_BOVEDA_DIR="${OCTOPUS_BOVEDA_DIR:-}" OCTOPUS_DESTINO="$R" bash "$0" "$@"
+fi
+[ -f "$RAIZ/lib/servidor.py" ] || fallo "No encuentro lib/servidor.py: ejecuta el script desde la carpeta de OCTOPUS"
 MAYOR="$(sw_vers -productVersion | cut -d. -f1)"
-[ "$MAYOR" -ge 13 ] 2>/dev/null || fallo "Hace falta macOS 13 (Ventura) o posterior."
+[ "$MAYOR" -ge 12 ] 2>/dev/null || fallo "Hace falta macOS 12 (Monterey) o posterior."
+marca "---- inicio de la instalacion (usuario ${SUDO_USER:-root}) ----"
 printf '\033[1mOCTOPUS Zero-Touch - instalacion del servidor en Mac\033[0m   (macOS %s, %s)\n' "$(sw_vers -productVersion)" "$(uname -m)"
 
-# ------------------------------------------------------------------ Homebrew, Colima y Docker
-paso "Docker (Colima)"
-for b in /opt/homebrew/bin/brew /usr/local/bin/brew; do [ -x "$b" ] && eval "$("$b" shellenv)" && break; done
-if ! command -v brew >/dev/null 2>&1; then
-    aviso "Instalando Homebrew (pedira la contrasena de este Mac)..."
-    sudo -v || fallo "Hace falta un usuario administrador"
-    NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" \
-        || fallo "No se pudo instalar Homebrew"
-    for b in /opt/homebrew/bin/brew /usr/local/bin/brew; do [ -x "$b" ] && eval "$("$b" shellenv)" && break; done
-fi
-command -v brew >/dev/null 2>&1 || fallo "Homebrew no esta disponible"
-for p in colima docker docker-compose docker-buildx socat; do
-    brew list --formula "$p" >/dev/null 2>&1 || { aviso "Instalando $p..."; brew install -q "$p" >/dev/null || fallo "No se pudo instalar $p"; }
-done
-# docker compose / buildx como complementos de docker
-mkdir -p "$HOME/.docker"
-python3 - "$HOME/.docker/config.json" "$(brew --prefix)/lib/docker/cli-plugins" <<'PYEOF' 2>/dev/null || true
-import json, os, sys
-f, d = sys.argv[1], sys.argv[2]
-cfg = json.load(open(f)) if os.path.isfile(f) else {}
-dirs = cfg.setdefault("cliPluginsExtraDirs", [])
-if d not in dirs:
-    dirs.append(d)
-json.dump(cfg, open(f, "w"), indent=2)
-PYEOF
-if ! docker info >/dev/null 2>&1; then
-    aviso "Arrancando Colima (la primera vez descarga una maquina virtual pequena: 2-5 minutos)..."
-    colima start --cpu 2 --memory 4 --disk 100 >/dev/null 2>&1 || colima start >/dev/null 2>&1 || fallo "Colima no arranca (colima status)"
-fi
-brew services start colima >/dev/null 2>&1 || true   # que arranque solo al iniciar sesion
-for i in $(seq 1 60); do docker info >/dev/null 2>&1 && break; sleep 3; done
-docker info >/dev/null 2>&1 || fallo "Docker no responde (colima status)"
-docker compose version >/dev/null 2>&1 || fallo "Falta 'docker compose' (brew install docker-compose)"
-bien "$(docker version --format 'Docker {{.Server.Version}}' 2>/dev/null) con Colima"
-
-# ------------------------------------------------------------------ direccion
-paso "Direccion del servidor"
+TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+HOST_ENV="$R/install/.env"
 leer() { [ -f "$HOST_ENV" ] || return 0; { grep -E "^$1=" "$HOST_ENV" 2>/dev/null || true; } | tail -1 | cut -d= -f2- | tr -d '\r"'; }
+descargar() { # descargar <url> <sha256> <nombre>
+    local d="$TMP/$3" i
+    for i in 1 2 3; do curl -fsSL --proto '=https' --max-time 600 "$1" -o "$d" && break; marca "descarga de $3 fallida (intento $i)"; sleep $((5 * i)); done
+    [ -s "$d" ] || fallo "No se pudo descargar $3. Comprueba la conexion a Internet y vuelve a intentarlo."
+    [ "$(shasum -a 256 "$d" | cut -d' ' -f1)" = "$2" ] || { rm -f "$d"; fallo "La descarga de $3 no es la oficial (huella distinta): por seguridad no se instala nada."; }
+    bien "$3 descargado y comprobado"
+}
+responde() { curl -fsk -m 5 "https://127.0.0.1:${PUERTO:-8080}/healthz" >/dev/null 2>&1; }
+parar() {
+    launchctl bootout system/com.octopus.servidor 2>/dev/null || true
+    sleep 2
+    pkill -f "$R/python/bin/python" 2>/dev/null || true
+    pkill -f "$R/bin/rest-server" 2>/dev/null || true
+    sleep 1
+}
+ya_estaba=0; [ -f "$R/lib/servidor.py" ] && ya_estaba=1
+
+# ------------------------------------------------------------------ direccion y ajustes
+paso "Direccion del servidor"
 IP="${OCTOPUS_IP:-$(leer OCTOPUS_IP)}"
 if [ -z "$IP" ]; then
     IF="$(route -n get default 2>/dev/null | awk '/interface:/{print $2}')"
     IP="$(ipconfig getifaddr "${IF:-en0}" 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || true)"
 fi
-[ -n "$IP" ] || fallo "No se pudo averiguar la IP. Ejecuta: OCTOPUS_IP=<ip> bash $0"
-bien "Los equipos llegaran al servidor por $IP (cambialo con OCTOPUS_IP=... si usas otra IP o un nombre)"
-TZ_HOST="$(readlink /etc/localtime 2>/dev/null | sed 's|.*/zoneinfo/||')"
-P_PANEL="$(leer PANEL_PUERTO)"; P_ALM="$(leer ALMACEN_PUERTO)"; VOL="$(leer OCTOPUS_VOLUMEN_BOVEDA)"
-cat > "$HOST_ENV.tmp" <<EOF
-# OCTOPUS - ajustes del anfitrion (los usa docker compose). Cambia y vuelve a ejecutar el instalador
-OCTOPUS_IP=$IP
-OCTOPUS_PUBLIC_HOST=${OCTOPUS_PUBLIC_HOST:-$(leer OCTOPUS_PUBLIC_HOST)}
-OCTOPUS_NOMBRES_EXTRA=${OCTOPUS_NOMBRES_EXTRA:-$(leer OCTOPUS_NOMBRES_EXTRA)}
-PANEL_PUERTO=${P_PANEL:-8080}
-ALMACEN_PUERTO=${P_ALM:-8000}
-TZ=${TZ_HOST:-Europe/Madrid}
-OCTOPUS_VOLUMEN_BOVEDA=${VOL:-octopus_boveda}
-OCTOPUS_VERSION=$(cat "$RAIZ/VERSION" 2>/dev/null || echo local)
-EOF
-mv "$HOST_ENV.tmp" "$HOST_ENV"; chmod 600 "$HOST_ENV"
-DC=(docker compose --env-file "$HOST_ENV" -f "$COMPOSE_FILE")
-PUERTO="$(leer PANEL_PUERTO)"; P_A="$(leer ALMACEN_PUERTO)"
+[ -n "$IP" ] || fallo "No se pudo averiguar la IP. Ejecuta: sudo OCTOPUS_IP=<ip> bash $0"
+bien "Los equipos llegaran al servidor por $IP"
+BOVEDA="${OCTOPUS_BOVEDA_DIR:-$(leer OCTOPUS_BOVEDA_DIR)}"; BOVEDA="${BOVEDA:-$R/boveda}"
+PUERTO="$(leer ADMIN_PORT)"; PUERTO="${PUERTO:-8080}"
 
-# ------------------------------------------------------------------ imagen y arranque
-paso "Construyendo OCTOPUS (la primera vez tarda unos minutos)"
-ANTERIOR="$(docker image inspect -f '{{.Id}}' "octopus-servidor:$(leer OCTOPUS_VERSION)" 2>/dev/null || true)"
-[ -n "$ANTERIOR" ] && docker tag "$ANTERIOR" octopus-servidor:anterior >/dev/null 2>&1 || true
-"${DC[@]}" build --pull >/dev/null || "${DC[@]}" build || fallo "No se pudo construir la imagen"
-paso "Arrancando OCTOPUS"
-"${DC[@]}" up -d --remove-orphans octopus || fallo "No se pudo arrancar el contenedor"
-for i in $(seq 1 90); do
-    curl -fsk -m 3 "https://127.0.0.1:$PUERTO/login" >/dev/null 2>&1 && break
-    sleep 2
-done
-if ! curl -fsk -m 3 "https://127.0.0.1:$PUERTO/login" >/dev/null 2>&1; then
-    docker logs --tail 40 octopus
-    # Una actualizacion nunca debe dejar el servidor sin funcionar: se vuelve sola a la version anterior
-    if [ -n "${ANTERIOR:-}" ] && docker image inspect octopus-servidor:anterior >/dev/null 2>&1; then
+# ------------------------------------------------------------------ descargas
+paso "Descargando lo necesario (Python portatil, restic y rest-server)"
+descargar "$PY_URL" "$PY_SHA" python.tar.gz
+descargar "$RESTIC_URL" "$RESTIC_SHA" restic.bz2
+descargar "$REST_URL" "$REST_SHA" rest-server.tar.gz
+
+# ------------------------------------------------------------------ copia de la version actual (por si hay que volver)
+EXCLUIR=(--exclude datos --exclude boveda --exclude python --exclude bin --exclude data --exclude .git --exclude __pycache__)
+if [ $ya_estaba = 1 ]; then
+    paso "Guardando la version instalada por si hay que volver a ella"
+    parar
+    rm -rf "$R.anterior"; mkdir -p "$R.anterior"
+    rsync -a "${EXCLUIR[@]}" "$R/" "$R.anterior/" || fallo "No se pudo guardar la version actual (¿disco lleno?)"
+    bien "copia guardada en $R.anterior"
+fi
+
+# ------------------------------------------------------------------ instalar
+paso "Instalando OCTOPUS en $R"
+mkdir -p "$R/bin" "$R/datos/logs" "$R/install" "$BOVEDA"
+chmod 755 "$R"; chmod 700 "$R/datos"
+if [ "$RAIZ" != "$R" ]; then
+    rsync -a "${EXCLUIR[@]}" --exclude tests --exclude .env --exclude CREDENCIALES_INICIALES.txt --exclude '*.pyc' \
+        "$RAIZ/" "$R/" || fallo "No se pudieron copiar los archivos de OCTOPUS"
+fi
+rm -rf "$R/python"
+tar -xzf "$TMP/python.tar.gz" -C "$R" || fallo "No se pudo descomprimir Python"
+[ -x "$R/python/bin/python3" ] || fallo "No se pudo preparar Python"
+bunzip2 -c "$TMP/restic.bz2" > "$R/bin/restic" && chmod 755 "$R/bin/restic"
+mkdir -p "$TMP/rest" && tar -xzf "$TMP/rest-server.tar.gz" -C "$TMP/rest" && \
+    cp "$(find "$TMP/rest" -name rest-server -type f | head -1)" "$R/bin/rest-server" && chmod 755 "$R/bin/rest-server"
+xattr -dr com.apple.quarantine "$R" 2>/dev/null || true
+"$R/bin/restic" version >/dev/null 2>&1 && "$R/bin/rest-server" --version >/dev/null 2>&1 || fallo "No se pudieron preparar restic y rest-server"
+bien "$("$R/bin/restic" version)"
+aviso "Instalando las librerias de Python (1-3 minutos)..."
+"$R/python/bin/python3" -m pip install --disable-pip-version-check --no-warn-script-location -q -r "$R/requirements.txt" \
+    > "$R/datos/logs/pip.log" 2>&1 || { tail -5 "$R/datos/logs/pip.log"; fallo "No se pudieron instalar las librerias de Python"; }
+"$R/python/bin/python3" -c "import flask, gunicorn, paramiko, cryptography, bcrypt" || fallo "Faltan librerias de Python"
+bien "librerias instaladas"
+
+# ajustes anadidos a mano: se conservan
+EXTRA="$( [ -f "$HOST_ENV" ] && grep -E '^[A-Z_][A-Z0-9_]*=' "$HOST_ENV" | grep -vE '^(OCTOPUS_NATIVO|OCTOPUS_IP|OCTOPUS_PUBLIC_HOST|OCTOPUS_NOMBRES_EXTRA|OCTOPUS_BOVEDA_DIR|ADMIN_PORT)=' || true)"
+cat > "$HOST_ENV.nuevo" <<EOF
+# OCTOPUS - ajustes de este equipo (servidor nativo de Mac). Cambia y vuelve a ejecutar el instalador.
+OCTOPUS_NATIVO=1
+OCTOPUS_IP=$IP
+OCTOPUS_PUBLIC_HOST=$(leer OCTOPUS_PUBLIC_HOST)
+OCTOPUS_NOMBRES_EXTRA=$(leer OCTOPUS_NOMBRES_EXTRA)
+OCTOPUS_BOVEDA_DIR=$BOVEDA
+ADMIN_PORT=$PUERTO
+$EXTRA
+EOF
+mv -f "$HOST_ENV.nuevo" "$HOST_ENV"
+cat > "$R/arrancar_servidor.sh" <<'EOF'
+#!/bin/bash
+# OCTOPUS - arranca el servidor (lo lanza el servicio com.octopus.servidor al encender el Mac). No hace falta tocarlo.
+R="$(cd "$(dirname "$0")" && pwd)"
+mkdir -p "$R/datos/logs"
+LOG="$R/datos/logs/servidor.log"
+[ -f "$LOG" ] && [ "$(stat -f %z "$LOG")" -gt 10485760 ] && mv -f "$LOG" "$LOG.1"
+while IFS='=' read -r k v; do
+    case "$k" in ''|\#*) continue ;; esac
+    v="$(printf '%s' "$v" | tr -d '\r"')"; [ -n "$v" ] && export "$k=$v"
+done < "$R/install/.env"
+export OCTOPUS_NATIVO=1 OCTOPUS_DATA="$R/datos" OCTOPUS_BIN="$R/bin"
+export OCTOPUS_BOVEDA_DIR="${OCTOPUS_BOVEDA_DIR:-$R/boveda}" RESTIC_CACHE_DIR="$R/datos/.cache/restic"
+export PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 LANG=es_ES.UTF-8 LC_ALL=es_ES.UTF-8
+export PATH="$R/bin:$R/python/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+echo "===== $(date '+%F %T') arrancando OCTOPUS" >> "$LOG"
+cd "$R" && exec "$R/python/bin/python3" "$R/lib/servidor.py" >> "$LOG" 2>&1
+EOF
+chmod 755 "$R/arrancar_servidor.sh" "$R/actualizador.sh" "$R/octopus.sh" 2>/dev/null
+chown -R root:wheel "$R"
+bien "archivos en su sitio"
+
+# ------------------------------------------------------------------ servicio del sistema (arranca solo con el Mac)
+paso "Dejando OCTOPUS en marcha (arranca solo al encender el Mac)"
+parar
+if lsof -nP -iTCP:"$PUERTO" -sTCP:LISTEN >/dev/null 2>&1; then
+    QUIEN="$(lsof -nP -iTCP:"$PUERTO" -sTCP:LISTEN | awk 'NR==2{print $1}')"
+    fallo "El puerto $PUERTO lo esta usando otro programa ($QUIEN). Si es la version antigua de OCTOPUS con Docker, parala (bash octopus.sh parar) y vuelve a ejecutar esto."
+fi
+plist() { # plist <archivo> <etiqueta> <script> <extra>
+    cat > "$1" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$2</string>
+  <key>ProgramArguments</key><array><string>/bin/bash</string><string>$3</string></array>
+  <key>WorkingDirectory</key><string>$R</string>
+  $4
+  <key>StandardOutPath</key><string>$R/datos/logs/$2.log</string>
+  <key>StandardErrorPath</key><string>$R/datos/logs/$2.log</string>
+</dict></plist>
+EOF
+    chown root:wheel "$1"; chmod 644 "$1"
+}
+PL=/Library/LaunchDaemons/com.octopus.servidor.plist
+plist "$PL" com.octopus.servidor "$R/arrancar_servidor.sh" \
+    "<key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ThrottleInterval</key><integer>30</integer>"
+PLA=/Library/LaunchDaemons/com.octopus.actualizador.plist
+plist "$PLA" com.octopus.actualizador "$R/actualizador.sh" "<key>StartInterval</key><integer>300</integer>"
+launchctl bootout system/com.octopus.actualizador 2>/dev/null || true
+launchctl bootstrap system "$PLA" 2>/dev/null || launchctl load -w "$PLA" 2>/dev/null || true
+launchctl bootstrap system "$PL" 2>/dev/null || launchctl load -w "$PL" 2>/dev/null || true
+launchctl enable system/com.octopus.servidor 2>/dev/null || true
+launchctl kickstart -k system/com.octopus.servidor 2>/dev/null || true
+OK=0
+for _ in $(seq 1 120); do responde && { OK=1; break; }; sleep 2; done
+if [ $OK = 0 ]; then
+    tail -n 30 "$R/datos/logs/servidor.log" 2>/dev/null
+    if [ $ya_estaba = 1 ] && [ -d "$R.anterior" ]; then
+        # una actualizacion nunca debe dejar el servidor sin funcionar: se vuelve sola a la version anterior
         aviso "La version nueva no arranca bien: volviendo a la anterior automaticamente..."
-        sed -i.bak 's/^OCTOPUS_VERSION=.*/OCTOPUS_VERSION=anterior/' "$HOST_ENV"
-        "${DC[@]}" up -d --no-build octopus >/dev/null 2>&1
-        sleep 20
-        curl -fsk -m 5 "https://127.0.0.1:$PUERTO/login" >/dev/null 2>&1 \
-            && fallo "La version nueva no arrancaba y se ha vuelto a la anterior (todo sigue funcionando como antes). Manda el diagnostico al soporte." \
-            || fallo "El panel no responde ni con la version anterior. Mira  sudo bash octopus.sh logs"
+        parar
+        rsync -a "$R.anterior/" "$R/"
+        launchctl bootstrap system "$PL" 2>/dev/null || true
+        launchctl kickstart -k system/com.octopus.servidor 2>/dev/null || true
+        for _ in $(seq 1 60); do responde && break; sleep 2; done
+        responde && fallo "La version nueva no arrancaba y se ha vuelto a la anterior (todo sigue funcionando como antes). Manda el diagnostico al soporte."
     fi
-    fallo "El panel no responde"
+    fallo "El panel no responde. Mira $R/datos/logs/servidor.log"
 fi
 bien "panel en marcha"
 
-# ------------------------------------------------------------------ red
+# ------------------------------------------------------------------ red y energia
 paso "Red"
-SOCAT="$(brew --prefix)/bin/socat"
-for p in "$PUERTO" "$P_A"; do
-    if nc -z -G 3 "$IP" "$p" >/dev/null 2>&1; then
-        bien "puerto $p accesible por $IP"
-        continue
-    fi
-    # Docker solo escucha en 127.0.0.1: reenvio IP:puerto -> 127.0.0.1:puerto que arranca solo con la sesion
-    PL="$HOME/Library/LaunchAgents/com.octopus.reenvio-$p.plist"
-    mkdir -p "$HOME/Library/LaunchAgents"
-    launchctl unload "$PL" >/dev/null 2>&1 || true
-    cat > "$PL" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>Label</key><string>com.octopus.reenvio-$p</string>
-  <key>ProgramArguments</key><array>
-    <string>$SOCAT</string><string>TCP-LISTEN:$p,bind=$IP,fork,reuseaddr</string><string>TCP:127.0.0.1:$p</string>
-  </array>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
-</dict></plist>
-EOF
-    launchctl load -w "$PL" >/dev/null 2>&1
-    sleep 2
-    if nc -z -G 3 "$IP" "$p" >/dev/null 2>&1; then bien "puerto $p reenviado a Docker (socat)"
-    else aviso "No se llega al puerto $p por $IP: revisa el cortafuegos (Ajustes -> Red -> Cortafuegos)"; fi
-done
-if /usr/libexec/ApplicationFirewall/socketfilterfw --getglobalstate 2>/dev/null | grep -qi "enabled"; then
-    aviso "El cortafuegos de macOS esta activado: si los equipos no conectan, permite 'socat' y 'colima' en"
-    aviso "Ajustes del Sistema -> Red -> Cortafuegos -> Opciones."
+FW=/usr/libexec/ApplicationFirewall/socketfilterfw
+if [ -x "$FW" ] && "$FW" --getglobalstate 2>/dev/null | grep -qi "enabled"; then
+    for p in "$R"/python/bin/python3.* "$R/bin/rest-server"; do
+        [ -f "$p" ] && { "$FW" --add "$p" >/dev/null 2>&1; "$FW" --unblockapp "$p" >/dev/null 2>&1; }
+    done
+    bien "Cortafuegos del Mac: permitido OCTOPUS (panel $PUERTO y almacen 8000)"
+else
+    bien "Cortafuegos del Mac desactivado: los puertos $PUERTO y 8000 ya son accesibles"
 fi
+# un servidor no debe dormirse: sin reposo mientras este enchufado (la pantalla si se apaga)
+pmset -c sleep 0 >/dev/null 2>&1 && bien "Este Mac ya no entra en reposo mientras este enchufado (la pantalla se sigue apagando)"
 
-# --------------------------------------------------------------------------- actualizador seguro (a distancia)
-if [ "${OCTOPUS_SIN_ACTUALIZADOR:-0}" != 1 ]; then
-    PLA="$HOME/Library/LaunchAgents/com.octopus.actualizador.plist"
-    mkdir -p "$HOME/Library/LaunchAgents"
-    cat > "$PLA" <<PL
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>Label</key><string>com.octopus.actualizador</string>
-  <key>ProgramArguments</key><array><string>/bin/bash</string><string>$RAIZ/octopus.sh</string><string>actualizar-pedido</string></array>
-  <key>EnvironmentVariables</key><dict><key>PATH</key><string>$(brew --prefix)/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
-  <key>StartInterval</key><integer>300</integer>
-</dict></plist>
-PL
-    launchctl unload "$PLA" >/dev/null 2>&1 || true
-    launchctl load -w "$PLA" >/dev/null 2>&1 && bien "actualizador seguro activado (Ajustes -> Actualizaciones en el panel)" \
-        || aviso "No se pudo activar el actualizador a distancia (se puede actualizar a mano con octopus.sh actualizar)"
-fi
-
-CRED="$RAIZ/CREDENCIALES_INICIALES.txt"
-if docker exec octopus test -f /data/panel/CREDENCIALES_INICIALES.txt 2>/dev/null; then
-    docker exec octopus cat /data/panel/CREDENCIALES_INICIALES.txt > "$CRED"; chmod 600 "$CRED"
-fi
+CRED="$R/data/CREDENCIALES_INICIALES.txt"
 echo
 printf '\033[1;32m=== OCTOPUS instalado ===\033[0m\n'
 echo "  Panel:        https://$IP:$PUERTO   (el navegador avisara del certificado propio la primera vez)"
 echo "  Usuario:      admin"
-[ -f "$CRED" ] && echo "  Contrasena:   en $CRED (un solo uso; borralo despues de entrar)"
-echo "  Gestion:      bash $RAIZ/octopus.sh ayuda"
-echo "  IMPORTANTE:   este Mac tiene que quedarse encendido y con la sesion iniciada (Colima arranca al"
-echo "                iniciar sesion). Ajustes -> Pantalla de bloqueo / Energia: que no entre en reposo."
+[ -f "$CRED" ] && echo "  Contrasena:   $(grep -i 'contrasena' "$CRED" | cut -d: -f2- | xargs)   (un solo uso: el panel te pedira cambiarla)"
+echo "  Copias en:    $BOVEDA"
+echo "  Gestion:      sudo bash $R/octopus.sh (estado, logs, parar, arrancar, mantenimiento...)"
+echo "  Arranca solo al encender el Mac, aunque nadie inicie sesion."
+marca "---- instalacion terminada correctamente ----"
+if [ $SIN_PREGUNTAS = 0 ] && [ -n "${SUDO_USER:-}" ]; then
+    launchctl asuser "$(id -u "$SUDO_USER")" sudo -u "$SUDO_USER" open "https://$IP:$PUERTO" 2>/dev/null || true
+fi
+exit 0

@@ -77,6 +77,12 @@ def run(cmd, env=None, timeout=6 * 3600):
 
 
 def restic_bin() -> str:
+    """restic: la carpeta bin de la instalacion (Windows y Mac sin Docker), el PATH o el del contenedor."""
+    for carpeta in (os.environ.get("OCTOPUS_BIN"), str(BASE_DIR / "bin")):
+        if carpeta:
+            for n in ("restic.exe", "restic") if os.name == "nt" else ("restic",):
+                if (Path(carpeta) / n).is_file():
+                    return str(Path(carpeta) / n)
     return shutil.which("restic") or "/usr/local/bin/restic"
 
 
@@ -107,7 +113,8 @@ def restic_env(repo: str, pwd: str) -> dict:
     e = dict(os.environ)
     e["RESTIC_REPOSITORY"] = repo
     e["RESTIC_PASSWORD"] = pwd
-    e.setdefault("RESTIC_CACHE_DIR", "/var/cache/octopus-restic")
+    e.setdefault("RESTIC_CACHE_DIR", str(Path(os.environ.get("OCTOPUS_DATA", "/var/cache")) / ".cache" / "restic")
+                 if os.name == "nt" or os.environ.get("OCTOPUS_NATIVO") else "/var/cache/octopus-restic")
     return e
 
 
@@ -206,7 +213,7 @@ def autocopia(env: dict) -> dict:
             elif src.is_file():
                 (dest / rel).parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src, dest / rel)
-        ssh = Path("/root/.ssh")
+        ssh = Path(os.environ.get("OCTOPUS_DATA", "/data")) / "ssh"   # en el contenedor, la misma que /root/.ssh
         try:
             for f in ssh.glob("octopus_ed25519*"):
                 (dest / "ssh").mkdir(exist_ok=True)
