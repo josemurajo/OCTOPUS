@@ -154,6 +154,13 @@ if (-not (Docker-Va)) {
             $f = Join-Path $rdLogs $n
             if (Test-Path $f) { Get-Content $f -Tail 8 | ForEach-Object { Marca "  [$n] $_" } }
         }
+        $wslLog = Join-Path $rdLogs "wsl.log"
+        if ((Test-Path $wslLog) -and (Select-String -Path $wslLog -Pattern "failed to execute wsl.exe --import" -Quiet)) {
+            Fallo ("WSL2 no puede crear su maquina virtual en este equipo, asi que Docker no puede arrancar. " +
+                   "Suele pasar si la virtualizacion (Intel VT-x / AMD-V) esta desactivada en la BIOS, o si este Windows ya es " +
+                   "una maquina virtual. Solucion: activa la virtualizacion en la BIOS (o usa un PC fisico) y vuelve a ejecutar esto. " +
+                   "Alternativa: instala el servidor en un Linux (instalar_servidor.sh).")
+        }
         Fallo "Docker no arranca. Abre Rancher Desktop desde el menu Inicio, espera a que termine y vuelve a ejecutar esto." }
 } elseif ($rdBin) {
     & (Join-Path $rdBin "rdctl.exe") set --application.auto-start=true 2>&1 | Out-Null
