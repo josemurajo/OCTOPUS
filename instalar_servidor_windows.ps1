@@ -95,7 +95,7 @@ if (-not (Docker-Va)) {
         Aviso "Instalando Rancher Desktop (gratis, de codigo abierto; 3-5 minutos)..."
         $hecho = $false
         if (Get-Command winget -ErrorAction SilentlyContinue) {
-            & winget install -e --id SUSE.RancherDesktop --silent --scope machine --accept-package-agreements --accept-source-agreements
+            & winget install -e --id SUSE.RancherDesktop --source winget --silent --scope machine --accept-package-agreements --accept-source-agreements
             $hecho = ($LASTEXITCODE -eq 0) -or [bool](Buscar-RD)
         }
         if (-not $hecho) {
@@ -114,9 +114,11 @@ if (-not (Docker-Va)) {
         $env:Path = "$rdBin;$env:Path"
     }
     Aviso "Arrancando Rancher Desktop con Docker (moby) y sin Kubernetes (la primera vez 2-5 minutos)..."
-    & (Join-Path $rdBin "rdctl.exe") start --container-engine.name=moby --kubernetes.enabled=false `
-        --application.start-in-background=true --application.auto-start=true 2>&1 | Out-Null
-    for ($i = 0; $i -lt 90 -and -not (Docker-Va); $i++) { Start-Sleep -Seconds 5 }
+    # En segundo plano: "rdctl start" puede quedarse esperando a la ventana de Rancher Desktop y no volver nunca
+    Start-Process -FilePath (Join-Path $rdBin "rdctl.exe") -WindowStyle Hidden -ArgumentList @(
+        "start", "--container-engine.name=moby", "--kubernetes.enabled=false",
+        "--application.start-in-background=true", "--application.auto-start=true") | Out-Null
+    for ($i = 0; $i -lt 120 -and -not (Docker-Va); $i++) { Start-Sleep -Seconds 5 }
     if (-not (Docker-Va)) { Fallo "Docker no arranca. Abre Rancher Desktop desde el menu Inicio, espera a que termine y vuelve a ejecutar esto." }
 } elseif ($rdBin) {
     & (Join-Path $rdBin "rdctl.exe") set --application.auto-start=true 2>&1 | Out-Null
