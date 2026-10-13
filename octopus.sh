@@ -29,6 +29,7 @@ if [ -x "$RAIZ/python/bin/python3" ] && [ "$(uname -s)" = Darwin ]; then
     logs)          tail -n "${2:-100}" -f "$RAIZ/datos/logs/servidor.log" ;;
     credenciales)  cat "$RAIZ/data/CREDENCIALES_INICIALES.txt" 2>/dev/null || echo "Ya no hay credenciales iniciales (se borran al cambiar la contrasena)" ;;
     kit)           py lib/mantenimiento.py kit ;;
+    buscar-equipos) py lib/consola.py ${2:+"$2"} ;;
     mantenimiento) py lib/mantenimiento.py "${2:-todo}" ;;
     ajustes)       cp "$RAIZ/.env" "$RAIZ/.env.antes"; "${EDITOR:-$(command -v nano || command -v vi)}" "$RAIZ/.env"
                    if cmp -s "$RAIZ/.env" "$RAIZ/.env.antes"; then echo "Sin cambios."; else parar_n; arrancar_n; fi
@@ -67,7 +68,7 @@ if [ -x "$RAIZ/python/bin/python3" ] && [ "$(uname -s)" = Darwin ]; then
         else echo "OCTOPUS se ha quitado. Se quedan las copias en $OCTOPUS_BOVEDA_DIR y la configuracion en $RAIZ/data y $RAIZ/.env"; fi ;;
     *) cat <<AYUDA
 Uso: sudo bash $RAIZ/octopus.sh <orden>
-  estado | logs [n] | credenciales | kit | mantenimiento | ajustes
+  estado | logs [n] | credenciales | buscar-equipos | kit | mantenimiento | ajustes
   recuperar-servidor <almacen> | actualizar <carpeta version nueva> | volver
   parar | arrancar | reiniciar | desinstalar
 AYUDA
@@ -84,6 +85,9 @@ estado)
 logs)          docker logs --tail "${2:-100}" -f octopus ;;
 credenciales)  docker exec octopus cat /data/panel/CREDENCIALES_INICIALES.txt 2>/dev/null || echo "Ya no hay credenciales iniciales (se borran al cambiar la contrasena)" ;;
 kit)           docker exec octopus python /app/lib/mantenimiento.py kit ;;
+buscar-equipos)  # ventanas con raton para buscar y proteger equipos (si la consola no es interactiva, preguntas en texto)
+    if [ -t 0 ] && [ -t 1 ]; then docker exec -it -e TERM="${TERM:-xterm-256color}" octopus python /app/lib/consola.py ${2:+"$2"}
+    else docker exec -i octopus python /app/lib/consola.py --sencillo; fi ;;
 mantenimiento) docker exec octopus python /app/lib/mantenimiento.py "${2:-todo}" ;;
 desplegar)     # agentes Linux con Ansible: rellena ansible/equipos.ini (ver equipos.ini.ejemplo)
     shift
@@ -138,6 +142,7 @@ Uso: sudo bash octopus.sh <orden>     (en Windows: octopus.ps1)
   estado          como esta todo (contenedor, equipos conectados, almacen)
   logs [n]        registro en directo del servidor
   credenciales    contrasena inicial del panel
+  buscar-equipos  busca los equipos de la red y los protege, con ventanas y raton (--sencillo: solo preguntas)
   kit             kit de recuperacion (claves de las copias) - guardalo fuera del servidor
   mantenimiento   limpieza, verificacion y copia del servidor ahora (normalmente cada noche)
   ajustes         cambia los ajustes del servidor (almacen externo, avisos de disco...) y reinicia

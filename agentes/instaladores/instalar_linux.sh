@@ -31,7 +31,8 @@ if [ "${1:-}" = "--quitar" ]; then
 fi
 
 for f in zerotouch_agent.py config.json; do [ -f "$AQUI/$f" ] || fallo "Falta $f junto a este script. Descarga de nuevo el instalador desde el panel."; done
-NOMBRE=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["hostname"])' "$AQUI/config.json" 2>/dev/null || echo "?")
+NOMBRE=$(sed -n 's/.*"hostname"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$AQUI/config.json" | head -1)   # sin python (aun puede no estar)
+[ -n "$NOMBRE" ] || fallo "config.json no tiene el nombre del equipo. Descarga de nuevo el instalador desde el panel."
 [ "$NOMBRE" = "$(hostname -s)" ] || { echo "AVISO: el paquete es para '$NOMBRE' y este equipo se llama '$(hostname -s)'. Las copias usaran '$NOMBRE'."; sleep 5; }
 TUNEL=0; [ -f "$AQUI/octopus.conf" ] && TUNEL=1
 

@@ -167,7 +167,9 @@ def _con_clave(ip: str, usuario: str) -> bool:
 
 def _limpiar(texto: str, password: str) -> str:
     """Nunca devolver la contrasena en un mensaje (por si algun programa la repitiera)."""
-    return (texto or "").replace(password, "********") if password else (texto or "")
+    import re
+    texto = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", texto or "")   # sin los colores de la consola
+    return texto.replace(password, "********") if password else texto
 
 
 def instalar(equipo: str, so: str, ip: str, usuario: str, password: str, paquete: bytes, solo_clave: bool,

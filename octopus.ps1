@@ -12,6 +12,7 @@ Uso: powershell -ExecutionPolicy Bypass -File octopus.ps1 <orden>
   estado          como esta todo (servidor, equipos conectados, almacen)
   logs            registro en directo del servidor (Ctrl+C para salir)
   credenciales    contrasena inicial del panel
+  buscar-equipos  busca los equipos de la red y los protege, con ventanas y raton (sin usar el panel)
   kit             kit de recuperacion (claves de las copias) - guardalo fuera del servidor
   mantenimiento   limpieza, verificacion y copia del servidor ahora (normalmente cada noche)
   ajustes         cambia los ajustes del servidor (almacen externo...) en el Bloc de notas y reinicia
@@ -88,6 +89,12 @@ switch ($Orden) {
     "logs"          { Get-Content "$Raiz\datos\logs\servidor.log" -Tail 100 -Wait }
     "credenciales"  { Get-Content "$Raiz\data\CREDENCIALES_INICIALES.txt" -ErrorAction SilentlyContinue }
     "kit"           { $null = Py "lib\mantenimiento.py" "kit" }
+    "buscar-equipos" {
+        # sin "| Out-Host": las ventanas necesitan la consola de verdad
+        Entorno; Push-Location $Raiz
+        if ($Arg) { & "$Raiz\python\python.exe" "lib\consola.py" $Arg } else { & "$Raiz\python\python.exe" "lib\consola.py" }
+        $rc = $LASTEXITCODE; Pop-Location; exit $rc
+    }
     "mantenimiento" { $t = if ($Arg) { $Arg } else { "todo" }; $null = Py "lib\mantenimiento.py" $t }
     "ajustes" {
         $f = Join-Path $Raiz ".env"; $antes = (Get-FileHash $f).Hash

@@ -12,6 +12,7 @@ con las que escriba el usuario.
 from __future__ import annotations
 
 import ipaddress
+import os
 import socket
 import struct
 import sys
@@ -27,6 +28,14 @@ PUERTOS = (22, 445, 135, 139, 3389, 5985, 548)
 MAX_EQUIPOS_POR_RED = 1024          # como mucho una /22 por red, para que el barrido no tarde demasiado
 ESCANEOS: dict[str, dict] = {}       # trabajos en memoria (el panel funciona en un solo proceso)
 _lock = threading.Lock()
+
+
+def _puerto_ssh() -> int:
+    """Puerto SSH de los equipos (22; se puede cambiar con OCTOPUS_SSH_PUERTO, el mismo que usa la instalacion a distancia)."""
+    try:
+        return int(os.environ.get("OCTOPUS_SSH_PUERTO", "22"))
+    except ValueError:
+        return 22
 
 
 def redes_propuestas(env: dict) -> list[str]:
@@ -54,7 +63,10 @@ def validar_red(texto: str) -> str:
         t = t[:-2] + ".0/24"
     if "/" not in t:
         t += "/32"
-    red = ipaddress.ip_network(t, strict=False)
+    try:
+        red = ipaddress.ip_network(t, strict=False)
+    except ValueError:
+        raise ValueError("no es una red válida (escríbela así: 192.168.1.0/24, 192.168.1.* o una IP)") from None
     if red.version != 4:
         raise ValueError("solo redes IPv4")
     if not red.is_private:
@@ -74,7 +86,7 @@ def _abierto(ip: str, puerto: int, espera: float = 0.6) -> bool:
 
 def _saludo_ssh(ip: str) -> str:
     try:
-        with socket.create_connection((ip, 22), timeout=1.5) as s:
+        with socket.create_connection((ip, _puerto_ssh()), timeout=1.5) as s:
             s.settimeout(1.5)
             return s.recv(200).decode("utf-8", "replace").strip()
     except OSError:
@@ -130,7 +142,8 @@ def _nombre_valido(n: str) -> str:
 
 
 def _examinar(ip: str) -> dict | None:
-    abiertos = {p for p in PUERTOS if _abierto(ip, p)}
+    ssh = _puerto_ssh()
+    abiertos = {p for p in PUERTOS if _abierto(ip, ssh if p == 22 else p)}   # 22 = "tiene SSH", sea en el puerto que sea
     if not abiertos:
         return None
     saludo = _saludo_ssh(ip) if 22 in abiertos else ""

@@ -134,6 +134,17 @@ jobs:
           for f in $(git ls-files '*.sh' '*.command'); do bash -n "$f" && echo "bien $f" || { echo "MAL  $f"; mal=1; }; done
           exit $mal
 
+  consola:
+    name: Modo consola (buscar-equipos)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: python tests/ci/prueba_consola.py
+
   servidor-windows-nativo:
     name: Servidor en Windows (nativo, sin WSL2 ni Docker)
     runs-on: windows-latest

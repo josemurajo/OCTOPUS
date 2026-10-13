@@ -24,3 +24,6 @@ cheroot>=10.0; sys_platform == "win32"
 
 # Instalar en otros equipos por SSH desde el panel (sin depender de los programas ssh/sshpass)
 paramiko>=3.4
+
+# Modo consola con ventanas y raton (octopus.sh buscar-equipos); sin ella se usa el modo de preguntas
+textual>=0.80
