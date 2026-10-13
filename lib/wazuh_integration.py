@@ -82,39 +82,6 @@ class WazuhIntegration:
                 'error': str(e)
             }
     
-    def get_alert_by_id(self, alert_id):
-        """Obtiene una alerta específica por ID"""
-        if not self.is_configured():
-            return {'error': 'Wazuh no está configurado'}
-        
-        try:
-            url = f"{self.base_url}/events/{alert_id}"
-            
-            headers = {
-                'Authorization': f'Bearer {self.api_key}',
-                'Content-Type': 'application/json'
-            }
-            
-            response = requests.get(url, headers=headers, verify=self.verify_ssl)
-            
-            if response.status_code == 200:
-                data = response.json()
-                return {
-                    'success': True,
-                    'alert': data.get('data', {})
-                }
-            else:
-                return {
-                    'success': False,
-                    'error': f'Error {response.status_code}: {response.text}'
-                }
-        
-        except Exception as e:
-            return {
-                'success': False,
-                'error': str(e)
-            }
-    
     def get_agent_status(self, agent_id=None):
         """Obtiene estado de agentes Wazuh"""
         if not self.is_configured():
@@ -138,42 +105,6 @@ class WazuhIntegration:
                 return {
                     'success': True,
                     'data': data.get('data', {})
-                }
-            else:
-                return {
-                    'success': False,
-                    'error': f'Error {response.status_code}: {response.text}'
-                }
-        
-        except Exception as e:
-            return {
-                'success': False,
-                'error': str(e)
-            }
-    
-    def get_vulnerabilities(self, agent_id=None):
-        """Obtiene vulnerabilidades detectadas"""
-        if not self.is_configured():
-            return {'error': 'Wazuh no está configurado'}
-        
-        try:
-            if agent_id:
-                url = f"{self.base_url}/vulnerability/{agent_id}"
-            else:
-                url = f"{self.base_url}/vulnerability"
-            
-            headers = {
-                'Authorization': f'Bearer {self.api_key}',
-                'Content-Type': 'application/json'
-            }
-            
-            response = requests.get(url, headers=headers, verify=self.verify_ssl)
-            
-            if response.status_code == 200:
-                data = response.json()
-                return {
-                    'success': True,
-                    'vulnerabilities': data.get('data', {}).get('items', [])
                 }
             else:
                 return {

@@ -1,6 +1,6 @@
 #!/bin/bash
 # OCTOPUS Zero-Touch - gestion del servidor (Linux y macOS). En Windows: octopus.ps1
-#   sudo bash octopus.sh <orden>      (en Mac, sin sudo: bash octopus.sh <orden>)
+#   sudo bash octopus.sh <orden>      (en Mac: sudo bash /usr/local/octopus-servidor/octopus.sh <orden>)
 set -uo pipefail
 RAIZ="$(cd "$(dirname "$(realpath "$0" 2>/dev/null || echo "$0")")" && pwd)"
 DC=(docker compose --env-file "$RAIZ/install/.env" -f "$RAIZ/install/docker-compose.yml")
@@ -134,7 +134,7 @@ reiniciar)     docker restart octopus ;;
 consola)       docker exec -it octopus bash ;;
 *)
     cat <<EOF
-Uso: sudo bash octopus.sh <orden>     (en Mac sin sudo; en Windows: octopus.ps1)
+Uso: sudo bash octopus.sh <orden>     (en Windows: octopus.ps1)
   estado          como esta todo (contenedor, equipos conectados, almacen)
   logs [n]        registro en directo del servidor
   credenciales    contrasena inicial del panel

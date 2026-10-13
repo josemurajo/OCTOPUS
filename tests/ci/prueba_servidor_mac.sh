@@ -48,6 +48,18 @@ sudo "${ENTORNO[@]}" "$R/python/bin/python3" "$R/tests/ci/prueba_agente.py" prep
 sudo "${ENTORNO[@]}" "$R/python/bin/python3" "$R/tests/ci/prueba_agente.py" probar ci-agente "$HOME/octopus_ci"
 resultado $? "agente: copia y restauracion contra el servidor nativo"
 
+# 4b. copia completa del Mac (la real copia /System/Volumes/Data entero: en el Mac de GitHub son cientos de GB, asi que
+#     se limita con OCTOPUS_RUTA_COMPLETA a una carpeta, con la ruta real de macOS para los datos de usuario)
+COMPLETA="/System/Volumes/Data/Users/$(id -un)/octopus_completa"
+mkdir -p "$HOME/octopus_completa" && echo "solo en la copia completa $(date +%s)" > "$HOME/octopus_completa/fuera_de_la_copia_diaria.txt"
+PB=/usr/libexec/PlistBuddy; PLIST=/Library/LaunchDaemons/com.octopus.agent.plist
+sudo $PB -c "Add :EnvironmentVariables dict" "$PLIST" 2>/dev/null
+sudo $PB -c "Delete :EnvironmentVariables:OCTOPUS_RUTA_COMPLETA" "$PLIST" 2>/dev/null
+sudo $PB -c "Add :EnvironmentVariables:OCTOPUS_RUTA_COMPLETA string $COMPLETA" "$PLIST"
+sudo launchctl bootout system "$PLIST" 2>/dev/null; sleep 2; sudo launchctl bootstrap system "$PLIST"; sleep 10
+sudo "${ENTORNO[@]}" "$R/python/bin/python3" "$R/tests/ci/prueba_agente.py" completa ci-agente "$COMPLETA"
+resultado $? "copia completa del Mac y recuperar desde ella"
+
 # 5. volver a instalar (actualizar a mano) no pierde nada
 antes="$(equipos)"
 instalar >/dev/null 2>&1; rc=$?

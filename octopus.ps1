@@ -1,6 +1,5 @@
 # OCTOPUS Zero-Touch - gestion del servidor en Windows (lo mismo que octopus.sh en Linux y Mac)
 #   powershell -ExecutionPolicy Bypass -File "C:\ProgramData\OCTOPUS-Servidor\octopus.ps1" <orden>
-# Sirve para el servidor nativo (lo normal) y para el antiguo con Docker (WSL2 + Rancher Desktop).
 param([string]$Orden = "ayuda", [string]$Arg = "")
 $ErrorActionPreference = "Continue"
 $Raiz = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -26,29 +25,9 @@ Uso: powershell -ExecutionPolicy Bypass -File octopus.ps1 <orden>
 }
 
 if (-not $Nativo) {
-    # ------------------------------------------------------------- servidor antiguo con Docker
-    $dc = @("compose", "--env-file", (Join-Path $Raiz "install\.env"), "-f", (Join-Path $Raiz "install\docker-compose.yml"))
-    foreach ($d in @("$env:ProgramFiles\Rancher Desktop", "$env:LOCALAPPDATA\Programs\Rancher Desktop")) {
-        $bin = Join-Path $d "resources\resources\win32\bin"
-        if (Test-Path $bin) { $env:Path = "$bin;$env:Path" }
-    }
-    switch ($Orden) {
-        "estado" {
-            & docker ps --filter "name=^octopus" --format "table {{.Names}}`t{{.Status}}`t{{.Ports}}"
-            & docker exec octopus python /app/lib/equipos_cli.py lista
-            & docker exec octopus curl -fsk https://127.0.0.1:8080/healthz; Write-Host ""
-        }
-        "logs"          { & docker logs --tail 100 -f octopus }
-        "credenciales"  { & docker exec octopus cat /data/panel/CREDENCIALES_INICIALES.txt }
-        "kit"           { & docker exec octopus python /app/lib/mantenimiento.py kit }
-        "mantenimiento" { $t = if ($Arg) { $Arg } else { "todo" }; & docker exec octopus python /app/lib/mantenimiento.py $t }
-        "actualizar"    { & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Raiz "instalar_servidor_windows_docker.ps1") }
-        "parar"         { & docker @dc stop }
-        "arrancar"      { & docker @dc up -d --no-build octopus }
-        "reiniciar"     { & docker restart octopus }
-        default         { Ayuda; Write-Host "(Servidor con Docker. Para pasar al servidor nativo, sin WSL2 ni Docker: para este con 'parar' y ejecuta INSTALAR_SERVIDOR_WINDOWS.bat de la version nueva.)" }
-    }
-    exit $LASTEXITCODE
+    Write-Host "OCTOPUS no esta instalado en esta carpeta. Instalalo con doble clic en INSTALAR_SERVIDOR_WINDOWS.bat"
+    Write-Host "(despues, la gestion esta en C:\ProgramData\OCTOPUS-Servidor\octopus.ps1)."
+    exit 1
 }
 
 # ----------------------------------------------------------------- servidor nativo
@@ -169,7 +148,7 @@ switch ($Orden) {
         Unregister-ScheduledTask -TaskName $Tarea -Confirm:$false -ErrorAction SilentlyContinue
         Unregister-ScheduledTask -TaskName "OCTOPUS Actualizador" -Confirm:$false -ErrorAction SilentlyContinue
         Get-NetFirewallRule -DisplayName "OCTOPUS *" -ErrorAction SilentlyContinue | Remove-NetFirewallRule
-        foreach ($d in @("python", "bin", "lib", "templates", "agentes", "install", "herramientas", "soporte", "n8n", "ansible")) {
+        foreach ($d in @("python", "bin", "lib", "templates", "agentes", "install", "herramientas", "soporte", "ansible")) {
             Remove-Item -Recurse -Force (Join-Path $Raiz $d) -ErrorAction SilentlyContinue }
         if ($r -eq "BORRAR TODO") {
             Remove-Item -Recurse -Force $env:OCTOPUS_BOVEDA_DIR, $Raiz, "$Raiz.anterior" -ErrorAction SilentlyContinue

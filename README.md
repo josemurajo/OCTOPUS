@@ -59,7 +59,6 @@ Después, en el panel: **Equipos → Añadir equipo**.
 | `instalar_servidor.sh` | Instalador del servidor (Linux). Volver a ejecutarlo actualiza sin perder nada |
 | `INSTALAR_SERVIDOR_WINDOWS.bat`, `instalar_servidor_windows.ps1`, `octopus.ps1`, `actualizador.ps1` | Servidor en Windows (nativo: sin WSL2 ni Docker) |
 | `INSTALAR_SERVIDOR_MAC.command`, `instalar_servidor_mac.sh` | Servidor en Mac (nativo: sin Docker ni Homebrew) |
-| `instalar_servidor_windows_docker.ps1`, `instalar_servidor_mac_docker.sh` | Opcional: servidor con Docker en Windows / Mac |
 | `octopus.sh` | Gestión del servidor: estado, logs, kit, mantenimiento, actualizar, volver... |
 | `Dockerfile`, `install/docker-compose.yml` | La imagen y el contenedor del servidor |
 | `lib/` | El servidor: panel (`admin_panel.py`), arranque (`servidor.py`), mantenimiento, incidentes, informe... |

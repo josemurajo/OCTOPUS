@@ -45,27 +45,8 @@ services:
         max-size: "20m"
         max-file: "5"
 
-  # Automatizaciones (opcional):  docker compose -f install/docker-compose.yml --profile n8n up -d
-  # Solo desde el propio servidor:  ssh -L 5678:127.0.0.1:5678 usuario@servidor
-  n8n:
-    profiles: ["n8n"]
-    image: ${N8N_IMAGE:-docker.n8n.io/n8nio/n8n:stable}
-    container_name: octopus_n8n
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:5678:5678"
-    environment:
-      - N8N_DIAGNOSTICS_ENABLED=false
-      - GENERIC_TIMEZONE=${TZ:-Europe/Madrid}
-      - TZ=${TZ:-Europe/Madrid}
-    volumes:
-      - n8n_data:/home/node/.n8n
-      - ../n8n/workflows:/workflows:ro
-
 volumes:
   datos:
     name: ${OCTOPUS_VOLUMEN_DATOS:-octopus_datos}
   boveda:
     name: ${OCTOPUS_VOLUMEN_BOVEDA:-octopus_boveda}
-  n8n_data:
-    name: octopus_n8n

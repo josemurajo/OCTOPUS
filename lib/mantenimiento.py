@@ -24,7 +24,6 @@ import shutil
 import sqlite3
 import subprocess
 import sys
-import tarfile
 import tempfile
 import time
 from datetime import datetime, timezone

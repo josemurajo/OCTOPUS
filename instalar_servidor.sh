@@ -73,25 +73,11 @@ fi
 [ -n "$IP" ] || fallo "No se pudo averiguar la IP. Ejecuta: sudo OCTOPUS_IP=<ip> bash $0"
 bien "Los equipos llegaran al servidor por $IP (cambialo con OCTOPUS_IP=... si usas un nombre o IP publica)"
 
-# --------------------------------------------------------------------------- instalacion anterior
-paso "Comprobando instalaciones anteriores"
+# --------------------------------------------------------------------------- almacen de copias
+paso "Almacen de copias"
 VOL_BOVEDA="$(leer OCTOPUS_VOLUMEN_BOVEDA)"
-MIGRAR=0
-if systemctl list-unit-files 2>/dev/null | grep -q '^octopus-panel'; then
-    aviso "Instalacion antigua (sin contenedor) encontrada: se pasa al contenedor conservando todo"
-    for u in octopus-panel octopus-api octopus-mantenimiento.timer octopus-mantenimiento octopus-firewall; do
-        systemctl disable --now "$u" >/dev/null 2>&1 || true
-        rm -f "/etc/systemd/system/$u" "/etc/systemd/system/$u.service"
-    done
-    systemctl daemon-reload
-    [ -x "$RAIZ/install/firewall.sh" ] && bash "$RAIZ/install/firewall.sh" quitar >/dev/null 2>&1 || true
-    MIGRAR=1
-fi
-for c in cerebro_boveda cerebro_wg_easy cerebro_n8n cerebro_minio; do
-    docker rm -f "$c" >/dev/null 2>&1 && { aviso "Contenedor antiguo $c retirado (sus datos se conservan)"; MIGRAR=1; } || true
-done
 if [ -z "$VOL_BOVEDA" ] && docker volume inspect install_boveda_data >/dev/null 2>&1; then
-    VOL_BOVEDA=install_boveda_data   # las copias de la version anterior se siguen usando tal cual
+    VOL_BOVEDA=install_boveda_data   # el laboratorio aun tiene sus copias en el volumen de las primeras pruebas
 fi
 VOL_BOVEDA="${VOL_BOVEDA:-octopus_boveda}"
 bien "Almacen de copias: volumen $VOL_BOVEDA"
@@ -119,12 +105,6 @@ ANTERIOR="$(docker image inspect -f '{{.Id}}' "octopus-servidor:$(leer OCTOPUS_V
 [ -n "$ANTERIOR" ] && docker tag "$ANTERIOR" octopus-servidor:anterior >/dev/null 2>&1 || true
 "${DC[@]}" build --pull >/dev/null || "${DC[@]}" build || fallo "No se pudo construir la imagen"
 bien "imagen octopus-servidor:$(leer OCTOPUS_VERSION) lista"
-
-if [ "$MIGRAR" = 1 ] && [ -f "$RAIZ/.env" ]; then
-    paso "Pasando la configuracion antigua al contenedor"
-    "${DC[@]}" run --rm --no-deps --entrypoint python -v "$RAIZ:/antiguo:ro" -v /root/.ssh:/sshantiguo:ro \
-        octopus /app/lib/migrar.py
-fi
 
 # --------------------------------------------------------------------------- arranque
 paso "Arrancando OCTOPUS"

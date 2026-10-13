@@ -106,37 +106,6 @@ class TelegramIntegration:
         
         return self.send_message(message)
     
-    def send_approval_request(self, approval_details: str, requester: str) -> dict:
-        """Envía solicitud de aprobación por Telegram"""
-        message = f"""
-📋 <b>Solicitud de Aprobación</b>
-
-<b>Solicitante:</b> {requester}
-<b>Fecha:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-
-<b>Detalles:</b>
-<pre>{approval_details}</pre>
-
-<i>Para aprobar o rechazar, accede al panel web</i>
-"""
-        
-        return self.send_message(message)
-    
-    def send_recovery_notification(self, recovery_details: str) -> dict:
-        """Envía notificación de recuperación por Telegram"""
-        message = f"""
-✅ <b>Recuperación Automática</b>
-
-<b>Fecha:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-
-<b>Detalles:</b>
-<pre>{recovery_details}</pre>
-
-<i>La recuperación se ha completado. Verifica el sistema.</i>
-"""
-        
-        return self.send_message(message)
-    
     def test_connection(self) -> dict:
         """Prueba la conexión con Telegram"""
         if not self.is_configured():

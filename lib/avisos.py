@@ -320,6 +320,20 @@ def _env_mant():
     return m, m.leer_env()
 
 
+def _comprobar(m, e, timeout: int, intentos: int = 10) -> tuple[bool, str]:
+    """restic check. Si el almacen esta ocupado por una copia en curso (bloqueo vivo), espera y lo reintenta:
+    eso no es un error del almacen, y antes se contaba como «sigue con errores»."""
+    for i in range(intentos):
+        r = m.run([m.restic_bin(), "check"], env=e, timeout=timeout)
+        if r.returncode == 0:
+            return True, "correcto"
+        salida = (r.stderr or "") + (r.stdout or "")
+        if "locked" not in salida.lower():
+            return False, "sigue con errores: " + salida.strip()[-200:]
+        time.sleep(30)
+    return False, "ocupado por una copia en curso; se volvera a intentar"
+
+
 def desbloquear_almacen() -> dict:
     m, env = _env_mant()
     partes, ok = [], True
@@ -329,9 +343,9 @@ def desbloquear_almacen() -> dict:
             continue
         e = m.restic_env(repo, pwd)
         m.run([m.restic_bin(), "unlock"], env=e, timeout=300)
-        r = m.run([m.restic_bin(), "check"], env=e, timeout=3600)
-        ok = ok and r.returncode == 0
-        partes.append(f"{os.path.basename(repo)}: {'correcto' if r.returncode == 0 else 'sigue con errores'}")
+        bien, texto = _comprobar(m, e, 3600)
+        ok = ok and bien
+        partes.append(f"{os.path.basename(repo)}: {texto}")
     if not partes:
         return {"ok": False, "detalle": "No se encuentra el almacén en disco"}
     return {"ok": ok, "detalle": "Bloqueos quitados. " + "; ".join(partes)}
@@ -349,9 +363,9 @@ def reparar_almacen() -> dict:
         rep = m.run([m.restic_bin(), "repair", "index"], env=e, timeout=6 * 3600)
         if rep.returncode != 0 and "unknown command" in (rep.stderr or "").lower():
             m.run([m.restic_bin(), "rebuild-index"], env=e, timeout=6 * 3600)
-        r = m.run([m.restic_bin(), "check"], env=e, timeout=6 * 3600)
-        ok = ok and r.returncode == 0
-        partes.append(f"{os.path.basename(repo)}: {'correcto' if r.returncode == 0 else 'ERROR ' + (r.stderr or '')[-200:]}")
+        bien, texto = _comprobar(m, e, 6 * 3600)
+        ok = ok and bien
+        partes.append(f"{os.path.basename(repo)}: {texto}")
     if not partes:
         return {"ok": False, "detalle": "No se encuentra el almacén en disco"}
     return {"ok": ok, "detalle": "; ".join(partes)}

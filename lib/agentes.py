@@ -25,10 +25,6 @@ JOBS = {}
 _jobs_lock = threading.Lock()
 
 
-def _token():
-    return os.environ.get("OCTOPUS_AGENT_TOKEN", "")
-
-
 def parse_time(value):
     """Convierte la hora de restic ('2026-10-09T19:33:20.1234+00:00') a datetime con zona."""
     if not value:
@@ -69,18 +65,11 @@ class Agente:
         import ordenes
         return ordenes.pedir(self.equipo, method, path, data if method == "POST" else None, timeout or self.timeout)
 
-    def health(self):
-        return self._req("GET", "/health", timeout=10)
-
     def snapshots(self):
         return self._req("GET", "/snapshots", timeout=90)
 
     def info(self):
         return self._req("GET", "/info", timeout=20)
-
-    def ls(self, path, snapshot="latest"):
-        q = urllib.parse.urlencode({"path": path, "snapshot": snapshot})
-        return self._req("GET", f"/ls?{q}", timeout=120)
 
     def backup(self):
         return self._req("POST", "/webhook/backup", timeout=6 * 3600)

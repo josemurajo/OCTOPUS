@@ -5,7 +5,6 @@ OCTOPUS Zero-Touch - Arranque del servidor dentro del contenedor (punto de entra
 Pone en marcha y vigila (si uno se cae, se vuelve a arrancar):
   - el almacen de copias (restic rest-server, HTTPS, modo solo-anadir) en el puerto 8000
   - el panel web HTTPS (gunicorn) en el 8080, por donde los agentes recogen sus ordenes
-  - la API interna en 127.0.0.1:8081
   - el mantenimiento nocturno (limpieza, verificacion, copia del servidor, vigilancia)
 """
 from __future__ import annotations
@@ -91,7 +90,6 @@ def comandos() -> dict[str, list[str]]:
                     "--tls-cert", str(BASE_DIR / "data" / "tls" / "panel.crt"),
                     "--tls-key", str(BASE_DIR / "data" / "tls" / "panel.key")],
         "panel": _comando_panel(py),
-        "api": [py, str(BASE_DIR / "lib" / "api.py")],
     }
 
 
@@ -178,7 +176,6 @@ def main() -> int:
         log("AVISO: el almacen de copias no responde")
     iniciar_repositorios()
     arrancar("panel", cmds["panel"])
-    arrancar("api", cmds["api"])
     threading.Thread(target=mantenimiento_nocturno, daemon=True).start()
     threading.Thread(target=imagen_sandbox, daemon=True).start()
     cred = BASE_DIR / "data" / "CREDENCIALES_INICIALES.txt"

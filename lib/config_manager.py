@@ -11,14 +11,6 @@ import sqlite3
 from datetime import datetime, timedelta
 from enum import Enum
 
-class BackupFrequency(Enum):
-    """Frecuencia de backups"""
-    HOURLY = "hourly"
-    DAILY = "daily"
-    WEEKLY = "weekly"
-    MONTHLY = "monthly"
-    CUSTOM = "custom"
-
 class BackupRetention(Enum):
     """Retención de backups"""
     DAILY_7 = "daily_7"
@@ -30,48 +22,13 @@ class BackupRetention(Enum):
     MONTHLY_12 = "monthly_12"
     CUSTOM = "custom"
 
-class ResponseLevel(Enum):
-    """Nivel de respuesta automática"""
-    PARANOID = "paranoid"  # Todo requiere aprobación manual
-    CONSERVATIVE = "conservative"  # Solo amenazas críticas
-    BALANCED = "balanced"  # Amenazas nivel medio+
-    AGGRESSIVE = "aggressive"  # Cualquier alerta
-
 class ConfigManager:
     """Gestor de configuración personalizable"""
     
     # Configuración por defecto
     DEFAULT_CONFIG = {
         # Backup configuration
-        "backup_frequency": BackupFrequency.DAILY.value,
-        "backup_time": "20:00",
         "backup_retention": BackupRetention.DAILY_30.value,
-        "backup_compression": True,
-        "backup_encryption": True,
-        
-        # Security response
-        "response_level": ResponseLevel.BALANCED.value,
-        "isolation_time": 0,  # minutos antes de aislar
-        "isolation_method": "automatic",
-        "auto_restore": True,
-        "restore_approval": True,
-        
-        # Monitoring
-        "monitoring_interval": 60,  # segundos
-        "alert_threshold": 7,  # nivel de alerta Wazuh
-        "watchdog_enabled": True,
-        
-        # Network
-        "auto_discovery": True,
-        "discovery_interval": 3600,  # segundos
-        "scan_networks": True,
-        
-        # Network Access (Configurable desde web)
-        "bind_to_localhost": True,  # True = solo localhost, False = todas las IPs
-        "allowed_ips": [],  # Lista de IPs permitidas (vacío = todas)
-        "minio_port": "0.0.0.0",  # 0.0.0.0 = localhost, 0.0.0.0 = todas
-        "n8n_port": "0.0.0.0",
-        "wg_easy_port": "0.0.0.0",
         
         # Wazuh SIEM Integration
         "wazuh_enabled": False,
@@ -99,14 +56,8 @@ class ConfigManager:
         "telegram_notification_levels": ["critical", "high"],
         
         # Retention
-        "log_retention_days": 90,
-        "audit_log_retention_days": 365,
-        "backup_clean_enabled": True,
         
         # Performance
-        "max_concurrent_backups": 5,
-        "backup_timeout": 3600,  # segundos
-        "snapshot_verification": True,
         
         # Respuesta a incidentes criticos
         "incident_auto_response": True,      # aislar + copia forense + restaurar + avisar automaticamente
@@ -135,17 +86,7 @@ class ConfigManager:
         "avisos_destinatarios": {},
 
         # Custom paths
-        "protected_paths": {
-            "windows": ["C:\\Users", "C:\\Program Files", "C:\\Windows"],
-            "linux": ["/home", "/etc", "/var/www", "/opt"],
-            "macos": ["/Users", "/Applications", "/Library", "/etc"]
-        },
         
-        "excluded_paths": {
-            "windows": ["C:\\Windows\\Temp", "C:\\Users\\*\\AppData\\Local\\Temp"],
-            "linux": ["/tmp", "/var/tmp", "/proc", "/sys"],
-            "macos": ["/tmp", "/private/tmp"]
-        }
     }
     
     def __init__(self, db_path=None):
@@ -282,166 +223,3 @@ class ConfigManager:
         conn.close()
         
         return True, "Configuración actualizada"
-    
-    def reset_config(self, key=None):
-        """Restablece configuración a valores por defecto"""
-        conn = self.get_db_connection()
-        
-        if key:
-            if key in self.DEFAULT_CONFIG:
-                value = self.DEFAULT_CONFIG[key]
-                conn.execute('''
-                    UPDATE config 
-                    SET value = ?, type = ?, updated_at = ?
-                    WHERE key = ?
-                ''', (json.dumps(value), self._get_value_type(value), datetime.now(), key))
-        else:
-            for key, value in self.DEFAULT_CONFIG.items():
-                conn.execute('''
-                    UPDATE config 
-                    SET value = ?, type = ?, updated_at = ?
-                    WHERE key = ?
-                ''', (json.dumps(value), self._get_value_type(value), datetime.now(), key))
-        
-        conn.commit()
-        conn.close()
-        
-        return True, "Configuración restablecida"
-    
-    def get_backup_schedule(self):
-        """Obtiene configuración de programación de backups"""
-        config = self.get_config()
-        
-        frequency = config.get("backup_frequency", BackupFrequency.DAILY.value)
-        time = config.get("backup_time", "20:00")
-        
-        # Calcular próximo backup
-        now = datetime.now()
-        
-        if frequency == BackupFrequency.HOURLY.value:
-            next_backup = now + timedelta(hours=1)
-        elif frequency == BackupFrequency.DAILY.value:
-            hour, minute = map(int, time.split(':'))
-            next_backup = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-            if next_backup <= now:
-                next_backup += timedelta(days=1)
-        elif frequency == BackupFrequency.WEEKLY.value:
-            # Próximo domingo a la hora especificada
-            hour, minute = map(int, time.split(':'))
-            next_backup = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-            days_until_sunday = (6 - now.weekday()) % 7
-            if days_until_sunday == 0 and next_backup <= now:
-                days_until_sunday = 7
-            next_backup += timedelta(days=days_until_sunday)
-        elif frequency == BackupFrequency.MONTHLY.value:
-            # Primer día del próximo mes
-            hour, minute = map(int, time.split(':'))
-            next_backup = now.replace(day=1, hour=hour, minute=minute, second=0, microsecond=0)
-            if next_backup <= now:
-                if now.month == 12:
-                    next_backup = next_backup.replace(year=now.year + 1, month=1)
-                else:
-                    next_backup = next_backup.replace(month=now.month + 1)
-        else:
-            next_backup = now + timedelta(hours=1)
-        
-        return {
-            "frequency": frequency,
-            "time": time,
-            "next_backup": next_backup.isoformat(),
-            "retention": config.get("backup_retention", BackupRetention.DAILY_30.value)
-        }
-    
-    def get_retention_policy(self):
-        """Obtiene política de retención de backups"""
-        config = self.get_config()
-        retention = config.get("backup_retention", BackupRetention.DAILY_30.value)
-        
-        policies = {
-            BackupRetention.DAILY_7.value: {"daily": 7, "weekly": 0, "monthly": 0},
-            BackupRetention.DAILY_30.value: {"daily": 30, "weekly": 4, "monthly": 0},
-            BackupRetention.DAILY_90.value: {"daily": 90, "weekly": 12, "monthly": 3},
-            BackupRetention.WEEKLY_4.value: {"daily": 7, "weekly": 4, "monthly": 0},
-            BackupRetention.WEEKLY_12.value: {"daily": 7, "weekly": 12, "monthly": 3},
-            BackupRetention.MONTHLY_3.value: {"daily": 7, "weekly": 4, "monthly": 3},
-            BackupRetention.MONTHLY_12.value: {"daily": 7, "weekly": 4, "monthly": 12},
-        }
-        
-        return policies.get(retention, policies[BackupRetention.DAILY_30.value])
-    
-    def get_security_policies(self):
-        """Obtiene políticas de seguridad"""
-        config = self.get_config()
-        
-        return {
-            "response_level": config.get("response_level", ResponseLevel.BALANCED.value),
-            "isolation_time": config.get("isolation_time", 0),
-            "isolation_method": config.get("isolation_method", "automatic"),
-            "auto_restore": config.get("auto_restore", True),
-            "restore_approval": config.get("restore_approval", True),
-            "alert_threshold": config.get("alert_threshold", 7),
-            "watchdog_enabled": config.get("watchdog_enabled", True)
-        }
-    
-    def validate_config_change(self, key, value):
-        """Valida cambio de configuración"""
-        # Validaciones específicas por clave
-        if key == "backup_time":
-            try:
-                hour, minute = map(int, value.split(':'))
-                if not (0 <= hour <= 23 and 0 <= minute <= 59):
-                    return False, "Hora inválida"
-            except (ValueError, AttributeError):
-                return False, "Formato de hora inválido (use HH:MM)"
-        
-        elif key == "isolation_time":
-            if not isinstance(value, int) or value < 0 or value > 60:
-                return False, "Tiempo de aislamiento debe ser 0-60 minutos"
-        
-        elif key == "alert_threshold":
-            if not isinstance(value, int) or value < 1 or value > 15:
-                return False, "Umbral de alerta debe ser 1-15"
-        
-        elif key == "backup_frequency":
-            valid_frequencies = [freq.value for freq in BackupFrequency]
-            if value not in valid_frequencies:
-                return False, f"Frecuencia inválida. Opciones: {valid_frequencies}"
-        
-        elif key == "response_level":
-            valid_levels = [level.value for level in ResponseLevel]
-            if value not in valid_levels:
-                return False, f"Nivel de respuesta inválido. Opciones: {valid_levels}"
-        
-        return True, "Validación exitosa"
-
-def main():
-    """Función principal para pruebas"""
-    print(" ZeroTouch - Gestor de Configuración Personalizable")
-    print("=" * 50)
-    
-    manager = ConfigManager()
-    
-    # Mostrar configuración actual
-    print("\n Configuración Actual:")
-    print("-" * 50)
-    config = manager.get_config()
-    
-    for key, value in config.items():
-        print(f"{key}: {value}")
-    
-    # Mostrar programación de backups
-    print("\n Programación de Backups:")
-    print("-" * 50)
-    schedule = manager.get_backup_schedule()
-    for key, value in schedule.items():
-        print(f"{key}: {value}")
-    
-    # Mostrar políticas de seguridad
-    print("\n Políticas de Seguridad:")
-    print("-" * 50)
-    policies = manager.get_security_policies()
-    for key, value in policies.items():
-        print(f"{key}: {value}")
-
-if __name__ == "__main__":
-    main()

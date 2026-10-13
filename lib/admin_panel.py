@@ -37,15 +37,13 @@ except ImportError:  # pragma: no cover
     bcrypt = None
 from config_manager import ConfigManager
 from notifications import NotificationManager
-from intelligent_detection import IntelligentDetection
 from wazuh_integration import WazuhIntegration
 from telegram_integration import TelegramIntegration
-from alert_manager import AlertManager
-from config_presets import ConfigPresets
 import agentes
 import avisos as _av
 import banderines as _ban
 import autoarreglo as _aa
+import registro as _registro
 from datetime import timezone
 from pathlib import Path
 
@@ -149,10 +147,6 @@ def csrf_token():
 
 app.jinja_env.globals['csrf_token'] = csrf_token
 
-# Pantallas de la version 1 que guardaban ajustes que la version 2 ya no usa: se mandan a Ajustes
-PANTALLAS_RETIRADAS = {'config', 'config_presets', 'config_backup', 'config_paths', 'config_security',
-                       'config_detection', 'approvals', 'dashboard_avanzado'}
-
 PUBLIC_ENDPOINTS = {'login', 'static', 'recover_password', 'reset_password', 'index', 'healthz'}
 
 
@@ -183,8 +177,6 @@ def security_checks():
         # Contrasena inicial: obligar a cambiarla antes de usar el panel
         if session.get('must_change') and request.endpoint not in ('cambiar_password', 'logout', 'static'):
             return redirect(url_for('cambiar_password'))
-        if request.endpoint in PANTALLAS_RETIRADAS:
-            return redirect(url_for('ajustes'))
 
 
 @app.after_request
@@ -234,8 +226,6 @@ config_manager = ConfigManager(DB_FILE)
 # Instancia del gestor de notificaciones
 notification_manager = NotificationManager(config_manager)
 
-# Instancia del detector inteligente
-intelligent_detector = IntelligentDetection(DB_FILE)
 
 # Instancia de integración con Wazuh
 wazuh_integration = WazuhIntegration(config_manager)
@@ -244,7 +234,6 @@ wazuh_integration = WazuhIntegration(config_manager)
 telegram_integration = TelegramIntegration(config_manager)
 
 # Instancia del gestor de alertas
-alert_manager = AlertManager(DB_FILE)
 
 # Inicializar base de datos
 def init_db():
@@ -349,26 +338,12 @@ def get_db_connection():
     return conn
 
 def _hash_registro(anterior, rid, user_id, action, details, ts, ip):
-    base = '|'.join('' if x is None else str(x) for x in (anterior, rid, user_id, action, details, ts, ip))
-    return hashlib.sha256(base.encode('utf-8')).hexdigest()
+    return _registro.huella(anterior, rid, user_id, action, details, ts, ip)
 
 
 def log_audit(user_id, action, details="", ip_address=""):
-    """Registra la acción en el registro de actividad. Cada línea va encadenada con la anterior (huella SHA-256):
-    si alguien borra o cambia una línea por detrás, la cadena se rompe y el panel lo avisa."""
-    conn = get_db_connection()
-    try:
-        conn.execute('BEGIN IMMEDIATE')
-        prev = conn.execute('SELECT hash FROM audit_logs ORDER BY id DESC LIMIT 1').fetchone()
-        anterior = prev['hash'] if prev and prev['hash'] else ''
-        ts = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
-        cur = conn.execute('INSERT INTO audit_logs (user_id, action, details, ip_address, timestamp, hash_anterior) '
-                           'VALUES (?, ?, ?, ?, ?, ?)', (user_id, action, details, ip_address, ts, anterior))
-        conn.execute('UPDATE audit_logs SET hash = ? WHERE id = ?',
-                     (_hash_registro(anterior, cur.lastrowid, user_id, action, details, ts, ip_address), cur.lastrowid))
-        conn.commit()
-    finally:
-        conn.close()
+    """Registra la acción en el registro de actividad, encadenada con la anterior (lib/registro.py)."""
+    _registro.escribir(DB_FILE, user_id, action, details, ip_address)
 
 
 def verificar_registro():
@@ -547,284 +522,6 @@ def reset_password(token):
     conn.close()
     return render_template('reset_password.html', token=token)
 
-@app.route('/config/update', methods=['POST'])
-@login_required
-@role_required('admin', 'supremo')
-def config_update():
-    """Actualizar configuración"""
-    key = request.form['key']
-    value = request.form['value']
-    
-    conn = get_db_connection()
-    conn.execute('''
-        INSERT OR REPLACE INTO config (key, value, updated_at)
-        VALUES (?, ?, ?)
-    ''', (key, value, datetime.now()))
-    conn.commit()
-    conn.close()
-    
-    log_audit(session['user_id'], 'CONFIG_UPDATE', f'Updated config: {key}', request.remote_addr)
-    flash('Configuración actualizada', 'success')
-    return redirect(url_for('config'))
-
-@app.route('/approvals')
-@login_required
-def approvals():
-    """Sistema de aprobaciones"""
-    conn = get_db_connection()
-    
-    if session['role'] in ['admin', 'supremo']:
-        pending = conn.execute('''
-            SELECT a.*, r.username as requester_name, ap.username as approver_name
-            FROM approvals a
-            LEFT JOIN users r ON a.requester_id = r.id
-            LEFT JOIN users ap ON a.approver_id = ap.id
-            WHERE a.status = 'pending'
-            ORDER BY a.created_at DESC
-        ''').fetchall()
-    else:
-        pending = conn.execute('''
-            SELECT a.*, r.username as requester_name, ap.username as approver_name
-            FROM approvals a
-            LEFT JOIN users r ON a.requester_id = r.id
-            LEFT JOIN users ap ON a.approver_id = ap.id
-            WHERE a.status = 'pending' AND a.requester_id = ?
-            ORDER BY a.created_at DESC
-        ''', (session['user_id'],)).fetchall()
-    
-    all_approvals = conn.execute('''
-        SELECT a.*, r.username as requester_name, ap.username as approver_name
-        FROM approvals a
-        LEFT JOIN users r ON a.requester_id = r.id
-        LEFT JOIN users ap ON a.approver_id = ap.id
-        ORDER BY a.created_at DESC
-        LIMIT 50
-    ''').fetchall()
-    
-    conn.close()
-    
-    return render_template('approvals.html', pending=pending, all_approvals=all_approvals)
-
-@app.route('/approve/<int:approval_id>/<action>')
-@login_required
-@role_required('admin', 'supremo')
-def approve(approval_id, action):
-    """Aprobar o rechazar solicitud"""
-    if action not in ['approve', 'reject']:
-        flash('Acción inválida', 'error')
-        return redirect(url_for('approvals'))
-    
-    conn = get_db_connection()
-    conn.execute('''
-        UPDATE approvals 
-        SET approver_id = ?, status = ?, decided_at = ?
-        WHERE id = ?
-    ''', (session['user_id'], action, datetime.now(), approval_id))
-    conn.commit()
-    conn.close()
-    
-    log_audit(session['user_id'], f'APPROVAL_{action.upper()}', f'Approval {action}d: {approval_id}', request.remote_addr)
-    flash(f'Solicitud {action}d exitosamente', 'success')
-    return redirect(url_for('approvals'))
-
-# ========================================
-# RUTAS DE CONFIGURACIÓN
-# ========================================
-
-@app.route('/config')
-@login_required
-def config():
-    """Página de configuración del sistema"""
-    conn = get_db_connection()
-    
-    # Obtener configuración actual del sistema
-    config = config_manager.get_config()
-    
-    # Obtener sistemas registrados
-    systems = conn.execute('SELECT * FROM systems ORDER BY hostname').fetchall()
-    
-    conn.close()
-    
-    return render_template('config.html', config=config, systems=systems)
-
-@app.route('/config/backup', methods=['GET', 'POST'])
-@login_required
-@role_required('admin', 'supremo')
-def config_backup():
-    """Configuración de backups"""
-    if request.method == 'POST':
-        key = request.form.get('key')
-        value = request.form.get('value')
-        
-        valid, message = config_manager.validate_config_change(key, value)
-        if not valid:
-            flash(f'Error: {message}', 'error')
-            return redirect(url_for('config_backup'))
-        
-        # Convertir valor según tipo
-        config = config_manager.get_config()
-        expected_type = type(config.get(key, str))
-        
-        try:
-            if expected_type == bool:
-                value = value.lower() == 'true'
-            elif expected_type == int:
-                value = int(value)
-            elif expected_type == float:
-                value = float(value)
-            elif expected_type == list:
-                value = json.loads(value)
-        except (ValueError, json.JSONDecodeError):
-            flash(f'Error: Valor inválido para {key}', 'error')
-            return redirect(url_for('config_backup'))
-        
-        success, message = config_manager.set_config(key, value, session['user_id'])
-        if success:
-            log_audit(session['user_id'], 'CONFIG_BACKUP_UPDATE', f'{key} = {value}', request.remote_addr)
-            flash(f'Configuración actualizada: {message}', 'success')
-        else:
-            flash(f'Error: {message}', 'error')
-        
-        return redirect(url_for('config_backup'))
-    
-    # GET: mostrar configuración actual
-    config = config_manager.get_config()
-    schedule = config_manager.get_backup_schedule()
-    retention = config_manager.get_retention_policy()
-    
-    return render_template('config_backup.html', config=config, schedule=schedule, retention=retention)
-
-@app.route('/config/security', methods=['GET', 'POST'])
-@login_required
-@role_required('admin', 'supremo')
-def config_security():
-    """Configuración de seguridad"""
-    if request.method == 'POST':
-        key = request.form.get('key')
-        value = request.form.get('value')
-        
-        valid, message = config_manager.validate_config_change(key, value)
-        if not valid:
-            flash(f'Error: {message}', 'error')
-            return redirect(url_for('config_security'))
-        
-        # Convertir valor según tipo
-        config = config_manager.get_config()
-        expected_type = type(config.get(key, str))
-        
-        try:
-            if expected_type == bool:
-                value = value.lower() == 'true'
-            elif expected_type == int:
-                value = int(value)
-            elif expected_type == float:
-                value = float(value)
-            elif expected_type == list:
-                value = json.loads(value)
-        except (ValueError, json.JSONDecodeError):
-            flash(f'Error: Valor inválido para {key}', 'error')
-            return redirect(url_for('config_security'))
-        
-        success, message = config_manager.set_config(key, value, session['user_id'])
-        if success:
-            log_audit(session['user_id'], 'CONFIG_SECURITY_UPDATE', f'{key} = {value}', request.remote_addr)
-            flash(f'Configuración actualizada: {message}', 'success')
-        else:
-            flash(f'Error: {message}', 'error')
-        
-        return redirect(url_for('config_security'))
-    
-    # GET: mostrar configuración actual
-    config = config_manager.get_config()
-    policies = config_manager.get_security_policies()
-    
-    return render_template('config_security.html', config=config, policies=policies)
-
-@app.route('/config/paths', methods=['GET', 'POST'])
-@login_required
-@role_required('admin', 'supremo')
-def config_paths():
-    """Configuración de rutas protegidas"""
-    if request.method == 'POST':
-        config = config_manager.get_config()
-        protected = config.get('protected_paths', {})
-        excluded = config.get('excluded_paths', {})
-        
-        # Procesar rutas protegidas por SO
-        protected_windows = request.form.get('protected_paths_windows', '').split('\n')
-        protected_linux = request.form.get('protected_paths_linux', '').split('\n')
-        protected_macos = request.form.get('protected_paths_macos', '').split('\n')
-        
-        # Limpiar rutas vacías
-        protected_windows = [p.strip() for p in protected_windows if p.strip()]
-        protected_linux = [p.strip() for p in protected_linux if p.strip()]
-        protected_macos = [p.strip() for p in protected_macos if p.strip()]
-        
-        protected = {
-            'windows': protected_windows,
-            'linux': protected_linux,
-            'macos': protected_macos
-        }
-        
-        # Procesar rutas excluidas por SO
-        excluded_windows = request.form.get('excluded_paths_windows', '').split('\n')
-        excluded_linux = request.form.get('excluded_paths_linux', '').split('\n')
-        excluded_macos = request.form.get('excluded_paths_macos', '').split('\n')
-        
-        # Limpiar rutas vacías
-        excluded_windows = [p.strip() for p in excluded_windows if p.strip()]
-        excluded_linux = [p.strip() for p in excluded_linux if p.strip()]
-        excluded_macos = [p.strip() for p in excluded_macos if p.strip()]
-        
-        excluded = {
-            'windows': excluded_windows,
-            'linux': excluded_linux,
-            'macos': excluded_macos
-        }
-        
-        # Procesar ruta personalizada si se agregó
-        custom_os = request.form.get('custom_os')
-        custom_path = request.form.get('custom_path')
-        custom_type = request.form.get('custom_type')
-        
-        if custom_os and custom_path and custom_type:
-            if custom_type == 'protected':
-                protected[custom_os].append(custom_path.strip())
-            else:
-                excluded[custom_os].append(custom_path.strip())
-        
-        # Guardar configuración
-        success, message = config_manager.set_config('protected_paths', protected, session['user_id'])
-        if success:
-            config_manager.set_config('excluded_paths', excluded, session['user_id'])
-            log_audit(session['user_id'], 'CONFIG_PATHS_UPDATE', f'Updated protected and excluded paths', request.remote_addr)
-            flash('Rutas actualizadas correctamente', 'success')
-        else:
-            flash(f'Error: {message}', 'error')
-        
-        return redirect(url_for('config_paths'))
-    
-    # GET: mostrar rutas actuales
-    config = config_manager.get_config()
-    protected = config.get('protected_paths', {})
-    excluded = config.get('excluded_paths', {})
-    
-    return render_template('config_paths.html', protected=protected, excluded=excluded)
-
-@app.route('/config/reset/<key>')
-@login_required
-@role_required('supremo')
-def config_reset(key):
-    """Restablece configuración a valor por defecto"""
-    success, message = config_manager.reset_config(key)
-    if success:
-        log_audit(session['user_id'], 'CONFIG_RESET', f'Key {key} reset to default', request.remote_addr)
-        flash(f'Configuración restablecida: {message}', 'success')
-    else:
-        flash(f'Error: {message}', 'error')
-    
-    return redirect(url_for('config'))
-
 @app.route('/config/notifications', methods=['GET', 'POST'])
 @login_required
 @role_required('admin', 'supremo')
@@ -884,89 +581,6 @@ def test_notification():
         flash(f'Error enviando notificación: {message}', 'error')
     
     return redirect(url_for('config_notifications'))
-
-@app.route('/config/detection', methods=['GET', 'POST'])
-@login_required
-@role_required('admin', 'supremo')
-def config_detection():
-    """Configuración de detección inteligente"""
-    if request.method == 'POST':
-        action = request.form.get('action')
-        
-        if action == 'add_whitelist':
-            file_path = request.form.get('file_path')
-            pattern = request.form.get('pattern', '')
-            user = request.form.get('user', '')
-            process = request.form.get('process', '')
-            reason = request.form.get('reason', '')
-            expires_days = request.form.get('expires_days')
-            
-            expires_days = int(expires_days) if expires_days else None
-            
-            success, message = intelligent_detector.add_to_whitelist(
-                file_path, pattern, user, process, reason, expires_days, session['user_id']
-            )
-            
-            if success:
-                log_audit(session['user_id'], 'WHITELIST_ADD', f'Added {file_path} to whitelist', request.remote_addr)
-                flash(message, 'success')
-            else:
-                flash(message, 'error')
-        
-        elif action == 'remove_whitelist':
-            whitelist_id = request.form.get('whitelist_id')
-            success, message = intelligent_detector.remove_from_whitelist(int(whitelist_id))
-            
-            if success:
-                log_audit(session['user_id'], 'WHITELIST_REMOVE', f'Removed whitelist entry {whitelist_id}', request.remote_addr)
-                flash(message, 'success')
-            else:
-                flash(message, 'error')
-        
-        elif action == 'add_pattern':
-            pattern = request.form.get('pattern')
-            severity = request.form.get('severity', 'medium')
-            description = request.form.get('description', '')
-            
-            success, message = intelligent_detector.add_suspicious_pattern(pattern, severity, description)
-            
-            if success:
-                log_audit(session['user_id'], 'PATTERN_ADD', f'Added suspicious pattern: {pattern}', request.remote_addr)
-                flash(message, 'success')
-            else:
-                flash(message, 'error')
-        
-        elif action == 'remove_pattern':
-            pattern_id = request.form.get('pattern_id')
-            success, message = intelligent_detector.remove_suspicious_pattern(int(pattern_id))
-            
-            if success:
-                log_audit(session['user_id'], 'PATTERN_REMOVE', f'Removed pattern {pattern_id}', request.remote_addr)
-                flash(message, 'success')
-            else:
-                flash(message, 'error')
-        
-        return redirect(url_for('config_detection'))
-    
-    # GET: mostrar configuración actual
-    whitelist = intelligent_detector.get_whitelist()
-    patterns = intelligent_detector.get_suspicious_patterns()
-    
-    return render_template('config_detection.html', whitelist=whitelist, patterns=patterns)
-
-@app.route('/test_detection', methods=['POST'])
-@login_required
-@role_required('admin', 'supremo')
-def test_detection():
-    """Prueba la detección inteligente"""
-    file_path = request.form.get('file_path')
-    change_type = request.form.get('change_type', 'modify')
-    user = request.form.get('user', '')
-    process = request.form.get('process', '')
-    
-    result = intelligent_detector.analyze_change(file_path, change_type, user, process)
-    
-    return jsonify(result)
 
 @app.route('/config/wazuh', methods=['GET', 'POST'])
 @login_required
@@ -1095,34 +709,6 @@ def telegram_bot_info():
 # RUTAS DE SISTEMAS
 # ========================================
 
-@app.route('/systems')
-@login_required
-def systems():
-    return redirect(url_for('equipos'))
-
-@app.route('/systems/add', methods=['POST'])
-@login_required
-@role_required('admin', 'supremo')
-def add_system():
-    """Agregar nuevo sistema"""
-    hostname = request.form.get('hostname')
-    ip_address = request.form.get('ip_address')
-    os_family = request.form.get('os_family')
-    os_version = request.form.get('os_version', '')
-    
-    conn = get_db_connection()
-    conn.execute('''
-        INSERT INTO systems (hostname, ip_address, os_family, os_version, status)
-        VALUES (?, ?, ?, ?, 'unknown')
-    ''', (hostname, ip_address, os_family, os_version))
-    conn.commit()
-    conn.close()
-    
-    log_audit(session['user_id'], 'SYSTEM_ADD', f'Added system: {hostname} ({ip_address})', request.remote_addr)
-    flash('Sistema agregado correctamente', 'success')
-    
-    return redirect(url_for('equipos'))
-
 @app.route('/systems/<int:system_id>/delete', methods=['POST'])
 @login_required
 @role_required('admin', 'supremo')
@@ -1184,68 +770,9 @@ def clear_audit():
     
     return redirect(url_for('audit'))
 
-@app.route('/request_approval', methods=['POST'])
-@login_required
-def request_approval():
-    """Crear solicitud de aprobación"""
-    action = request.form.get('action')
-    details = request.form.get('details', '')
-    
-    if not action:
-        flash('Debe especificar una acción', 'error')
-        return redirect(url_for('dashboard'))
-    
-    conn = get_db_connection()
-    conn.execute('''
-        INSERT INTO approvals (requester_id, action, details, status)
-        VALUES (?, ?, ?, 'pending')
-    ''', (session['user_id'], action, details))
-    conn.commit()
-    conn.close()
-    
-    log_audit(session['user_id'], 'APPROVAL_REQUEST', f'Requested approval for: {action}', request.remote_addr)
-    flash('Solicitud de aprobación creada', 'success')
-    
-    return redirect(url_for('approvals'))
-
-# ========================================
-# RUTA PRINCIPAL
-# ========================================
-
 @app.route('/')
 def index():
     return redirect(url_for('inicio') if 'user_id' in session else url_for('login'))
-
-@app.route('/peace-of-mind')
-@login_required
-def peace_of_mind():
-    return redirect(url_for('inicio'))
-
-@app.route('/config/presets', methods=['GET', 'POST'])
-@login_required
-@role_required('admin', 'supremo')
-def config_presets():
-    """Configuración mediante presets"""
-    if request.method == 'POST':
-        preset_name = request.form.get('preset')
-        
-        if not preset_name:
-            flash('Debes seleccionar un preset', 'error')
-            return redirect(url_for('config_presets'))
-        
-        success, message = ConfigPresets.apply_preset(config_manager, preset_name, session['user_id'])
-        
-        if success:
-            log_audit(session['user_id'], 'CONFIG_PRESET_APPLY', f'Applied preset: {preset_name}', request.remote_addr)
-            flash(message, 'success')
-        else:
-            flash(message, 'error')
-        
-        return redirect(url_for('config_presets'))
-    
-    presets = ConfigPresets.get_all_presets()
-    
-    return render_template('config_presets.html', presets=presets)
 
 @app.route('/deploy')
 @login_required
@@ -1262,7 +789,6 @@ def estado_red():
     servicios = [
         ("Panel web y ordenes de los agentes", "8080", "Toda la red (HTTPS)", "Los equipos se conectan aqui"),
         ("Almacen de copias", "8000", "Toda la red (HTTPS)", "Los equipos dejan aqui sus copias, cifradas"),
-        ("API interna", "8081", "Solo este servidor", ""),
     ]
     escucha = ""
     try:
@@ -1286,94 +812,6 @@ def estado_red():
         fw = "desconocido"
     return {"filas": filas, "cortafuegos": fw}
 
-
-def restart_docker_services():
-    """Reinicia servicios Docker con nueva configuración"""
-    try:
-        install_dir = os.path.join(BASE_DIR, 'install')
-        compose_file = os.path.join(install_dir, 'docker-compose.yml')
-        
-        env_file = os.path.join(BASE_DIR, '.env')
-        base = ['docker', 'compose']
-        if subprocess.run(base + ['version'], capture_output=True).returncode != 0:
-            base = ['docker-compose']
-        if os.name != 'nt' and os.geteuid() != 0:
-            base = ['sudo', '-n'] + base
-        args = ['-f', compose_file]
-        if os.path.isfile(env_file):
-            args += ['--env-file', env_file]
-        subprocess.run(base + args + ['up', '-d'], capture_output=True, check=False, timeout=600)
-        
-        return True
-    except Exception as e:
-        print(f"Error reiniciando servicios: {e}")
-        return False
-
-# ========================================
-# RUTAS DE DASHBOARD
-# ========================================
-
-@app.route('/dashboard')
-@login_required
-def dashboard():
-    return redirect(url_for('inicio'))
-
-
-@app.route('/avanzado/resumen')
-@login_required
-def dashboard_avanzado():
-    """Resumen tecnico (antiguo dashboard)"""
-    conn = get_db_connection()
-    
-    # Estadísticas
-    total_systems = conn.execute('SELECT COUNT(*) FROM systems').fetchone()[0]
-    total_users = conn.execute('SELECT COUNT(*) FROM users').fetchone()[0]
-    pending_approvals = conn.execute("SELECT COUNT(*) FROM approvals WHERE status = 'pending'").fetchone()[0]
-    
-    # Sistemas con backups recientes
-    recent_backups = conn.execute('''
-        SELECT hostname, last_backup, status 
-        FROM systems 
-        WHERE last_backup IS NOT NULL
-        ORDER BY last_backup DESC
-        LIMIT 10
-    ''').fetchall()
-    
-    # Sistemas offline
-    offline_systems = conn.execute('''
-        SELECT hostname, ip_address, last_seen 
-        FROM systems 
-        WHERE status = 'offline'
-        ORDER BY last_seen DESC
-        LIMIT 10
-    ''').fetchall()
-    
-    # Logs recientes
-    recent_logs = conn.execute('''
-        SELECT al.*, u.username 
-        FROM audit_logs al
-        LEFT JOIN users u ON al.user_id = u.id
-        ORDER BY al.timestamp DESC
-        LIMIT 20
-    ''').fetchall()
-    
-    conn.close()
-    
-    config = config_manager.get_config()
-    
-    return render_template('dashboard.html', 
-                           total_systems=total_systems,
-                           total_users=total_users,
-                           pending_approvals=pending_approvals,
-                           recent_backups=recent_backups,
-                           offline_systems=offline_systems,
-                           recent_logs=recent_logs,
-                           config=config)
-
-
-# ========================================
-# PANEL SENCILLO (Inicio, Equipos, Restaurar, Avisos, Ajustes)
-# ========================================
 
 def puede_actuar():
     return session.get('role') in ('admin', 'supremo')
@@ -1751,6 +1189,7 @@ def _autoarreglo_ciclo_sin_lock():
     except Exception:
         incidente = False
     conectados = {e['sys']['id']: e['est'].get('online') for e in lista}
+    copias_en_marcha = any(j.get('estado') == 'en_curso' for j in agentes.trabajos_de(None, 50))
     panel = _direccion_panel()
     mensajes, lanzados = [], []
     for a in avisos:
@@ -1767,6 +1206,8 @@ def _autoarreglo_ciclo_sin_lock():
                 plan, motivo = 'luego', 'hay un incidente abierto (posible ataque) y mientras tanto no se toca nada solo'
             elif _aa.politica(accion).get('equipo_conectado') and not conectados.get(a['id']):
                 plan, motivo = 'luego', 'el equipo no está conectado'
+            elif accion == 'desbloquear_almacen' and copias_en_marcha:
+                plan, motivo = 'luego', 'hay copias en marcha y el almacén se comprueba cuando terminen'
             else:
                 si, motivo = _aa.toca(clave, accion)
                 plan = 'arreglando' if si else 'luego'
@@ -2523,7 +1964,6 @@ def api_trabajos():
 # INCIDENTES (respuesta automatica) y SALA DE ANALISIS (sandbox)
 # ========================================
 import incidentes as _inc
-import hmac as _hmac
 
 
 def _notificar_incidente(tipo, texto):
@@ -2556,6 +1996,8 @@ def _inyectar_incidentes():
 
 
 import ordenes as _ordenes
+# primero las tablas del panel: en una instalacion nueva, ordenes.init anade columnas a «systems» y tiene que existir ya
+init_db()
 _ordenes.init(DB_FILE)
 
 
@@ -2934,11 +2376,8 @@ GRUPOS_SUGERIDOS = ['Oficina', 'Servidores', 'Portátiles', 'Dirección', 'Almac
 
 
 def _conocidos():
-    with get_db_connection() as c:
-        filas = c.execute('SELECT hostname, ip_address, notes FROM systems').fetchall()
-    ips = {f['ip_address']: f['hostname'] for f in filas if f['ip_address']}
-    grupos = sorted({(json.loads(f['notes'] or '{}') or {}).get('grupo', '') for f in filas} - {''})
-    return ips, grupos, {f['hostname'].lower() for f in filas}
+    import alta_grupo
+    return alta_grupo.conocidos(DB_FILE)
 
 
 @app.route('/equipos/buscar', methods=['GET', 'POST'])
@@ -3029,37 +2468,22 @@ def buscar_credenciales(eid):
     if not e or not e['grupos']:
         return redirect(url_for('buscar_equipos'))
     if request.method == 'POST':
-        _, _, nombres_usados = _conocidos()
+        import alta_grupo
         trabajos = []
         for i, (grupo, equipos_g) in enumerate(e['grupos'].items()):
             usuario = (request.form.get(f'usuario_{i}') or '').strip()
             password = request.form.get(f'password_{i}') or ''
             solo_clave = request.form.get(f'solo_clave_{i}') == 'on'
             for q in equipos_g:
-                if q['nombre'].lower() in nombres_usados:
+                sid = alta_grupo.alta(DB_FILE, q, grupo, f'panel, {session.get("username", "?")}', session['user_id'])
+                if sid is None:
                     trabajos.append({'nombre': q['nombre'], 'ip': q['ip'], 'grupo': grupo, 'job': None,
                                      'mensaje': 'Ya existía un equipo con ese nombre: no se ha tocado.'})
                     continue
-                rutas = alta_equipos.RUTAS_POR_DEFECTO.get(q['so'], [])
-                conn = get_db_connection()
-                cur = conn.execute("INSERT INTO systems (hostname, ip_address, os_family, status, notes) VALUES (?, ?, ?, 'unknown', ?)",
-                                   (q['nombre'], q['ip'], q['so'], json.dumps({'rutas': rutas, 'grupo': grupo})))
-                conn.commit()
-                sid = cur.lastrowid
-                conn.close()
-                nombres_usados.add(q['nombre'].lower())
-                log_audit(session['user_id'], 'SYSTEM_ADD', f'{q["nombre"]} ({q["so"]}, grupo {grupo}, desde «Buscar equipos»)',
-                          request.remote_addr)
-                if not usuario or (not password and q['so'] == 'windows'):
+                falta = alta_grupo.que_falta(q, usuario, password)
+                if falta:
                     trabajos.append({'nombre': q['nombre'], 'ip': q['ip'], 'grupo': grupo, 'job': None, 'sid': sid,
-                                     'mensaje': 'Dado de alta. Falta instalarlo: no se escribió usuario/contraseña para su grupo. '
-                                                'Usa «Instalar» en su ficha.'})
-                    continue
-                if not q['ssh']:
-                    trabajos.append({'nombre': q['nombre'], 'ip': q['ip'], 'grupo': grupo, 'job': None, 'sid': sid,
-                                     'mensaje': ('No tiene SSH activado, así que no se puede instalar a distancia. '
-                                                 + ('En Windows: activa el «Servidor OpenSSH» o usa el instalador de doble clic de su ficha.'
-                                                    if q['so'] == 'windows' else 'Activa SSH en el equipo o usa el instalador de su ficha.'))})
+                                     'mensaje': falta})
                     continue
                 jid = _lanzar_instalacion_remota(_get_system(sid), q['ip'], usuario, password, solo_clave and q['so'] == 'linux')
                 trabajos.append({'nombre': q['nombre'], 'ip': q['ip'], 'grupo': grupo, 'job': jid, 'sid': sid})

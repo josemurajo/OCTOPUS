@@ -148,69 +148,6 @@ No responda a este email.
         lista = [c.strip() for c in str((por_tipo or {}).get(cat) or '').replace(';', ',').split(',') if c.strip()]
         return lista or [config.get('alert_email', '')]
 
-    def send_approval_request(self, approval_details, requester_email, approver_email):
-        """Envía solicitud de aprobación"""
-        subject = "[OCTOPUS] Solicitud de Aprobación Requerida"
-        
-        body = f"""
-Solicitud de Aprobación - OCTOPUS Zero-Touch
-=============================================
-
-Fecha: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-Solicitante: {requester_email}
-
-Detalles de la solicitud:
-{approval_details}
-
-=============================================
-Para aprobar o rechazar esta solicitud, accede al panel:
-http://localhost:8080/approvals
-
-Este es un mensaje automático de OCTOPUS Zero-Touch
-"""
-        
-        return self.send_email(approver_email, subject, body)
-    
-    def send_recovery_notification(self, recovery_details, recipient_email):
-        """Envía notificación de recuperación automática"""
-        subject = "[OCTOPUS] Recuperación Automática Ejecutada"
-        
-        body = f"""
-Recuperación Automática - OCTOPUS Zero-Touch
-=============================================
-
-Fecha: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-
-Detalles de la recuperación:
-{recovery_details}
-
-=============================================
-La recuperación se ha completado exitosamente.
-Verifica que el sistema esté funcionando correctamente.
-
-Este es un mensaje automático de OCTOPUS Zero-Touch
-"""
-        
-        return self.send_email(recipient_email, subject, body)
-    
-    def send_system_status(self, status_details, recipient_email):
-        """Envía reporte de estado del sistema"""
-        subject = "[OCTOPUS] Reporte de Estado del Sistema"
-        
-        body = f"""
-Reporte de Estado - OCTOPUS Zero-Touch
-======================================
-
-Fecha: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-
-{status_details}
-
-======================================
-Este es un mensaje automático de OCTOPUS Zero-Touch
-"""
-        
-        return self.send_email(recipient_email, subject, body)
-
 def main():
     """Función principal para pruebas"""
     from config_manager import ConfigManager

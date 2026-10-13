@@ -46,9 +46,6 @@ perder nada y, si la versión nueva no arranca, vuelve sola a la anterior. Las d
 Windows y un Mac reales de GitHub (instalar, caída y arranque solo, copia y restauración de un agente, reinstalar y
 actualización a distancia firmada).
 
-*Opcional, para quien ya use Docker:* `instalar_servidor_windows_docker.ps1` (WSL2 + Rancher Desktop) y
-`instalar_servidor_mac_docker.sh` (Colima). No hacen falta para nada.
-
 ## 3. Primeros pasos en el panel
 
 1. Entra en `https://<ip-del-servidor>:8080` con el usuario **admin** y la contraseña inicial. El navegador
