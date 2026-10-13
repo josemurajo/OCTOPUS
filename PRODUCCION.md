@@ -160,6 +160,12 @@ espera a que alguien pulse «Solucionar», marque «Entiendo lo que se va a hace
 no se arregla nada solo. Si algo falla 3 veces seguidas, deja de intentarlo y el aviso lo dice. Se apaga en
 Ajustes → Respuesta a ataques («Arreglar solo lo que no tiene riesgo»).
 
+**Avisos al momento por correo y Telegram.** En cuanto algo falla (una copia, una prueba de recuperación, el
+mantenimiento), llega un mensaje con qué ha pasado y cómo se arregla: si se está arreglando solo (y cómo), si
+necesita tu permiso (con el enlace al panel) o los pasos a seguir. Si se arregla solo, llega otro mensaje con lo
+que ha hecho OCTOPUS y el resultado. Un mensaje por problema, sin repetidos. Copia de lo enviado en
+`data/logs/avisos_enviados.log`.
+
 - **Ficha de cada equipo → Últimos pasos**: lo último que ha pasado con ese equipo, paso a paso.
 - **Ajustes → Mantenimiento → Descargar diagnóstico**: un .zip para el soporte, sin contraseñas, claves ni nombres
   de archivos (los equipos salen como equipo-1, equipo-2...).

@@ -1483,7 +1483,7 @@ def _guardar_solucion(codigo, sid, estado, detalle):
 def _aviso(codigo, equipo=None, sid=None, soluciones=None, **datos):
     """Aviso del catálogo, rellenado para este caso (qué pasa, por qué importa, pasos y botón Solucionar)."""
     a = _av.ficha(codigo, equipo=equipo, **datos)
-    a.update(equipo=equipo, id=sid)
+    a.update(equipo=equipo, id=sid, detalle=str(datos.get('detalle') or ''))
     if a.get('enlace'):
         ruta, _, ancla = a['enlace'].partition('#')
         a['enlace'] = url_for(ruta) + ('#' + ancla if ancla else '')
@@ -1560,17 +1560,17 @@ def _avisos(lista):
 
 def _ejecutar_arreglo(codigo, accion, row, uid, usuario, al_terminar=None):
     """Hace la solución de un aviso (la usan el botón «Solucionar» y el arreglo automático).
-    Devuelve (mensaje, 'success'|'error'). al_terminar(ok) se llama cuando se sabe el resultado."""
-    def _fin_ok(ok):
+    Devuelve (mensaje, 'success'|'error'). al_terminar(ok, detalle) se llama cuando se sabe el resultado."""
+    def _fin_ok(ok, detalle=''):
         if al_terminar:
             try:
-                al_terminar(ok)
+                al_terminar(ok, str(detalle)[:400])
             except Exception:
                 pass
 
     if accion in ('copia_equipo', 'prueba_equipo'):
         if not row:
-            _fin_ok(False)
+            _fin_ok(False, 'el equipo ya no existe')
             return 'Ese equipo ya no existe.', 'error'
         prueba = accion == 'prueba_equipo'
 
@@ -1581,7 +1581,8 @@ def _ejecutar_arreglo(codigo, accion, row, uid, usuario, al_terminar=None):
                               else f'La copia volvió a fallar: {str(resp.get("message", ""))[:200]}')
             if ok and prueba:
                 _lanzar_prueba(_row, uid)
-            _fin_ok(ok)
+            _fin_ok(ok, ('copia hecha' + ('; ahora se repite la prueba de recuperación' if prueba else '')) if ok
+                    else f'la copia volvió a fallar: {str(resp.get("message", ""))[:200]}')
         agentes.lanzar_copia(row, on_done=_fin)
         _guardar_solucion(codigo, row['id'], 'en_curso', 'Copia en marcha...')
         return (f'Copia de {row["hostname"]} en marcha' + (' (después se repite la prueba)' if prueba else '') +
@@ -1592,12 +1593,12 @@ def _ejecutar_arreglo(codigo, accion, row, uid, usuario, al_terminar=None):
         import mantenimiento as _m2
         r = _sug.reenviar_pendientes(_m2.leer_env(), Path(DB_FILE))
         _guardar_solucion(codigo, None, 'ok' if r.get('ok') else 'error', r['detalle'])
-        _fin_ok(bool(r.get('ok')))
+        _fin_ok(bool(r.get('ok')), r['detalle'])
         return r['detalle'], 'success' if r.get('ok') else 'error'
 
     fn = _av.ACCIONES_SERVIDOR.get(accion)
     if not fn:
-        _fin_ok(False)
+        _fin_ok(False, 'acción desconocida')
         return 'Acción desconocida.', 'error'
     if accion in ('mantenimiento_ahora', 'comprobar_actualizacion', 'renovar_certificado'):
         try:
@@ -1608,7 +1609,7 @@ def _ejecutar_arreglo(codigo, accion, row, uid, usuario, al_terminar=None):
                           r['detalle'])
         _ban.marcar('avisos', f'Solucionar {accion} ({usuario}): {r["detalle"]}', codigo=codigo,
                     nivel='ok' if r.get('ok') else 'error')
-        _fin_ok(bool(r.get('ok') or r.get('en_marcha')))
+        _fin_ok(bool(r.get('ok') or r.get('en_marcha')), r['detalle'])
         return r['detalle'], 'success' if r.get('ok') else 'error'
 
     _guardar_solucion(codigo, None, 'en_curso', 'Arreglando... (puede tardar unos minutos)')
@@ -1646,7 +1647,7 @@ def _ejecutar_arreglo(codigo, accion, row, uid, usuario, al_terminar=None):
                     _m3.guardar_estado(est['resultados'])
             except Exception:
                 pass
-        _fin_ok(bool(r.get('ok')))
+        _fin_ok(bool(r.get('ok')), r.get('detalle', ''))
     threading.Thread(target=_run, daemon=True).start()
     return 'Arreglando... puede tardar unos minutos. El resultado aparecerá debajo del aviso.', 'success'
 
@@ -1683,70 +1684,140 @@ def avisos_solucionar():
     return redirect(volver)
 
 
-# ---------------------------------------------------------------- arreglos automáticos (lo que no tiene riesgo)
+# ---------------------------------------------------------------- vigilante de avisos
+# Mira los avisos cada 10 minutos y, además, AL MOMENTO cuando algo falla (una copia, una prueba, el mantenimiento).
+# Por cada problema nuevo manda un mensaje (correo y Telegram) con qué ha pasado y cómo se arregla; lo que no tiene
+# riesgo lo arregla solo y después avisa de qué ha hecho y cómo ha ido. Lo que puede borrar datos espera al botón.
 _autoarreglo_hilo = {'iniciado': False}
 _autoarreglo_lock = threading.Lock()
+_vigilante_ya = threading.Event()
+_ciclo_lock = threading.Lock()
+
+
+def _despertar_vigilante():
+    """Algo acaba de fallar: que el vigilante mire los avisos ya, sin esperar a los 10 minutos."""
+    _vigilante_ya.set()
+
+
+def _direccion_panel():
+    try:
+        import mantenimiento as _m
+        env = _m.leer_env()
+        host = env.get('OCTOPUS_PUBLIC_HOST') or env.get('OCTOPUS_IP') or ''
+        return f"https://{host}:{env.get('ADMIN_PORT', '8080')}" if host else ''
+    except Exception:
+        return ''
+
+
+def _mandar_mensajes(mensajes):
+    """mensajes: lista de (tipo, texto). Si hay muchos a la vez, van juntos en uno solo."""
+    if not mensajes:
+        return
+    if len(mensajes) > 3:
+        tipo = 'backup_failed' if all(m[0] == 'backup_failed' for m in mensajes) else 'mantenimiento'
+        mensajes = [(tipo, f'OCTOPUS: {len(mensajes)} avisos a la vez\n\n' + '\n\n'.join(m[1] for m in mensajes))]
+    registro = Path(BASE_DIR) / 'data' / 'logs' / 'avisos_enviados.log'
+    for tipo, texto in mensajes:
+        _notificar_incidente(tipo, texto)
+        _ban.marcar('vigilante', 'Mensaje enviado: ' + texto.splitlines()[0][:150])
+        try:   # copia de lo enviado (lo ve el soporte en el diagnóstico); se queda en ~200 KB
+            registro.parent.mkdir(parents=True, exist_ok=True)
+            if registro.exists() and registro.stat().st_size > 200_000:
+                registro.replace(registro.with_suffix('.log.1'))
+            with open(registro, 'a', encoding='utf-8') as fh:
+                fh.write(f'===== {datetime.now():%d/%m/%Y %H:%M:%S} ({tipo})\n{texto}\n\n')
+        except OSError:
+            pass
 
 
 def _autoarreglo_ciclo():
-    """Una vuelta: mira los avisos y arregla solo los que no tienen riesgo. Devuelve lo que ha lanzado."""
-    if config_manager.get_config('autoarreglo') is False:
-        return []
+    """Una vuelta del vigilante. Devuelve las claves de lo que ha empezado a arreglar solo."""
+    with _ciclo_lock:
+        return _autoarreglo_ciclo_sin_lock()
+
+
+def _autoarreglo_ciclo_sin_lock():
+    activado = config_manager.get_config('autoarreglo') is not False
     with app.test_request_context():
         lista = _equipos_con_estado()
         avisos = _avisos(lista)
     _aa.limpiar_viejos({f'{a["codigo"]}:{a["id"] or ""}' for a in avisos})
+    if _aa.primera_vez():   # recién instalado o actualizado: lo que ya había no se reenvía (ya se avisó antes)
+        for a in avisos:
+            _aa.apuntar_avisado(f'{a["codigo"]}:{a["id"] or ""}', silencioso=True)
+        _ban.marcar('vigilante', f'Vigilante en marcha ({len(avisos)} avisos que ya había, no se reenvían)')
     try:
-        if _inc.abiertos():
-            return []   # posible ataque: no se toca nada solo, decide una persona
+        incidente = bool(_inc.abiertos())
     except Exception:
-        pass
+        incidente = False
     conectados = {e['sys']['id']: e['est'].get('online') for e in lista}
-    lanzados = []
+    panel = _direccion_panel()
+    mensajes, lanzados = [], []
     for a in avisos:
         accion = a.get('accion')
-        if not _aa.es_automatica(accion):
-            continue
-        if _aa.politica(accion).get('equipo_conectado') and not conectados.get(a['id']):
-            continue
         clave = f'{a["codigo"]}:{a["id"] or ""}'
-        si, _motivo = _aa.toca(clave, accion)
-        if not si:
+        # qué se va a hacer con este aviso
+        plan, motivo = 'manual', ''
+        if a.get('riesgo'):
+            plan = 'permiso'
+        elif accion and _aa.es_automatica(accion) and activado:
+            if _aa.rendido(clave):
+                plan = 'rendido'
+            elif incidente:
+                plan, motivo = 'luego', 'hay un incidente abierto (posible ataque) y mientras tanto no se toca nada solo'
+            elif _aa.politica(accion).get('equipo_conectado') and not conectados.get(a['id']):
+                plan, motivo = 'luego', 'el equipo no está conectado'
+            else:
+                si, motivo = _aa.toca(clave, accion)
+                plan = 'arreglando' if si else 'luego'
+        if _aa.hay_que_avisar(clave, a['codigo']):
+            mensajes.append((_aa.tipo_alerta(a['codigo']), _aa.mensaje_nuevo(a, plan, motivo, panel)))
+            _aa.apuntar_avisado(clave)
+        if plan != 'arreglando':
             continue
         row = _get_system(a['id']) if a['id'] else None
         _aa.empezar(clave)
         _ban.marcar('autoarreglo', f'Arreglando solo: {a["titulo"]} ({accion})', equipo=a.get('equipo'),
                     codigo=a['codigo'])
         log_audit(None, 'AUTOARREGLO', f'{a["codigo"]} ({accion}) {a.get("equipo") or ""}'.strip(), 'servidor')
-        _ejecutar_arreglo(a['codigo'], accion, row, None, 'automático',
-                          al_terminar=lambda ok, _c=clave, _a=a: (
-                              _aa.terminar(_c, ok),
-                              _ban.marcar('autoarreglo', f'{"Arreglado solo" if ok else "No se pudo arreglar solo"}: '
-                                                         f'{_a["titulo"]}', equipo=_a.get('equipo'),
-                                          codigo=_a['codigo'], nivel='ok' if ok else 'aviso')))
+
+        def _al_terminar(ok, detalle, _c=clave, _a=a):
+            _aa.terminar(_c, ok)
+            _ban.marcar('autoarreglo', f'{"Arreglado solo" if ok else "No se pudo arreglar solo"}: {_a["titulo"]} '
+                                       f'— {detalle}', equipo=_a.get('equipo'), codigo=_a['codigo'],
+                        nivel='ok' if ok else 'aviso')
+            if _a['codigo'] not in _aa.NO_SE_AVISA:
+                _mandar_mensajes([(_aa.tipo_alerta(_a['codigo']), _aa.mensaje_resultado(_a, ok, detalle, _c, panel))])
+        _ejecutar_arreglo(a['codigo'], accion, row, None, 'automático', al_terminar=_al_terminar)
         lanzados.append(clave)
+    _mandar_mensajes(mensajes)
     return lanzados
 
 
 def _autoarreglo_bucle():
-    time.sleep(90)   # dejar que los agentes conecten tras arrancar
+    _vigilante_ya.wait(90)   # dejar que los agentes conecten tras arrancar (salvo que algo falle antes)
     while True:
+        _vigilante_ya.clear()
         try:
             _autoarreglo_ciclo()
         except Exception as exc:
-            _ban.marcar('autoarreglo', f'Error inesperado en el arreglo automático: {exc}', nivel='error')
-        time.sleep(max(60, _aa.INTERVALO))
+            _ban.marcar('vigilante', f'Error inesperado en el vigilante de avisos: {exc}', nivel='error')
+        fin = time.time() + max(60, _aa.INTERVALO)
+        while time.time() < fin:      # cada 15 s mira si el mantenimiento (otro proceso) ha pedido mirar ya
+            if _vigilante_ya.wait(15) or _aa.toca_despertar():
+                time.sleep(5)          # que termine de escribir lo que ha fallado
+                break
 
 
 @app.before_request
 def _iniciar_autoarreglo():
-    """Arranca el arreglo automático con la primera petición (solo en el panel que está funcionando)."""
+    """Arranca el vigilante con la primera petición (solo en el panel que está funcionando)."""
     if _autoarreglo_hilo['iniciado'] or os.environ.get('OCTOPUS_AUTOARREGLO', 'si').lower() in ('no', '0', 'false'):
         return
     with _autoarreglo_lock:
         if not _autoarreglo_hilo['iniciado']:
             _autoarreglo_hilo['iniciado'] = True
-            threading.Thread(target=_autoarreglo_bucle, daemon=True, name='autoarreglo').start()
+            threading.Thread(target=_autoarreglo_bucle, daemon=True, name='vigilante').start()
 
 
 def _semaforo_321(lista):
@@ -1864,7 +1935,7 @@ def _lanzar_prueba(row, user_id=None):
         _ban.marcar('pruebas', f'Prueba de recuperación: {r["detalle"]}', equipo=row['hostname'],
                     codigo=None if r['ok'] else 'OCT-EQ-05', nivel='ok' if r['ok'] else 'error')
         if not r['ok']:
-            _notificar_incidente('prueba_fallida', _av.texto('OCT-EQ-05', equipo=row['hostname'], detalle=r['detalle']))
+            _despertar_vigilante()   # el vigilante manda el aviso con su solución (y la intenta si no tiene riesgo)
 
     threading.Thread(target=_run, daemon=True).start()
     return job_id
@@ -1970,7 +2041,7 @@ def _copia_terminada(system_id, ok, resp):
         log_audit(None, 'BACKUP_OK' if ok else 'BACKUP_ERROR',
                   f'equipo={nombre} ' + ('' if ok else motivo[:200]))
         if not ok:
-            _notificar_incidente('backup_failed', _av.texto('OCT-EQ-04', equipo=nombre, detalle=motivo))
+            _despertar_vigilante()   # el vigilante manda el aviso con su solución y repite la copia
     except Exception as e:
         print(f'[copia] aviso registrando resultado: {e}')
 

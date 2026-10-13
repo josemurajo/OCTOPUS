@@ -624,21 +624,27 @@ def main(argv: list[str]) -> int:
             log(f"  Informe mensual: {resultados['informe']['detalle']}")
     if cmd == "todo":
         guardar_estado(resultados)
-    fallos = []
+    fallos, con_codigo = [], 0
     for k, v in resultados.items():
         if v.get("ok"):
             continue
-        if v.get("codigo"):
-            fallos.append(_av.texto(v["codigo"], detalle=str(v.get("detalle", ""))[:300]))
-        elif k != "vigilar" or not v.get("sin_copia"):
+        if v.get("codigo") or (k == "vigilar" and v.get("sin_copia")):
+            # avisos del catalogo: los manda el vigilante del panel (al momento), con su solucion, y arregla solo
+            # lo que no tiene riesgo; asi no llegan dos mensajes del mismo problema
+            con_codigo += 1
+        else:
             fallos.append(f"{NOMBRES[k]}: {v['detalle']}" + (f"\n  Que hacer: {QUE_HACER[k]}" if k in QUE_HACER else ""))
-        if k == "vigilar" and v.get("sin_copia"):
-            fallos.append(_av.texto("OCT-EQ-03", equipo=", ".join(v["sin_copia"]), detalle="hace demasiado"))
-    _b.marcar("mantenimiento", "Mantenimiento terminado " + ("con avisos" if fallos else "sin problemas"),
-              nivel="aviso" if fallos else "ok")
+    _b.marcar("mantenimiento", "Mantenimiento terminado " + ("con avisos" if fallos or con_codigo else "sin problemas"),
+              nivel="aviso" if fallos or con_codigo else "ok")
+    if con_codigo:
+        try:
+            import autoarreglo
+            autoarreglo.despertar()
+        except Exception as exc:
+            log(f"No se pudo avisar al vigilante: {exc}")
     if fallos:
         avisar(env, "Mantenimiento del servidor OCTOPUS:\n\n" + "\n\n".join(fallos))
-    return 0 if not fallos else 1
+    return 0 if not (fallos or con_codigo) else 1
 
 
 if __name__ == "__main__":
