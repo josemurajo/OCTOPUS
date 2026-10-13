@@ -21,11 +21,20 @@ $Raiz = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ComposeFile = Join-Path $Raiz "install\docker-compose.yml"
 $HostEnv = Join-Path $Raiz "install\.env"
 
-function Paso($t)  { Write-Host ""; Write-Host "==> $t" -ForegroundColor Cyan }
-function Bien($t)  { Write-Host "    $t" -ForegroundColor Green }
-function Aviso($t) { Write-Host "    $t" -ForegroundColor Yellow }
+# Banderines: cada paso queda apuntado con la hora en un archivo aparte (aunque el registro completo falle o se
+# quede bloqueado), para saber siempre hasta donde llego la instalacion y por que se paro.
+$Progreso = Join-Path $env:ProgramData "OCTOPUS\instalacion_progreso.txt"
+function Marca($t) {
+    try {
+        New-Item -ItemType Directory -Force -Path (Split-Path $Progreso) | Out-Null
+        Add-Content -Path $Progreso -Value ("[{0}] {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $t) -Encoding UTF8
+    } catch { }
+}
+function Paso($t)  { Marca "==> $t"; Write-Host ""; Write-Host "==> $t" -ForegroundColor Cyan }
+function Bien($t)  { Marca "OK  $t"; Write-Host "    $t" -ForegroundColor Green }
+function Aviso($t) { Marca "..  $t"; Write-Host "    $t" -ForegroundColor Yellow }
 function Pausa { if (-not $SinPreguntas) { Read-Host "Pulsa Intro para cerrar" | Out-Null } }
-function Fallo($t) { Write-Host ""; Write-Host "ERROR: $t" -ForegroundColor Red; Pausa; if ($Registro) { Stop-Transcript | Out-Null }; exit 1 }
+function Fallo($t) { Marca "ERROR $t"; Write-Host ""; Write-Host "ERROR: $t" -ForegroundColor Red; Pausa; if ($Registro) { Stop-Transcript | Out-Null }; exit 1 }
 function Refrescar-Path {
     $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
 }
@@ -40,7 +49,11 @@ if (-not $yo.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Start-Process powershell -Verb RunAs -ArgumentList $args2
     exit 0
 }
-if ($Registro) { Start-Transcript -Path $Registro -Append | Out-Null }
+Marca "---- inicio de la instalacion (PID $PID, usuario $env:USERNAME) ----"
+if ($Registro) {
+    try { Start-Transcript -Path $Registro -Append -ErrorAction Stop | Out-Null; Marca "registro completo en $Registro" }
+    catch { Marca "no se pudo abrir el registro completo ($Registro): $($_.Exception.Message)" }
+}
 if (-not (Test-Path $ComposeFile)) { Fallo "No encuentro $ComposeFile. Ejecuta este archivo desde la carpeta de OCTOPUS." }
 $os = Get-CimInstance Win32_OperatingSystem
 Write-Host "OCTOPUS Zero-Touch - instalacion del servidor en Windows   ($($os.Caption), compilacion $($os.BuildNumber))" -ForegroundColor White
@@ -64,6 +77,7 @@ if (-not (Docker-Va)) {
     # WSL2: Rancher Desktop lo necesita
     $wslOk = $false
     try { & wsl.exe --status *> $null; $wslOk = ($LASTEXITCODE -eq 0) } catch { }
+    Marca "WSL listo: $wslOk"
     $marca = Join-Path $env:ProgramData "OctopusServidor_wsl_reinicio.txt"
     if (-not $wslOk -and (Test-Path $marca)) {
         # Ya se pidio reiniciar: si de verdad se ha reiniciado, terminar de instalar WSL sin pedir otro reinicio
@@ -88,6 +102,7 @@ if (-not (Docker-Va)) {
         Write-Host "WSL2 activado. REINICIA el equipo y vuelve a hacer doble clic en INSTALAR_SERVIDOR_WINDOWS.bat." -ForegroundColor Yellow
         Pausa
         if ($Registro) { Stop-Transcript | Out-Null }
+        Marca "WSL2 activado: pide reiniciar (3010)"
         exit 3010
     }
     & wsl.exe --update *> $null
@@ -95,8 +110,10 @@ if (-not (Docker-Va)) {
         Aviso "Instalando Rancher Desktop (gratis, de codigo abierto; 3-5 minutos)..."
         $hecho = $false
         if (Get-Command winget -ErrorAction SilentlyContinue) {
+            Marca "winget: instalando Rancher Desktop..."
             & winget install -e --id SUSE.RancherDesktop --source winget --silent --scope machine --accept-package-agreements --accept-source-agreements
             $hecho = ($LASTEXITCODE -eq 0) -or [bool](Buscar-RD)
+            Marca "winget termino con codigo $LASTEXITCODE (instalado: $hecho)"
         }
         if (-not $hecho) {
             # sin winget: el .msi de la ultima version, desde GitHub
@@ -106,7 +123,9 @@ if (-not (Docker-Va)) {
             if (-not $msi) { Fallo "No se encontro el instalador de Rancher Desktop. Instalalo a mano desde rancherdesktop.io" }
             $dest = Join-Path $env:TEMP $msi.name
             Invoke-WebRequest $msi.browser_download_url -OutFile $dest -UseBasicParsing -ErrorAction Stop
+            Marca "msi: descargado $($msi.name), instalando..."
             $p = Start-Process msiexec.exe -Wait -PassThru -ArgumentList "/i `"$dest`" /qn /norestart WSLINSTALLED=1 MSIINSTALLPERUSER=0"
+            Marca "msi termino con codigo $($p.ExitCode)"
             if ($p.ExitCode -notin 0, 3010) { Fallo "El instalador de Rancher Desktop termino con codigo $($p.ExitCode)" }
         }
         $rdBin = Buscar-RD
@@ -118,7 +137,15 @@ if (-not (Docker-Va)) {
     Start-Process -FilePath (Join-Path $rdBin "rdctl.exe") -WindowStyle Hidden -ArgumentList @(
         "start", "--container-engine.name=moby", "--kubernetes.enabled=false",
         "--application.start-in-background=true", "--application.auto-start=true") | Out-Null
-    for ($i = 0; $i -lt 120 -and -not (Docker-Va); $i++) { Start-Sleep -Seconds 5 }
+    Marca "rdctl start lanzado en segundo plano ($rdBin)"
+    for ($i = 0; $i -lt 120 -and -not (Docker-Va); $i++) {
+        Start-Sleep -Seconds 5
+        if ($i % 6 -eq 5) {
+            $err = ((& docker info 2>&1) | Select-Object -Last 1) -join " "
+            $procs = (Get-Process "Rancher Desktop", rdctl, wsl -ErrorAction SilentlyContinue | ForEach-Object { $_.ProcessName } | Sort-Object -Unique) -join ","
+            Marca ("esperando a Docker ({0} s): procesos=[{1}] docker dice: {2}" -f (($i + 1) * 5), $procs, $err)
+        }
+    }
     if (-not (Docker-Va)) { Fallo "Docker no arranca. Abre Rancher Desktop desde el menu Inicio, espera a que termine y vuelve a ejecutar esto." }
 } elseif ($rdBin) {
     & (Join-Path $rdBin "rdctl.exe") set --application.auto-start=true 2>&1 | Out-Null
@@ -168,9 +195,11 @@ $dc = @("compose", "--env-file", $HostEnv, "-f", $ComposeFile)
 $ant = (& docker image inspect -f "{{.Id}}" "octopus-servidor:$($version.Trim())" 2>$null)
 if ($ant) { & docker tag $ant octopus-servidor:anterior 2>$null | Out-Null }
 & docker @dc build --pull
+Marca "docker build termino con codigo $LASTEXITCODE"
 if ($LASTEXITCODE -ne 0) { Fallo "No se pudo construir la imagen" }
 Paso "Arrancando OCTOPUS"
 & docker @dc up -d --remove-orphans octopus
+Marca "docker up termino con codigo $LASTEXITCODE"
 if ($LASTEXITCODE -ne 0) { Fallo "No se pudo arrancar el contenedor" }
 
 # los certificados son propios: para comprobar que responde no se valida el certificado
@@ -187,7 +216,11 @@ for ($i = 0; $i -lt 90; $i++) {
     if (Responde "https://127.0.0.1:$pPanel/login") { $ok = $true; break }
     Start-Sleep -Seconds 2
 }
-if (-not $ok) { & docker logs --tail 40 octopus; Fallo "El panel no responde" }
+if (-not $ok) {
+    & docker logs --tail 40 octopus
+    Marca ("estado del contenedor: " + ((& docker ps -a --filter name=octopus --format "{{.Status}}") -join " "))
+    Fallo "El panel no responde"
+}
 Bien "panel en marcha"
 
 # ------------------------------------------------------------------ red: cortafuegos y reenvio
@@ -227,5 +260,6 @@ if (Test-Path $cred) { Write-Host "  Contrasena:   en $cred (un solo uso; borral
 Write-Host "  Gestion:      octopus.ps1 (clic derecho -> Ejecutar con PowerShell, o: powershell -File octopus.ps1 ayuda)"
 Write-Host "  IMPORTANTE:   este equipo tiene que quedarse encendido y con la sesion iniciada (Rancher Desktop"
 Write-Host "                arranca al iniciar sesion). Desactiva la suspension en Configuracion -> Sistema -> Energia."
+Marca "---- instalacion terminada correctamente ----"
 if ($Registro) { Stop-Transcript | Out-Null }
 Pausa
