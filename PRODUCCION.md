@@ -153,6 +153,13 @@ repetir la prueba de recuperación, quitar el bloqueo del almacén tras un apag�
 espacio, repetir la copia del servidor, hacer el mantenimiento ahora o renovar el certificado. El mismo código sale
 en el correo/Telegram y en los **banderines** (los pasos de cada proceso), así el soporte sabe de qué se habla.
 
+**Se arregla solo lo que no tiene riesgo.** Cada 10 minutos OCTOPUS arregla por su cuenta lo seguro (repetir copias,
+quitar un bloqueo antiguo del almacén, repetir la copia del servidor, el mantenimiento que no se hizo, renovar el
+certificado de madrugada...). Lo que puede borrar datos (liberar espacio borrando copias antiguas, reparar el almacén)
+espera a que alguien pulse «Solucionar», marque «Entiendo lo que se va a hacer» y confirme. Con un incidente abierto
+no se arregla nada solo. Si algo falla 3 veces seguidas, deja de intentarlo y el aviso lo dice. Se apaga en
+Ajustes → Respuesta a ataques («Arreglar solo lo que no tiene riesgo»).
+
 - **Ficha de cada equipo → Últimos pasos**: lo último que ha pasado con ese equipo, paso a paso.
 - **Ajustes → Mantenimiento → Descargar diagnóstico**: un .zip para el soporte, sin contraseñas, claves ni nombres
   de archivos (los equipos salen como equipo-1, equipo-2...).

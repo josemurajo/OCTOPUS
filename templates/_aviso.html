@@ -4,12 +4,24 @@
   <div class="aviso-cab"><strong>{{ a.titulo }}</strong><span class="codigo" title="Código del aviso (díselo al soporte si llamas)">{{ a.codigo }}</span></div>
   {% if a.por_que %}<p class="small"><em>Por qué importa:</em> {{ a.por_que }}</p>{% endif %}
   {% if a.pasos %}<ol class="pasos small">{% for p in a.pasos %}<li>{{ p }}</li>{% endfor %}</ol>{% endif %}
+  {% if a.rendido %}
+  <p class="small" style="margin:6px 0"><span class="etiqueta-auto mal">🔧 OCTOPUS no ha podido arreglarlo solo</span> Lo ha intentado varias veces (o se arregla y vuelve a pasar).
+    Sigue los pasos o pulsa «Solucionar» para intentarlo otra vez.</p>
+  {% elif a.auto %}
+  <p class="small" style="margin:6px 0"><span class="etiqueta-auto">🔧 Se arregla solo</span>
+    OCTOPUS lo está intentando por su cuenta (no tiene riesgo). Si tienes prisa, pulsa «Solucionar».</p>
+  {% elif a.riesgo %}
+  <p class="small" style="margin:6px 0"><span class="etiqueta-auto permiso">✋ Necesita tu permiso</span> {{ a.riesgo }}</p>
+  {% endif %}
   <div class="aviso-acciones">
     {% if a.accion and puede_actuar() %}
-    <form method="post" action="{{ url_for('avisos_solucionar') }}" style="display:inline">
+    <form method="post" action="{{ url_for('avisos_solucionar') }}" style="display:inline-flex; gap:10px; align-items:center; flex-wrap:wrap"
+          {% if a.riesgo %}data-confirm="{{ a.riesgo }} ¿Seguro que quieres seguir?"{% endif %}>
       <input type="hidden" name="codigo" value="{{ a.codigo }}">
       {% if a.id %}<input type="hidden" name="system_id" value="{{ a.id }}">{% endif %}
       <input type="hidden" name="volver" value="{{ volver }}">
+      {% if a.riesgo %}<label class="small" style="font-weight:400; display:inline-flex; gap:6px; align-items:center">
+        <input type="checkbox" name="confirmado" value="1" required> Entiendo lo que se va a hacer</label>{% endif %}
       <button class="btn btn-primary btn-small" type="submit">Solucionar: {{ a.boton }}</button>
     </form>
     {% endif %}

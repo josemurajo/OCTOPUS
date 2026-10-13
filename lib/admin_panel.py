@@ -45,6 +45,7 @@ from config_presets import ConfigPresets
 import agentes
 import avisos as _av
 import banderines as _ban
+import autoarreglo as _aa
 from datetime import timezone
 from pathlib import Path
 
@@ -1487,6 +1488,10 @@ def _aviso(codigo, equipo=None, sid=None, soluciones=None, **datos):
         ruta, _, ancla = a['enlace'].partition('#')
         a['enlace'] = url_for(ruta) + ('#' + ancla if ancla else '')
     a['ultimo_intento'] = (soluciones or {}).get(f'{codigo}:{sid or ""}')
+    # se arregla solo (sin riesgo) o necesita permiso (puede borrar datos)
+    a['auto'] = _aa.es_automatica(a.get('accion')) and config_manager.get_config('autoarreglo') is not False
+    a['riesgo'] = _aa.riesgo(a.get('accion'))
+    a['rendido'] = a['auto'] and _aa.rendido(f'{codigo}:{sid or ""}')
     # para las pantallas que solo enseñan un texto corto
     a['que_hacer'] = ' '.join(a['pasos'][:2])
     return a
@@ -1553,10 +1558,103 @@ def _avisos(lista):
     return avisos
 
 
+def _ejecutar_arreglo(codigo, accion, row, uid, usuario, al_terminar=None):
+    """Hace la solución de un aviso (la usan el botón «Solucionar» y el arreglo automático).
+    Devuelve (mensaje, 'success'|'error'). al_terminar(ok) se llama cuando se sabe el resultado."""
+    def _fin_ok(ok):
+        if al_terminar:
+            try:
+                al_terminar(ok)
+            except Exception:
+                pass
+
+    if accion in ('copia_equipo', 'prueba_equipo'):
+        if not row:
+            _fin_ok(False)
+            return 'Ese equipo ya no existe.', 'error'
+        prueba = accion == 'prueba_equipo'
+
+        def _fin(s_id, ok, resp, _row=row):
+            _copia_terminada(s_id, ok, resp)
+            _guardar_solucion(codigo, s_id, 'ok' if ok else 'error',
+                              ('Copia hecha' + ('; repitiendo la prueba de recuperación' if prueba else '')) if ok
+                              else f'La copia volvió a fallar: {str(resp.get("message", ""))[:200]}')
+            if ok and prueba:
+                _lanzar_prueba(_row, uid)
+            _fin_ok(ok)
+        agentes.lanzar_copia(row, on_done=_fin)
+        _guardar_solucion(codigo, row['id'], 'en_curso', 'Copia en marcha...')
+        return (f'Copia de {row["hostname"]} en marcha' + (' (después se repite la prueba)' if prueba else '') +
+                '. Cuando termine bien, el aviso desaparecerá solo.'), 'success'
+
+    if accion == 'reenviar_sugerencias':
+        import sugerencias as _sug
+        import mantenimiento as _m2
+        r = _sug.reenviar_pendientes(_m2.leer_env(), Path(DB_FILE))
+        _guardar_solucion(codigo, None, 'ok' if r.get('ok') else 'error', r['detalle'])
+        _fin_ok(bool(r.get('ok')))
+        return r['detalle'], 'success' if r.get('ok') else 'error'
+
+    fn = _av.ACCIONES_SERVIDOR.get(accion)
+    if not fn:
+        _fin_ok(False)
+        return 'Acción desconocida.', 'error'
+    if accion in ('mantenimiento_ahora', 'comprobar_actualizacion', 'renovar_certificado'):
+        try:
+            r = fn()
+        except Exception as exc:
+            r = {'ok': False, 'detalle': f'Error inesperado: {exc}'}
+        _guardar_solucion(codigo, None, 'ok' if r.get('ok') else ('en_curso' if r.get('en_marcha') else 'error'),
+                          r['detalle'])
+        _ban.marcar('avisos', f'Solucionar {accion} ({usuario}): {r["detalle"]}', codigo=codigo,
+                    nivel='ok' if r.get('ok') else 'error')
+        _fin_ok(bool(r.get('ok') or r.get('en_marcha')))
+        return r['detalle'], 'success' if r.get('ok') else 'error'
+
+    _guardar_solucion(codigo, None, 'en_curso', 'Arreglando... (puede tardar unos minutos)')
+
+    def _run():
+        try:
+            r = fn()
+        except Exception as exc:
+            r = {'ok': False, 'detalle': f'Error inesperado: {exc}'}
+        _guardar_solucion(codigo, None, 'ok' if r.get('ok') else 'error', r.get('detalle', ''))
+        _ban.marcar('avisos', f'Solucionar {accion} ({usuario}): {r.get("detalle", "")}', codigo=codigo,
+                    nivel='ok' if r.get('ok') else 'error')
+        if r.get('ok'):  # el aviso desaparece: se apunta en el estado del mantenimiento que ya está arreglado
+            try:
+                import mantenimiento as _m3
+                est = _m3.leer_estado()
+                tareas = {'desbloquear_almacen': ('verificar', 'retencion'), 'reparar_almacen': ('verificar',),
+                          'limpiar_copias': ('retencion',), 'copia_servidor': ('autocopia',)}.get(accion, ())
+                cambiado = False
+                for t in tareas:
+                    res_t = (est.get('resultados') or {}).get(t)
+                    if res_t is None or res_t.get('ok'):
+                        continue
+                    # solo se da por arreglada la tarea que fallaba por ESTE aviso (quitar un bloqueo no arregla
+                    # una limpieza que falló por otra cosa); limpiar copias sí cuenta como limpieza hecha
+                    cod_t = res_t.get('codigo') or _av.codigo_mantenimiento(t, res_t)
+                    if cod_t == codigo or (accion == 'limpiar_copias' and t == 'retencion'):
+                        est['resultados'][t].update(ok=True, codigo=None,
+                                                    detalle=f'Solucionado ({usuario}): {r.get("detalle", "")}'[:300])
+                        cambiado = True
+                if accion == 'limpiar_copias' and 'vigilar' in (est.get('resultados') or {}):
+                    est['resultados']['vigilar']['disco_lleno'] = False
+                    cambiado = True
+                if cambiado:
+                    _m3.guardar_estado(est['resultados'])
+            except Exception:
+                pass
+        _fin_ok(bool(r.get('ok')))
+    threading.Thread(target=_run, daemon=True).start()
+    return 'Arreglando... puede tardar unos minutos. El resultado aparecerá debajo del aviso.', 'success'
+
+
 @app.route('/avisos/solucionar', methods=['POST'])
 @login_required
 def avisos_solucionar():
-    """Botón «Solucionar» de un aviso: hace sola la solución cuando se puede."""
+    """Botón «Solucionar» de un aviso. Lo que puede borrar datos pide confirmarlo antes."""
     codigo = request.form.get('codigo', '')
     sid = request.form.get('system_id', type=int)
     volver = request.form.get('volver', '')
@@ -1569,87 +1667,86 @@ def avisos_solucionar():
     if not accion:
         flash('Este aviso no se puede arreglar solo: sigue los pasos que indica.', 'error')
         return redirect(volver)
+    if _aa.riesgo(accion) and request.form.get('confirmado') != '1':
+        flash('Esto puede borrar datos: marca la casilla «Entiendo lo que se va a hacer» para dar tu permiso.', 'error')
+        return redirect(volver)
     row = _get_system(sid) if sid else None
     equipo = row['hostname'] if row else None
     usuario = session.get('username', '?')
-    log_audit(session['user_id'], 'AVISO_SOLUCIONAR', f'{codigo} ({accion}) {equipo or ""}'.strip(), request.remote_addr)
+    log_audit(session['user_id'], 'AVISO_SOLUCIONAR', f'{codigo} ({accion}) {equipo or ""}'
+              f'{" - con permiso para el riesgo" if _aa.riesgo(accion) else ""}'.strip(), request.remote_addr)
     _ban.marcar('avisos', f'{usuario} pulsa Solucionar: {accion}', equipo=equipo, codigo=codigo)
-
-    if accion in ('copia_equipo', 'prueba_equipo'):
-        if not row:
-            flash('Ese equipo ya no existe.', 'error')
-            return redirect(volver)
-        uid = session['user_id']
-
-        def _fin(s_id, ok, resp, _row=row, _prueba=(accion == 'prueba_equipo')):
-            _copia_terminada(s_id, ok, resp)
-            _guardar_solucion(codigo, s_id, 'ok' if ok else 'error',
-                              ('Copia hecha' + ('; repitiendo la prueba de recuperación' if _prueba else '')) if ok
-                              else f'La copia volvió a fallar: {str(resp.get("message", ""))[:200]}')
-            if ok and _prueba:
-                _lanzar_prueba(_row, uid)
-        agentes.lanzar_copia(row, on_done=_fin)
-        _guardar_solucion(codigo, sid, 'en_curso', 'Copia en marcha...')
-        flash(f'Copia de {row["hostname"]} en marcha' + (' (después se repite la prueba)' if accion == 'prueba_equipo'
-              else '') + '. Cuando termine bien, el aviso desaparecerá solo.', 'success')
-        return redirect(volver)
-
-    if accion == 'reenviar_sugerencias':
-        import sugerencias as _sug
-        import mantenimiento as _m2
-        r = _sug.reenviar_pendientes(_m2.leer_env(), Path(DB_FILE))
-        _guardar_solucion(codigo, None, 'ok' if r.get('ok') else 'error', r['detalle'])
-        flash(r['detalle'], 'success' if r.get('ok') else 'error')
-        return redirect(volver)
-
-    fn = _av.ACCIONES_SERVIDOR.get(accion)
-    if not fn:
-        flash('Acción desconocida.', 'error')
-        return redirect(volver)
-    if accion in ('mantenimiento_ahora', 'comprobar_actualizacion', 'renovar_certificado'):
-        try:
-            r = fn()
-        except Exception as exc:
-            r = {'ok': False, 'detalle': f'Error inesperado: {exc}'}
-        _guardar_solucion(codigo, None, 'ok' if r.get('ok') else ('en_curso' if r.get('en_marcha') else 'error'),
-                          r['detalle'])
-        _ban.marcar('avisos', f'Solucionar {accion}: {r["detalle"]}', codigo=codigo,
-                    nivel='ok' if r.get('ok') else 'error')
-        flash(r['detalle'], 'success' if r.get('ok') else 'error')
-        return redirect(volver)
-
-    _guardar_solucion(codigo, None, 'en_curso', 'Arreglando... (puede tardar unos minutos)')
-
-    def _run():
-        try:
-            r = fn()
-        except Exception as exc:
-            r = {'ok': False, 'detalle': f'Error inesperado: {exc}'}
-        _guardar_solucion(codigo, None, 'ok' if r.get('ok') else 'error', r.get('detalle', ''))
-        _ban.marcar('avisos', f'Solucionar {accion}: {r.get("detalle", "")}', codigo=codigo,
-                    nivel='ok' if r.get('ok') else 'error')
-        if r.get('ok'):  # el aviso desaparece: se apunta en el estado del mantenimiento que ya está arreglado
-            try:
-                import mantenimiento as _m3
-                est = _m3.leer_estado()
-                tareas = {'desbloquear_almacen': ('verificar', 'retencion'), 'reparar_almacen': ('verificar',),
-                          'limpiar_copias': ('retencion',), 'copia_servidor': ('autocopia',)}.get(accion, ())
-                cambiado = False
-                for t in tareas:
-                    if t in (est.get('resultados') or {}):
-                        est['resultados'][t].update(ok=True, codigo=None,
-                                                    detalle=f'Solucionado desde el panel: {r.get("detalle", "")}'[:300])
-                        cambiado = True
-                if accion == 'limpiar_copias' and 'vigilar' in (est.get('resultados') or {}):
-                    est['resultados']['vigilar']['disco_lleno'] = False
-                    cambiado = True
-                if cambiado:
-                    _m3.guardar_estado(est['resultados'])
-            except Exception:
-                pass
-    threading.Thread(target=_run, daemon=True).start()
-    flash('Arreglando... puede tardar unos minutos. El resultado aparecerá debajo del aviso.', 'success')
+    clave = f'{codigo}:{sid or ""}'
+    _aa.olvidar(clave)   # a mano: OCTOPUS recupera sus intentos automáticos para la próxima vez
+    msg, cat = _ejecutar_arreglo(codigo, accion, row, session['user_id'], usuario)
+    flash(msg, cat)
     return redirect(volver)
+
+
+# ---------------------------------------------------------------- arreglos automáticos (lo que no tiene riesgo)
+_autoarreglo_hilo = {'iniciado': False}
+_autoarreglo_lock = threading.Lock()
+
+
+def _autoarreglo_ciclo():
+    """Una vuelta: mira los avisos y arregla solo los que no tienen riesgo. Devuelve lo que ha lanzado."""
+    if config_manager.get_config('autoarreglo') is False:
+        return []
+    with app.test_request_context():
+        lista = _equipos_con_estado()
+        avisos = _avisos(lista)
+    _aa.limpiar_viejos({f'{a["codigo"]}:{a["id"] or ""}' for a in avisos})
+    try:
+        if _inc.abiertos():
+            return []   # posible ataque: no se toca nada solo, decide una persona
+    except Exception:
+        pass
+    conectados = {e['sys']['id']: e['est'].get('online') for e in lista}
+    lanzados = []
+    for a in avisos:
+        accion = a.get('accion')
+        if not _aa.es_automatica(accion):
+            continue
+        if _aa.politica(accion).get('equipo_conectado') and not conectados.get(a['id']):
+            continue
+        clave = f'{a["codigo"]}:{a["id"] or ""}'
+        si, _motivo = _aa.toca(clave, accion)
+        if not si:
+            continue
+        row = _get_system(a['id']) if a['id'] else None
+        _aa.empezar(clave)
+        _ban.marcar('autoarreglo', f'Arreglando solo: {a["titulo"]} ({accion})', equipo=a.get('equipo'),
+                    codigo=a['codigo'])
+        log_audit(None, 'AUTOARREGLO', f'{a["codigo"]} ({accion}) {a.get("equipo") or ""}'.strip(), 'servidor')
+        _ejecutar_arreglo(a['codigo'], accion, row, None, 'automático',
+                          al_terminar=lambda ok, _c=clave, _a=a: (
+                              _aa.terminar(_c, ok),
+                              _ban.marcar('autoarreglo', f'{"Arreglado solo" if ok else "No se pudo arreglar solo"}: '
+                                                         f'{_a["titulo"]}', equipo=_a.get('equipo'),
+                                          codigo=_a['codigo'], nivel='ok' if ok else 'aviso')))
+        lanzados.append(clave)
+    return lanzados
+
+
+def _autoarreglo_bucle():
+    time.sleep(90)   # dejar que los agentes conecten tras arrancar
+    while True:
+        try:
+            _autoarreglo_ciclo()
+        except Exception as exc:
+            _ban.marcar('autoarreglo', f'Error inesperado en el arreglo automático: {exc}', nivel='error')
+        time.sleep(max(60, _aa.INTERVALO))
+
+
+@app.before_request
+def _iniciar_autoarreglo():
+    """Arranca el arreglo automático con la primera petición (solo en el panel que está funcionando)."""
+    if _autoarreglo_hilo['iniciado'] or os.environ.get('OCTOPUS_AUTOARREGLO', 'si').lower() in ('no', '0', 'false'):
+        return
+    with _autoarreglo_lock:
+        if not _autoarreglo_hilo['iniciado']:
+            _autoarreglo_hilo['iniciado'] = True
+            threading.Thread(target=_autoarreglo_bucle, daemon=True, name='autoarreglo').start()
 
 
 def _semaforo_321(lista):
@@ -2179,6 +2276,7 @@ def ajustes():
     cfg = {k: config_manager.get_config(k) for k in ('incident_auto_response', 'incident_keep_isolated',
                                                     'security_contact', 'sandbox_terminal')}
     cfg['senuelos'] = config_manager.get_config('senuelos') is not False
+    cfg['autoarreglo'] = config_manager.get_config('autoarreglo') is not False
     import mantenimiento as _mant
     with get_db_connection() as c:
         kit = c.execute("SELECT timestamp FROM audit_logs WHERE action = 'RECOVERY_KIT' ORDER BY timestamp DESC LIMIT 1").fetchone()
@@ -2647,6 +2745,7 @@ def ajustes_incidentes():
     config_manager.set_config('incident_keep_isolated', request.form.get('aislado') == 'on', uid)
     config_manager.set_config('sandbox_terminal', request.form.get('terminal') == 'on', uid)
     config_manager.set_config('senuelos', request.form.get('senuelos') == 'on', uid)
+    config_manager.set_config('autoarreglo', request.form.get('autoarreglo') == 'on', uid)
     contacto = (request.form.get('contacto') or '').strip()[:200] or 'el departamento de seguridad'
     config_manager.set_config('security_contact', contacto, uid)
     log_audit(uid, 'CONFIG_INCIDENTS', 'Ajustes de respuesta a ataques', request.remote_addr)

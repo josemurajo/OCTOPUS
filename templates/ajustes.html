@@ -44,6 +44,10 @@
     <label style="font-weight:400; display:flex; gap:10px; margin-bottom:10px"><input type="checkbox" name="senuelos" {{ 'checked' if cfg.senuelos }}>
       <span><strong>Archivos señuelo</strong> (recomendado) — cada equipo guarda un archivo trampa oculto en sus carpetas protegidas.
         Nadie lo usa: si cambia, es casi seguro un ataque y se actúa al momento.</span></label>
+    <label style="font-weight:400; display:flex; gap:10px; margin-bottom:10px"><input type="checkbox" name="autoarreglo" {{ 'checked' if cfg.autoarreglo }}>
+      <span><strong>Arreglar solo lo que no tiene riesgo</strong> (recomendado) — repetir una copia que falló, quitar un bloqueo
+        antiguo del almacén, renovar el certificado... Lo que puede borrar datos (borrar copias antiguas, reparar el almacén)
+        siempre espera a que alguien pulse «Solucionar» y lo confirme. Con un incidente abierto no se arregla nada solo.</span></label>
     <label style="font-weight:400; display:flex; gap:10px; margin-bottom:14px"><input type="checkbox" name="terminal" {{ 'checked' if cfg.sandbox_terminal }}>
       <span><strong>Permitir comandos en la sala de análisis</strong> (solo administradores; todo queda registrado).</span></label>
     <div class="field"><label for="contacto">A quién debe llamar el usuario afectado</label>

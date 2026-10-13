@@ -189,7 +189,19 @@ def texto(codigo: str, **datos) -> str:
     lineas = [f"[{codigo}] {f['titulo']}", f"Por qué importa: {f['por_que']}", "Qué hacer:"]
     lineas += [f"  {i}. {p}" for i, p in enumerate(f["pasos"], 1)]
     if f["accion"]:
-        lineas.append("  (En el panel, en Avisos, hay un botón «Solucionar» que lo hace solo.)")
+        try:
+            import autoarreglo as _aa
+            auto, riesgo = _aa.es_automatica(f["accion"]), _aa.riesgo(f["accion"])
+        except Exception:
+            auto, riesgo = False, None
+        if auto:
+            lineas.append("  (No tiene riesgo: OCTOPUS lo está arreglando solo. Si tienes prisa, en el panel, Avisos, "
+                          "pulsa «Solucionar».)")
+        elif riesgo:
+            lineas.append(f"  (Necesita tu permiso porque puede borrar datos: {riesgo} Para hacerlo, en el panel, "
+                          f"Avisos, pulsa «Solucionar» y confírmalo.)")
+        else:
+            lineas.append("  (En el panel, en Avisos, hay un botón «Solucionar» que lo hace solo.)")
     return "\n".join(lineas)
 
 

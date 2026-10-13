@@ -127,6 +127,9 @@ class ConfigManager:
         # Instalar solas (por la noche) las versiones nuevas firmadas; False = en pausa
         "actualizar_solo": True,
 
+        # Arreglar solos los avisos sin riesgo (repetir copias, quitar bloqueos...); lo que borra datos pide permiso
+        "autoarreglo": True,
+
         # Quien recibe cada tipo de aviso: {"ataques": "a@x, b@x", "copias": "", "servidor": "", "informe": ""}
         # (vacio = el correo general alert_email)
         "avisos_destinatarios": {},
