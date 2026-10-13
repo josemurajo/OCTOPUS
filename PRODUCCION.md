@@ -55,6 +55,16 @@ arrancan al iniciar sesión) y sin entrar en reposo.
 
 ## 4. Añadir los equipos
 
+**Lo más cómodo: Equipos → «Buscar equipos en la red»** (también sale en el inicio mientras no hay equipos):
+1. Elige la red (el panel propone la del servidor) y pulsa Buscar: encuentra los equipos encendidos, dice qué sistema
+   tienen (Windows, Linux, Mac) y cuáles ya tienen OCTOPUS.
+2. Marca los que quieras, revisa su nombre y ponlos en grupos («Oficina», «Servidores»...).
+3. Escribe usuario y contraseña de administrador **una vez por grupo** (se usan para instalar y no se guardan).
+4. Se instala en todos a la vez y ves cómo va cada uno. Linux y Mac necesitan SSH; Windows, el «Servidor OpenSSH»
+   activado (si no, el panel lo dice y queda el instalador de doble clic en la ficha del equipo).
+
+También se puede añadir uno a uno:
+
 **Equipos → Añadir equipo.**
 
 - **Linux y Mac — "Desde aquí":** escribe la IP, un usuario administrador del equipo y su contraseña. Se pide
@@ -175,7 +185,12 @@ sudo bash octopus.sh volver          # vuelve a la versión anterior si la actua
 ```
 
 Para **actualizar**: copia la carpeta nueva de OCTOPUS al servidor y ejecuta `sudo bash instalar_servidor.sh`
-(o `octopus.sh actualizar`). Los equipos se actualizan solos.
+(o `octopus.sh actualizar`). Los equipos se actualizan solos. **Si la versión nueva no arranca bien, el instalador
+vuelve solo a la anterior** (y lo dice), así una actualización nunca deja las copias paradas.
+
+Cortes de luz: si un equipo estaba apagado a la hora de su copia diaria, la hace sola en cuanto vuelve a encenderse;
+si una copia se cortó a medias, el bloqueo que deja se quita solo. El informe mensual se reintenta cada noche
+(hasta el día 7) si no se pudo enviar el día 1.
 
 ## 9. Si se pierde el servidor
 
@@ -224,6 +239,10 @@ restic -r <ruta-o-direccion-del-almacen> restore latest --host <equipo> --target
 - Pendiente para una próxima versión: doble autenticación (código de una app) al entrar en el panel.
 
 ## 11. Sugerencias y problemas (soporte)
+
+Lo que se escribe en «Enviar sugerencia o problema» va al **buzón de OCTOPUS** (un servicio gratuito en Cloudflare que lo
+reenvía al Telegram del soporte; ver `soporte/buzon/LEEME.md`). Una empresa que no quiera que salga nada puede poner
+`SOPORTE_BUZON_URL=no`. Para comprobarlo: botón «Enviar una prueba al soporte» en esa misma página.
 
 En el pie de cada página del panel hay **«Enviar sugerencia o problema»**. Lo que se escribe se guarda en el servidor y
 se envía al soporte por los destinos que se configuren en `sudo bash octopus.sh ajustes`:

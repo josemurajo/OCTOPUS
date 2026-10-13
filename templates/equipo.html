@@ -58,6 +58,7 @@
     <h2>Datos del equipo</h2>
     <dl class="kv">
       <dt>Dirección</dt><dd>{{ s.ip_address }}</dd>
+      {% set _n = (s.notes | fromjson) if s.notes else {} %}{% if _n.grupo %}<dt>Grupo</dt><dd>{{ _n.grupo }}</dd>{% endif %}
       <dt>Conexión</dt><dd>Cifrada (HTTPS){% if s.last_ip %} · última desde {{ s.last_ip }}{% endif %}</dd>
       <dt>Sistema</dt><dd>{{ (est.info.os if est.info else s.os_family) | capitalize }}</dd>
       <dt>Copias guardadas</dt><dd>{{ est.copias | length }}</dd>

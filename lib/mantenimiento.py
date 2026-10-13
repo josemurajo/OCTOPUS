@@ -568,13 +568,26 @@ def main(argv: list[str]) -> int:
                 _b.marcar("mantenimiento", f"Sugerencias pendientes: {r['detalle']}")
         except Exception as exc:
             _b.marcar("mantenimiento", f"Sugerencias pendientes: no se pudieron reenviar ({exc})", nivel="aviso")
-    if cmd == "todo" and datetime.now().day == 1:
+    # Informe mensual: el dia 1; si no se pudo enviar (sin Internet, correo caido...), se reintenta cada noche
+    # hasta el dia 7, para que llegue siempre.
+    enviados_f = BASE_DIR / "data" / "informes_enviados.json"
+    try:
+        enviados = json.loads(enviados_f.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        enviados = {}
+    if cmd == "todo" and 1 <= datetime.now().day <= 7:
         try:
             import informe
-            resultados["informe"] = informe.enviar(env, informe.mes_anterior())
+            mes = informe.mes_anterior()
+            if mes not in enviados:
+                resultados["informe"] = informe.enviar(env, mes)
+                if resultados["informe"].get("ok"):
+                    enviados[mes] = datetime.now().isoformat(timespec="seconds")
+                    enviados_f.write_text(json.dumps(enviados), encoding="utf-8")
+                log(f"  Informe mensual: {resultados['informe']['detalle']}")
         except Exception as exc:
             resultados["informe"] = {"ok": False, "detalle": f"error inesperado: {exc}"}
-        log(f"  Informe mensual: {resultados['informe']['detalle']}")
+            log(f"  Informe mensual: {resultados['informe']['detalle']}")
     if cmd == "todo":
         guardar_estado(resultados)
     fallos = []

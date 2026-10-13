@@ -4,12 +4,14 @@
 <p class="small"><a href="{{ url_for('equipo', system_id=sys.id) }}">← {{ sys.hostname }}</a></p>
 <h1>Instalar OCTOPUS en {{ sys.hostname }}</h1>
 <p class="lead">El instalador ya está preparado para este equipo: lleva su clave propia, la conexión cifrada con este servidor y las carpetas a proteger.</p>
-{% if sys.os_family in ('linux', 'macos') %}
+{% if sys.os_family in ('linux', 'macos', 'windows') %}
 <div class="card" style="margin-bottom:18px">
   <h2>Instalar desde aquí, sin ir al equipo</h2>
   <p>Escribe los datos de un usuario <strong>administrador</strong> de {{ sys.hostname }}. El servidor entra una sola vez,
     instala OCTOPUS y deja puesta su propia clave. <strong>La contraseña no se guarda</strong>: se usa ahora y se olvida.</p>
   {% if sys.os_family == 'macos' %}<p class="hint">En el Mac tiene que estar activado «Ajustes → General → Compartir → Sesión remota».</p>{% endif %}
+  {% if sys.os_family == 'windows' %}<p class="hint">En Windows tiene que estar activado el «Servidor OpenSSH» (Configuración → Sistema →
+    Características opcionales) y el usuario debe ser administrador. Si no, usa el instalador de doble clic de abajo.</p>{% endif %}
   <form method="post" action="{{ url_for('equipo_instalar_remoto', system_id=sys.id) }}" autocomplete="off">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="field"><label for="r_ip">Dirección IP del equipo</label>

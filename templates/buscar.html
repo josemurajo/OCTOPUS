@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}Buscar equipos en la red{% endblock %}
+{% block content %}
+<p class="small"><a href="{{ url_for('equipos') }}">← Equipos</a></p>
+<h1>Buscar equipos en la red</h1>
+<p class="lead">
+  <strong {% if paso == 1 %}style="color:var(--accent)"{% endif %}>1. Dónde buscar</strong> ·
+  <strong {% if paso == 2 %}style="color:var(--accent)"{% endif %}>2. Elegir y agrupar</strong> ·
+  <strong {% if paso == 3 %}style="color:var(--accent)"{% endif %}>3. Contraseñas por grupo</strong> ·
+  <strong {% if paso == 4 %}style="color:var(--accent)"{% endif %}>4. Instalando</strong></p>
+
+{% if paso == 1 %}
+<div class="card">
+  <h2>¿En qué redes busco?</h2>
+  <form method="post" action="{{ url_for('buscar_equipos') }}">
+    {% for r in propuestas %}
+    <label style="font-weight:400; display:flex; gap:10px; margin-bottom:8px"><input type="checkbox" name="red" value="{{ r }}" checked style="width:auto">
+      <span><strong class="mono">{{ r }}</strong> <span class="muted small">— la red de este servidor</span></span></label>
+    {% else %}
+    <p class="muted small">No sé en qué red está el servidor: escribe la red de la oficina abajo.</p>
+    {% endfor %}
+    <div class="field" style="margin-top:10px"><label for="otras">Otras redes (opcional)</label>
+      <input type="text" id="otras" name="otras" placeholder="Ejemplo: 192.168.2.0/24, 10.0.5.*" style="max-width:520px">
+      <p class="hint">Si los equipos están en otra red (otra planta, otra VLAN), escríbela aquí. Como mucho 1024 direcciones por red.</p></div>
+    <button class="btn btn-primary btn-big" type="submit">Buscar equipos</button>
+  </form>
+  <p class="hint" style="margin-top:12px">Solo se mira qué equipos responden y qué sistema tienen. No se prueba ninguna contraseña ni se cambia nada.</p>
+</div>
+
+{% elif paso == 2 %}
+{% if e.estado == 'en_curso' %}
+<div class="card">
+  <h2>Buscando… {{ (100 * e.hechos / (e.total or 1)) | round | int }} %</h2>
+  <div style="background:var(--line); border-radius:8px; height:14px; overflow:hidden; margin:10px 0">
+    <div style="background:var(--accent); height:14px; width:{{ (100 * e.hechos / (e.total or 1)) | round | int }}%"></div></div>
+  <p class="muted">{{ e.hechos }} de {{ e.total }} direcciones revisadas en {{ e.redes | join(', ') }}. Encontrados de momento: <strong>{{ e.encontrados | length }}</strong>.</p>
+</div>
+{% else %}
+<div class="card">
+  <h2>He encontrado {{ e.encontrados | length }} equipo{{ 's' if e.encontrados | length != 1 }} <span class="muted small">(en {{ segundos }} s)</span></h2>
+  {% if e.encontrados %}
+  <p class="muted small" style="margin-bottom:10px">Marca los que quieras proteger, revisa su nombre y su sistema, y ponlos en un grupo.
+    Los equipos del mismo grupo comparten usuario y contraseña en el paso siguiente (si cada uno tiene una distinta, ponle a cada uno su propio grupo).</p>
+  <form method="post" action="{{ url_for('buscar_resultado', eid=e.id) }}">
+    <datalist id="grupos">{% for g in grupos %}<option value="{{ g }}">{% endfor %}</datalist>
+    <table>
+      <thead><tr><th></th><th>Equipo</th><th>Sistema</th><th>Grupo</th><th>Estado</th></tr></thead>
+      {% for x in e.encontrados %}
+      <tr>
+        <td style="width:30px">{% if not x.ya_tiene %}<input type="checkbox" name="usar_{{ x.ip }}" {{ 'checked' if x.so }} style="width:auto">{% endif %}</td>
+        <td>{% if x.ya_tiene %}<strong>{{ x.ya_tiene }}</strong>{% else %}<input type="text" name="nombre_{{ x.ip }}" value="{{ x.nombre }}" style="max-width:220px">{% endif %}
+          <div class="muted small mono">{{ x.ip }}</div></td>
+        <td>{% if x.ya_tiene %}{{ x.sistema }}{% else %}
+          <select name="so_{{ x.ip }}" style="max-width:150px">
+            <option value="" {{ 'selected' if not x.so }}>¿Cuál?</option>
+            <option value="windows" {{ 'selected' if x.so == 'windows' }}>Windows</option>
+            <option value="linux" {{ 'selected' if x.so == 'linux' }}>Linux</option>
+            <option value="macos" {{ 'selected' if x.so == 'macos' }}>Mac</option></select>
+          <div class="muted small">{{ x.sistema }}</div>{% endif %}</td>
+        <td>{% if not x.ya_tiene %}<input type="text" name="grupo_{{ x.ip }}" list="grupos" value="{{ 'Servidores' if x.so == 'linux' else 'Oficina' }}" style="max-width:160px">{% endif %}</td>
+        <td class="small">{% if x.ya_tiene %}<span class="pill ok">Ya protegido</span>
+          {% elif x.ssh %}<span class="pill ok">Se puede instalar desde aquí</span>
+          {% else %}<span class="pill atencion">Sin SSH: instalador de doble clic</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    <p style="margin-top:14px"><button class="btn btn-primary btn-big" type="submit">Seguir</button>
+      <a class="btn" href="{{ url_for('buscar_equipos') }}" style="margin-left:6px">Buscar otra vez</a></p>
+  </form>
+  {% else %}
+  <p class="muted">No ha respondido ningún equipo. Comprueba que están encendidos y en esa red, o prueba con otra red.
+    (Algunos equipos con el cortafuegos muy cerrado no responden: esos se añaden a mano con «Añadir equipo».)</p>
+  <a class="btn" href="{{ url_for('buscar_equipos') }}">Buscar otra vez</a>
+  {% endif %}
+</div>
+{% endif %}
+
+{% elif paso == 3 %}
+<div class="card">
+  <h2>Usuario y contraseña de cada grupo</h2>
+  <p class="muted small" style="margin-bottom:12px">Un usuario <strong>administrador</strong> de esos equipos. Se usa una sola vez para instalar y
+    <strong>no se guarda</strong> en ningún sitio. Si dejas un grupo vacío, sus equipos se dan de alta y los instalas después desde su ficha.</p>
+  <form method="post" action="{{ url_for('buscar_credenciales', eid=e.id) }}" autocomplete="off" data-confirm="¿Instalar OCTOPUS en estos equipos ahora?">
+    {% for grupo, eqs in e.grupos.items() %}
+    {% set i = loop.index0 %}
+    <div class="card" style="margin:0 0 14px; background:var(--bg)">
+      <h3>{{ grupo }} <span class="muted small">({{ eqs | length }} equipo{{ 's' if eqs | length != 1 }})</span></h3>
+      <p class="small muted" style="margin:4px 0 10px">{% for q in eqs %}{{ q.nombre }} <span class="mono">{{ q.ip }}</span> ({{ {'windows':'Windows','linux':'Linux','macos':'Mac'}[q.so] }}){{ ', ' if not loop.last }}{% endfor %}</p>
+      <div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(220px, 1fr))">
+        <div class="field" style="margin:0"><label for="u{{ i }}">Usuario</label>
+          <input type="text" id="u{{ i }}" name="usuario_{{ i }}" autocomplete="off" placeholder="{{ 'Administrador' if eqs[0].so == 'windows' else 'admin' }}"></div>
+        <div class="field" style="margin:0"><label for="p{{ i }}">Contraseña</label>
+          <input type="password" id="p{{ i }}" name="password_{{ i }}" autocomplete="new-password"></div>
+      </div>
+      {% if eqs | selectattr('so', 'equalto', 'linux') | list %}
+      <label style="font-weight:400; display:flex; gap:8px; margin-top:10px"><input type="checkbox" name="solo_clave_{{ i }}" style="width:auto">
+        <span class="small">En los Linux, después, entrar solo con la clave del servidor (desactiva la contraseña por SSH; recomendado en servidores).</span></label>
+      {% endif %}
+    </div>
+    {% endfor %}
+    <button class="btn btn-primary btn-big" type="submit">Instalar en todos</button>
+    <a class="btn" href="{{ url_for('buscar_resultado', eid=e.id) }}" style="margin-left:6px">Volver</a>
+  </form>
+</div>
+
+{% elif paso == 4 %}
+<div class="card hero {{ 'ok' if not en_curso and ok == filas | length else ('atencion' if en_curso else 'problema') }}">
+  <div class="hero-icon" aria-hidden="true">{{ '…' if en_curso else ('✓' if ok == filas | length else '!') }}</div>
+  <div><h1>{% if en_curso %}Instalando en {{ en_curso }} equipo{{ 's' if en_curso != 1 }}…{% else %}{{ ok }} de {{ filas | length }} equipos protegidos{% endif %}</h1>
+    <p class="muted">{% if en_curso %}Puedes seguir usando el panel; esta página se actualiza sola.{% else %}Los que no se pudieron dicen por qué y qué hacer.{% endif %}</p></div>
+</div>
+<div class="card">
+  <table>
+    <thead><tr><th>Equipo</th><th>Grupo</th><th>Estado</th></tr></thead>
+    {% for f in filas %}
+    <tr><td><strong>{% if f.sid %}<a href="{{ url_for('equipo', system_id=f.sid) }}">{{ f.nombre }}</a>{% else %}{{ f.nombre }}{% endif %}</strong>
+        <div class="muted small mono">{{ f.ip }}</div></td>
+      <td class="small">{{ f.grupo }}</td>
+      <td class="small">{% if f.estado == 'ok' %}<span style="color:var(--ok)">✓</span>{% elif f.estado == 'en_curso' %}…{% elif f.estado in ('error',) %}<span style="color:var(--bad)">✗</span>{% else %}•{% endif %}
+        {{ f.mensaje }}</td></tr>
+    {% endfor %}
+  </table>
+  <p style="margin-top:14px"><a class="btn" href="{{ url_for('equipos') }}">Ver los equipos</a>
+    <a class="btn" href="{{ url_for('buscar_equipos') }}" style="margin-left:6px">Buscar más equipos</a></p>
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+{% if (paso == 2 and e.estado == 'en_curso') or (paso == 4 and en_curso) %}<script>setTimeout(function(){ location.reload(); }, 2500);</script>{% endif %}
+{% endblock %}

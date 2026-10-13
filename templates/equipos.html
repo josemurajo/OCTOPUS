@@ -3,7 +3,8 @@
 {% block content %}
 <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
   <div><h1>Equipos</h1><p class="lead">Los ordenadores y servidores que OCTOPUS protege.</p></div>
-  {% if puede_actuar() %}<a class="btn btn-primary" href="{{ url_for('equipo_nuevo') }}">+ Añadir equipo</a>{% endif %}
+  {% if puede_actuar() %}<div class="actions"><a class="btn" href="{{ url_for('buscar_equipos') }}">Buscar equipos en la red</a>
+    <a class="btn btn-primary" href="{{ url_for('equipo_nuevo') }}">+ Añadir equipo</a></div>{% endif %}
 </div>
 <div class="card" style="padding:6px 10px">
   <table>

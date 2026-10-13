@@ -178,8 +178,15 @@ def enviar(env: dict, mes: str) -> dict:
         enviado = False
         nm = NotificationManager(cm)
         para = [c for c in nm.destinatarios("informe", cfg) if c]
+        fallos = []
         if cfg.get("email_notifications") and para:
-            enviado = all(nm.send_email(c, f"[OCTOPUS] Informe de {d['nombre_mes']}", t)[0] for c in para)
+            for c in para:
+                ok_c, msg = nm.send_email(c, f"[OCTOPUS] Informe de {d['nombre_mes']}", t)
+                if not ok_c:
+                    fallos.append(f"{c}: {msg}")
+            enviado = not fallos
+            if fallos:   # se reintenta las noches siguientes (aviso OCT-SRV-03)
+                return {"ok": False, "detalle": "No se pudo enviar el informe por correo: " + "; ".join(fallos)[:300]}
         r = d["resumen"]
         TelegramIntegration(cm).send_alert("medium", f"Informe de {d['nombre_mes']}: {r['equipos']} equipos, "
                                                      f"{r['copias']} copias, {r['cobertura']} % de dias con copia, "

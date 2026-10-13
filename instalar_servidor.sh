@@ -135,7 +135,20 @@ for i in $(seq 1 90); do
     docker inspect -f '{{.State.Running}}' octopus 2>/dev/null | grep -q true || { docker logs --tail 40 octopus; fallo "El contenedor se ha parado"; }
     sleep 2
 done
-curl -fsk -m 3 "https://127.0.0.1:$PUERTO/login" >/dev/null 2>&1 || { docker logs --tail 40 octopus; fallo "El panel no responde"; }
+if ! curl -fsk -m 3 "https://127.0.0.1:$PUERTO/login" >/dev/null 2>&1; then
+    docker logs --tail 40 octopus
+    # Una actualizacion nunca debe dejar el servidor sin funcionar: se vuelve sola a la version anterior
+    if [ -n "${ANTERIOR:-}" ] && docker image inspect octopus-servidor:anterior >/dev/null 2>&1; then
+        aviso "La version nueva no arranca bien: volviendo a la anterior automaticamente..."
+        sed -i.bak 's/^OCTOPUS_VERSION=.*/OCTOPUS_VERSION=anterior/' "$HOST_ENV"
+        "${DC[@]}" up -d --no-build octopus >/dev/null 2>&1
+        sleep 20
+        curl -fsk -m 5 "https://127.0.0.1:$PUERTO/login" >/dev/null 2>&1 \
+            && fallo "La version nueva no arrancaba y se ha vuelto a la anterior (todo sigue funcionando como antes). Manda el diagnostico al soporte." \
+            || fallo "El panel no responde ni con la version anterior. Mira  sudo bash octopus.sh logs"
+    fi
+    fallo "El panel no responde"
+fi
 bien "panel en marcha"
 curl -fsk -m 5 "https://127.0.0.1:$(leer ALMACEN_PUERTO)/" -o /dev/null -w '%{http_code}' 2>/dev/null | grep -q '^[24]' \
     && bien "almacen de copias en marcha (HTTPS $(leer ALMACEN_PUERTO))" || aviso "El almacen no responde: docker logs octopus"

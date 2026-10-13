@@ -19,6 +19,7 @@ from datetime import datetime, timedelta
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, abort
 from functools import wraps
 import subprocess
+import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # Dependencias de seguridad: si faltan, el panel sigue funcionando (con aviso)
 try:
@@ -1429,6 +1430,17 @@ def _tamano(n):
 app.jinja_env.filters['hace'] = _hace
 app.jinja_env.filters['fecha'] = _fecha
 app.jinja_env.filters['tamano'] = _tamano
+
+
+def _fromjson(texto):
+    try:
+        v = json.loads(texto or '{}')
+        return v if isinstance(v, dict) else {}
+    except (ValueError, TypeError):
+        return {}
+
+
+app.jinja_env.filters['fromjson'] = _fromjson
 app.jinja_env.globals['puede_actuar'] = puede_actuar
 
 
@@ -2018,7 +2030,7 @@ def equipo_nuevo():
         except ValueError as exc:
             flash(str(exc), 'error')
             return redirect(url_for('equipo_nuevo'))
-        remoto = request.form.get('modo') == 'remoto' and so in ('linux', 'macos')
+        remoto = request.form.get('modo') == 'remoto' and so in ('linux', 'macos', 'windows')
         usuario = (request.form.get('usuario') or '').strip()
         if remoto:
             error = _datos_remotos_validos(ip, usuario)
@@ -2122,9 +2134,11 @@ def _lanzar_instalacion_remota(system, ip, usuario, password, solo_clave):
         log_audit(None, 'AGENT_REMOTE_OK' if ok else 'AGENT_REMOTE_ERROR', f'{sys_row["hostname"]}: {msg}'[:300])
         agentes.invalidar(sys_row['id'])
 
-    instalacion_remota.lanzar(dict(system), ip, usuario, password, solo_clave, agentes.JOBS, agentes._jobs_lock,
-                              hacer_paquete, _ordenes.en_linea, terminado)
+    jid = instalacion_remota.lanzar(dict(system), ip, usuario, password, solo_clave, agentes.JOBS, agentes._jobs_lock,
+                                    hacer_paquete, _ordenes.en_linea, terminado)
     log_audit(session['user_id'], 'AGENT_REMOTE_START', f'{system["hostname"]} ({ip}, usuario {usuario})', request.remote_addr)
+    _ban.marcar('instalacion', f'Instalación a distancia por SSH ({ip}, usuario {usuario})', equipo=system['hostname'])
+    return jid
 
 
 @app.route('/equipos/<int:system_id>/instalar-remoto', methods=['POST'])
@@ -2138,9 +2152,6 @@ def equipo_instalar_remoto(system_id):
     ip = (request.form.get('ip') or '').strip()
     usuario = (request.form.get('usuario') or '').strip()
     volver = url_for('equipo_instalar', system_id=system_id)
-    if system['os_family'] not in ('linux', 'macos'):
-        flash('La instalación a distancia es para Linux y Mac. En Windows usa el instalador de doble clic.', 'error')
-        return redirect(volver)
     error = _datos_remotos_validos(ip, usuario)
     if error:
         flash(error, 'error')
@@ -2658,9 +2669,186 @@ def sugerencia():
                            configurado=_sug.hay_destino(env))
 
 
+@app.route('/sugerencia/prueba', methods=['POST'])
+@login_required
+@role_required('admin', 'supremo')
+def sugerencia_prueba():
+    """Envía un mensaje de prueba al soporte para comprobar que llega (y dice por dónde ha ido o por qué no)."""
+    import sugerencias as _sug
+    import mantenimiento as _m
+    env = _m.leer_env()
+    sid = _sug.guardar(Path(DB_FILE), session.get('username', '?'), 'prueba', 'Prueba de envío desde el panel', '', '')
+    r = _sug.enviar(env, Path(DB_FILE), sid)
+    flash(('Prueba enviada: ' if r['ok'] else 'La prueba no llegó: ') + r['detalle'], 'success' if r['ok'] else 'error')
+    return redirect(url_for('sugerencia'))
+
+
 def _marcado(nombre):
     """Casillas de los formularios (los navegadores mandan «on»; algunos formularios antiguos «true»)."""
     return (request.form.get(nombre) or '').strip().lower() in ('on', 'true', '1', 'si', 'yes')
+
+
+# ------------------------------------------------------------------ buscar equipos en la red y darlos de alta en grupo
+GRUPOS_SUGERIDOS = ['Oficina', 'Servidores', 'Portátiles', 'Dirección', 'Almacén']
+
+
+def _conocidos():
+    with get_db_connection() as c:
+        filas = c.execute('SELECT hostname, ip_address, notes FROM systems').fetchall()
+    ips = {f['ip_address']: f['hostname'] for f in filas if f['ip_address']}
+    grupos = sorted({(json.loads(f['notes'] or '{}') or {}).get('grupo', '') for f in filas} - {''})
+    return ips, grupos, {f['hostname'].lower() for f in filas}
+
+
+@app.route('/equipos/buscar', methods=['GET', 'POST'])
+@login_required
+@role_required('admin', 'supremo')
+def buscar_equipos():
+    """Paso 1: qué redes barrer."""
+    import descubrir
+    import configuracion as _conf
+    env = _conf.leer_env()
+    propuestas = descubrir.redes_propuestas(env)
+    if request.method == 'POST':
+        redes, errores = [], []
+        for r in request.form.getlist('red') + (request.form.get('otras') or '').replace(';', ',').replace('\n', ',').split(','):
+            if not r.strip():
+                continue
+            try:
+                red = descubrir.validar_red(r)
+                if red not in redes:
+                    redes.append(red)
+            except ValueError as exc:
+                errores.append(f'«{r.strip()}»: {exc}')
+        if errores:
+            flash('Revisa estas redes: ' + '; '.join(errores), 'error')
+            return redirect(url_for('buscar_equipos'))
+        if not redes:
+            flash('Elige al menos una red.', 'error')
+            return redirect(url_for('buscar_equipos'))
+        ips, _, _ = _conocidos()
+        propias = {x.strip() for x in [env.get('OCTOPUS_IP', '')] + env.get('OCTOPUS_NOMBRES_EXTRA', '').split(',')}
+        eid = descubrir.empezar(redes, ips, propias)
+        _ban.marcar('descubrir', f'Buscar equipos en {", ".join(redes)} (pedido por {session.get("username")})')
+        log_audit(session['user_id'], 'NET_SCAN', ', '.join(redes), request.remote_addr)
+        return redirect(url_for('buscar_resultado', eid=eid))
+    return render_template('buscar.html', paso=1, propuestas=propuestas)
+
+
+@app.route('/equipos/buscar/<eid>', methods=['GET', 'POST'])
+@login_required
+@role_required('admin', 'supremo')
+def buscar_resultado(eid):
+    """Paso 2: lo encontrado; se eligen equipos, su nombre, su sistema y su grupo."""
+    import descubrir
+    e = descubrir.ver(eid)
+    if not e:
+        flash('Esa búsqueda ya no está (el panel se reinició). Vuelve a buscar.', 'error')
+        return redirect(url_for('buscar_equipos'))
+    if request.method == 'POST':
+        _, _, nombres_usados = _conocidos()
+        grupos, errores, vistos = {}, [], set()
+        for x in e['encontrados']:
+            ip = x['ip']
+            if request.form.get(f'usar_{ip}') != 'on':
+                continue
+            nombre = (request.form.get(f'nombre_{ip}') or x['nombre']).strip()
+            so = request.form.get(f'so_{ip}') or x['so']
+            grupo = (request.form.get(f'grupo_{ip}') or 'Oficina').strip()[:40] or 'Oficina'
+            import alta_equipos
+            if not alta_equipos.nombre_valido(nombre):
+                errores.append(f'{ip}: el nombre «{nombre}» no vale (sin espacios ni símbolos raros)')
+            elif nombre.lower() in nombres_usados or nombre.lower() in vistos:
+                errores.append(f'{ip}: ya hay un equipo llamado «{nombre}»')
+            elif so not in ('linux', 'windows', 'macos'):
+                errores.append(f'{ip}: elige si es Windows, Linux o Mac')
+            vistos.add(nombre.lower())
+            grupos.setdefault(grupo, []).append({'ip': ip, 'nombre': nombre, 'so': so, 'ssh': x['ssh']})
+        if errores:
+            flash('Revisa: ' + '; '.join(errores), 'error')
+            return redirect(url_for('buscar_resultado', eid=eid))
+        if not grupos:
+            flash('Marca al menos un equipo.', 'error')
+            return redirect(url_for('buscar_resultado', eid=eid))
+        descubrir.guardar(eid, grupos=grupos)
+        return redirect(url_for('buscar_credenciales', eid=eid))
+    _, grupos_existentes, _ = _conocidos()
+    return render_template('buscar.html', paso=2, e=e, grupos=list(dict.fromkeys(grupos_existentes + GRUPOS_SUGERIDOS)),
+                           segundos=int((e['fin'] or time.time()) - e['inicio']))
+
+
+@app.route('/equipos/buscar/<eid>/credenciales', methods=['GET', 'POST'])
+@login_required
+@role_required('admin', 'supremo')
+def buscar_credenciales(eid):
+    """Paso 3: usuario y contraseña por grupo (se usan una vez y se olvidan) y se instala en todos."""
+    import descubrir
+    import alta_equipos
+    e = descubrir.ver(eid)
+    if not e or not e['grupos']:
+        return redirect(url_for('buscar_equipos'))
+    if request.method == 'POST':
+        _, _, nombres_usados = _conocidos()
+        trabajos = []
+        for i, (grupo, equipos_g) in enumerate(e['grupos'].items()):
+            usuario = (request.form.get(f'usuario_{i}') or '').strip()
+            password = request.form.get(f'password_{i}') or ''
+            solo_clave = request.form.get(f'solo_clave_{i}') == 'on'
+            for q in equipos_g:
+                if q['nombre'].lower() in nombres_usados:
+                    trabajos.append({'nombre': q['nombre'], 'ip': q['ip'], 'grupo': grupo, 'job': None,
+                                     'mensaje': 'Ya existía un equipo con ese nombre: no se ha tocado.'})
+                    continue
+                rutas = alta_equipos.RUTAS_POR_DEFECTO.get(q['so'], [])
+                conn = get_db_connection()
+                cur = conn.execute("INSERT INTO systems (hostname, ip_address, os_family, status, notes) VALUES (?, ?, ?, 'unknown', ?)",
+                                   (q['nombre'], q['ip'], q['so'], json.dumps({'rutas': rutas, 'grupo': grupo})))
+                conn.commit()
+                sid = cur.lastrowid
+                conn.close()
+                nombres_usados.add(q['nombre'].lower())
+                log_audit(session['user_id'], 'SYSTEM_ADD', f'{q["nombre"]} ({q["so"]}, grupo {grupo}, desde «Buscar equipos»)',
+                          request.remote_addr)
+                if not usuario or (not password and q['so'] == 'windows'):
+                    trabajos.append({'nombre': q['nombre'], 'ip': q['ip'], 'grupo': grupo, 'job': None, 'sid': sid,
+                                     'mensaje': 'Dado de alta. Falta instalarlo: no se escribió usuario/contraseña para su grupo. '
+                                                'Usa «Instalar» en su ficha.'})
+                    continue
+                if not q['ssh']:
+                    trabajos.append({'nombre': q['nombre'], 'ip': q['ip'], 'grupo': grupo, 'job': None, 'sid': sid,
+                                     'mensaje': ('No tiene SSH activado, así que no se puede instalar a distancia. '
+                                                 + ('En Windows: activa el «Servidor OpenSSH» o usa el instalador de doble clic de su ficha.'
+                                                    if q['so'] == 'windows' else 'Activa SSH en el equipo o usa el instalador de su ficha.'))})
+                    continue
+                jid = _lanzar_instalacion_remota(_get_system(sid), q['ip'], usuario, password, solo_clave and q['so'] == 'linux')
+                trabajos.append({'nombre': q['nombre'], 'ip': q['ip'], 'grupo': grupo, 'job': jid, 'sid': sid})
+            password = None
+        descubrir.guardar(eid, trabajos=trabajos, grupos={})
+        _ban.marcar('descubrir', f'Alta en grupo: {len(trabajos)} equipos, {sum(1 for t in trabajos if t["job"])} instalándose')
+        return redirect(url_for('buscar_progreso', eid=eid))
+    return render_template('buscar.html', paso=3, e=e)
+
+
+@app.route('/equipos/buscar/<eid>/progreso')
+@login_required
+@role_required('admin', 'supremo')
+def buscar_progreso(eid):
+    """Paso 4: cómo va la instalación de cada equipo."""
+    import descubrir
+    e = descubrir.ver(eid)
+    if not e:
+        return redirect(url_for('equipos'))
+    jobs = {j['id']: j for j in agentes.trabajos_de(None, 500)}
+    filas = []
+    for t in e['trabajos']:
+        j = jobs.get(t.get('job')) if t.get('job') else None
+        estado = (j or {}).get('estado') or ('error' if t.get('job') is None and 'Ya existía' not in t.get('mensaje', '') else 'nada')
+        if t.get('job') is None and 'Dado de alta' in t.get('mensaje', ''):
+            estado = 'pendiente'
+        filas.append({**t, 'estado': estado, 'mensaje': (j or {}).get('mensaje') or t.get('mensaje', '')})
+    en_curso = sum(1 for f in filas if f['estado'] == 'en_curso')
+    ok = sum(1 for f in filas if f['estado'] == 'ok')
+    return render_template('buscar.html', paso=4, e=e, filas=filas, en_curso=en_curso, ok=ok)
 
 
 # Funciones auxiliares

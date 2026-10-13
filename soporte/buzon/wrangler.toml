@@ -1,0 +1,7 @@
+# Solo hace falta si se publica el buzon con la herramienta "wrangler" (opcional; ver LEEME.md: se puede hacer
+# todo desde la web de Cloudflare copiando worker.js). Los secretos se ponen con:
+#   npx wrangler secret put TELEGRAM_TOKEN
+#   npx wrangler secret put TELEGRAM_CHAT
+name = "octopus-buzon"
+main = "worker.js"
+compatibility_date = "2026-01-01"

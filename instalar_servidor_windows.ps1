@@ -234,6 +234,17 @@ for ($i = 0; $i -lt 90; $i++) {
 if (-not $ok) {
     & docker logs --tail 40 octopus
     Marca ("estado del contenedor: " + ((& docker ps -a --filter name=octopus --format "{{.Status}}") -join " "))
+    # Una actualizacion nunca debe dejar el servidor sin funcionar: se vuelve sola a la version anterior
+    if ($ant) {
+        Aviso "La version nueva no arranca bien: volviendo a la anterior automaticamente..."
+        $txt = (Get-Content $HostEnv) -replace '^OCTOPUS_VERSION=.*', 'OCTOPUS_VERSION=anterior'
+        [IO.File]::WriteAllText($HostEnv, (($txt -join "`n") + "`n"), (New-Object Text.UTF8Encoding($false)))
+        & docker @dc up -d --no-build octopus 2>&1 | Out-Null
+        Start-Sleep -Seconds 20
+        if (Responde "https://127.0.0.1:$pPanel/login") {
+            Fallo "La version nueva no arrancaba y se ha vuelto a la anterior (todo sigue funcionando como antes). Manda el diagnostico al soporte."
+        }
+    }
     Fallo "El panel no responde"
 }
 Bien "panel en marcha"

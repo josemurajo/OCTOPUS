@@ -93,8 +93,10 @@ def _limpiar(texto: str, password: str) -> str:
 def instalar(equipo: str, so: str, ip: str, usuario: str, password: str, paquete: bytes, solo_clave: bool,
              paso=lambda texto: None, en_linea=lambda: False) -> tuple[bool, str]:
     """Hace la instalacion. Devuelve (ok, mensaje). `paso` informa del progreso; `en_linea` dice si ya conecto."""
+    if so == "windows":
+        return instalar_windows(equipo, ip, usuario, password, paquete, paso, en_linea)
     if so not in ("linux", "macos"):
-        return False, "La instalacion a distancia es para Linux y Mac. En Windows usa el instalador de doble clic."
+        return False, "Sistema no reconocido: elige Windows, Linux o Mac."
     _clave_servidor()
     destino = f"{usuario}@{ip}"
     paso(f"Conectando con {ip}...")
@@ -142,6 +144,57 @@ def instalar(equipo: str, so: str, ip: str, usuario: str, password: str, paquete
             como = "con la clave del servidor" if usar_clave else "con la contrasena (ya no hara falta)"
             extra = " El acceso SSH queda solo con la clave del servidor." if "solo con clave" in salida else ""
             return True, f"{equipo} instalado y conectado (se entro {como}).{extra}"
+        time.sleep(2)
+    return False, "Se instalo, pero el equipo no se ha conectado al servidor. Revisa que llega a este servidor (puerto 8080)."
+
+
+def instalar_windows(equipo: str, ip: str, usuario: str, password: str, paquete: bytes, paso, en_linea) -> tuple[bool, str]:
+    """Windows 10/11 o Server con el «Servidor OpenSSH» activado: se copia el mismo instalador del panel y se ejecuta.
+    El usuario tiene que ser administrador del equipo (por SSH, Windows le da permisos completos)."""
+    if not password:
+        return False, "Hace falta la contrasena de un administrador del equipo Windows."
+    destino = f"{usuario}@{ip}"
+    carpeta_win = f"C:\\Windows\\Temp\\octopus_inst_{secrets.token_hex(6)}"
+    carpeta_scp = carpeta_win.replace("\\", "/")
+    paso(f"Conectando con {ip} (Windows, SSH)...")
+    ps = (f"New-Item -ItemType Directory -Force -Path '{carpeta_win}' | Out-Null; "
+          f"$a=([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent())"
+          f".IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator); Write-Output \"ADMIN=$a\"")
+    cmd, env = _cmd(["ssh", *SSH_OPC, destino, f'powershell -NoProfile -NonInteractive -Command "{ps}"'], False, password)
+    r = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=90)
+    salida = _limpiar((r.stdout or "") + (r.stderr or ""), password)
+    if r.returncode != 0:
+        if "Permission denied" in salida or r.returncode == 5:
+            return False, "Usuario o contrasena incorrectos (en Windows: usa EQUIPO\\usuario o el usuario de la cuenta local)."
+        if "timed out" in salida or "refused" in salida or "No route" in salida:
+            return False, (f"No se puede llegar a {ip} por SSH. En Windows hay que activar el «Servidor OpenSSH» "
+                           f"(Configuracion > Sistema > Caracteristicas opcionales) o usar el instalador de doble clic.")
+        return False, f"No se pudo entrar en el equipo Windows: {salida[-300:]}"
+    if "ADMIN=False" in salida:
+        return False, "Ese usuario no es administrador del equipo Windows. Usa una cuenta de administrador."
+    paso("Copiando el instalador al equipo...")
+    with tempfile.TemporaryDirectory(prefix="octopus_remoto_") as tmp:
+        z = Path(tmp) / "octopus.zip"
+        z.write_bytes(paquete)
+        os.chmod(z, 0o600)
+        cmd, env = _cmd(["scp", *SSH_OPC, str(z), f"{destino}:{carpeta_scp}/octopus.zip"], False, password)
+        r = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=300)
+        if r.returncode != 0:
+            return False, "No se pudo copiar el instalador: " + _limpiar(r.stderr, password)[-300:]
+    paso("Instalando OCTOPUS en el equipo Windows (2-8 minutos)...")
+    ps = (f"$ProgressPreference='SilentlyContinue'; Expand-Archive -Force '{carpeta_win}\\octopus.zip' '{carpeta_win}\\inst'; "
+          f"& powershell -NoProfile -ExecutionPolicy Bypass -File '{carpeta_win}\\inst\\instalar_windows.ps1' 2>&1 | "
+          f"ForEach-Object {{ \"$_\" }}; $rc=$LASTEXITCODE; Remove-Item -Recurse -Force '{carpeta_win}' -ErrorAction SilentlyContinue; exit $rc")
+    cmd, env = _cmd(["ssh", *SSH_OPC, destino, f'powershell -NoProfile -NonInteractive -Command "{ps}"'], False, password)
+    r = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=1800)
+    salida = _limpiar((r.stdout or "") + "\n" + (r.stderr or ""), password)
+    if r.returncode != 0:
+        lineas = [l for l in salida.splitlines() if l.strip()]
+        return False, "La instalacion en Windows fallo: " + " | ".join(lineas[-4:])[-400:]
+    paso("Instalado. Esperando a que el equipo se conecte...")
+    for _ in range(60):
+        if en_linea():
+            return True, f"{equipo} instalado y conectado."
         time.sleep(2)
     return False, "Se instalo, pero el equipo no se ha conectado al servidor. Revisa que llega a este servidor (puerto 8080)."
 

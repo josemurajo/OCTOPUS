@@ -2,7 +2,12 @@
 """
 OCTOPUS - "Enviar sugerencia o problema": lo que el usuario escribe en el panel llega al soporte de OCTOPUS.
 
-Destinos (todos opcionales; se configuran en el .env del servidor con  sudo bash octopus.sh ajustes):
+Destino principal: el BUZON de OCTOPUS (BUZON_POR_DEFECTO, o SOPORTE_BUZON_URL en el .env). Es un pequeno servicio en
+internet (soporte/buzon, Cloudflare Workers gratis) que recibe lo que envian todos los servidores OCTOPUS y lo reenvia
+al Telegram del soporte. Asi el token del bot NO esta en los servidores de los clientes ni en este codigo publico.
+SOPORTE_BUZON_URL=no  desactiva el envio al buzon (por ejemplo, si una empresa no quiere que salga nada).
+
+Destinos extra (opcionales; en el .env del servidor con  sudo bash octopus.sh ajustes):
   SOPORTE_CORREO           correo del soporte (se envia con el correo de avisos configurado en el panel)
   SOPORTE_TELEGRAM_TOKEN   bot de Telegram del soporte  +  SOPORTE_TELEGRAM_CHAT  chat al que avisar
   SOPORTE_GITHUB_REPO      usuario/repositorio  +  SOPORTE_GITHUB_TOKEN: las SUGERENCIAS (nunca problemas con
@@ -22,6 +27,9 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR / "lib"))
 
+# URL publica del buzon de OCTOPUS (no es secreta). Se rellena cuando el buzon este publicado (ver soporte/buzon).
+BUZON_POR_DEFECTO = ""
+
 GRAVEDADES = {"sugerencia": "Sugerencia o idea", "duda": "Duda", "problema": "Algo no funciona",
               "urgente": "Urgente: no puedo trabajar o no puedo recuperar algo"}
 
@@ -32,19 +40,26 @@ def crear_tabla(conn: sqlite3.Connection) -> None:
         correo_respuesta TEXT, diagnostico TEXT, estado TEXT DEFAULT 'pendiente', destinos TEXT, error TEXT)""")
 
 
+def url_buzon(env: dict) -> str:
+    v = env.get("SOPORTE_BUZON_URL", "").strip()
+    if v.lower() in ("no", "0", "false", "desactivado"):
+        return ""
+    return v or BUZON_POR_DEFECTO
+
+
 def destinos(env: dict) -> dict:
-    return {"correo": env.get("SOPORTE_CORREO", "").strip(),
+    return {"buzon": url_buzon(env), "correo": env.get("SOPORTE_CORREO", "").strip(),
             "telegram": bool(env.get("SOPORTE_TELEGRAM_TOKEN", "").strip() and env.get("SOPORTE_TELEGRAM_CHAT", "").strip()),
             "github": bool(env.get("SOPORTE_GITHUB_REPO", "").strip() and env.get("SOPORTE_GITHUB_TOKEN", "").strip())}
 
 
 def hay_destino(env: dict) -> bool:
     d = destinos(env)
-    return bool(d["correo"] or d["telegram"] or d["github"])
+    return bool(d["buzon"] or d["correo"] or d["telegram"] or d["github"])
 
 
 def _texto(fila: dict, version: str) -> str:
-    t = [f"OCTOPUS {version} - {GRAVEDADES.get(fila['gravedad'], fila['gravedad'])}",
+    t = [f"OCTOPUS {version} - {GRAVEDADES.get(fila['gravedad'], 'Prueba de envío' if fila['gravedad'] == 'prueba' else fila['gravedad'])}",
          f"Fecha: {fila['fecha']}", f"Usuario del panel: {fila['usuario']}"]
     if fila.get("correo_respuesta"):
         t.append(f"Responder a: {fila['correo_respuesta']}")
@@ -59,6 +74,38 @@ def _correo(env: dict, db_file: Path, asunto: str, cuerpo: str) -> str | None:
     from notifications import NotificationManager
     ok, msg = NotificationManager(ConfigManager(str(db_file))).send_email(env["SOPORTE_CORREO"], asunto, cuerpo)
     return None if ok else f"correo: {msg}"
+
+
+def id_servidor() -> str:
+    """Identificador anonimo y fijo de este servidor (para que el soporte sepa que dos mensajes vienen del mismo)."""
+    import secrets
+    f = BASE_DIR / "data" / "servidor_id.txt"
+    try:
+        v = f.read_text(encoding="utf-8").strip()
+        if v:
+            return v
+    except OSError:
+        pass
+    v = "srv-" + secrets.token_hex(4)
+    try:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(v, encoding="utf-8")
+    except OSError:
+        pass
+    return v
+
+
+def _buzon(url: str, fila: dict, version: str) -> str | None:
+    datos = json.dumps({"version": version, "servidor": id_servidor(), "gravedad": fila["gravedad"],
+                        "texto": fila["texto"][:5000], "correo": (fila.get("correo_respuesta") or "")[:200],
+                        "diagnostico": (fila.get("diagnostico") or "")[:12000], "fecha": fila["fecha"]}).encode()
+    req = urllib.request.Request(url.rstrip("/") + "/enviar", data=datos, method="POST",
+                                 headers={"Content-Type": "application/json", "User-Agent": f"octopus/{version}"})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            return None if json.loads(r.read() or b"{}").get("ok") else "buzón: respuesta no válida"
+    except Exception as exc:
+        return f"buzón: {exc.__class__.__name__}"
 
 
 def _telegram(env: dict, cuerpo: str) -> str | None:
@@ -100,7 +147,7 @@ def enviar(env: dict, db_file: Path, sid: int) -> dict:
         return {"ok": False, "detalle": "No existe"}
     fila = dict(fila)
     d = destinos(env)
-    if not (d["correo"] or d["telegram"] or d["github"]):
+    if not (d["buzon"] or d["correo"] or d["telegram"] or d["github"]):
         conn.execute("UPDATE sugerencias SET estado = 'sin_destino', error = ? WHERE id = ?",
                      ("No hay ningun destino de soporte configurado", sid))
         conn.commit()
@@ -111,6 +158,9 @@ def enviar(env: dict, db_file: Path, sid: int) -> dict:
     version = avisos.version_local()
     cuerpo = _texto(fila, version)
     errores, hechos = [], []
+    if d["buzon"]:
+        e = _buzon(d["buzon"], fila, version)
+        (errores if e else hechos).append(e or "buzón")
     if d["correo"]:
         e = _correo(env, db_file, f"[OCTOPUS soporte] {GRAVEDADES.get(fila['gravedad'], '')}: {fila['texto'][:60]}", cuerpo)
         (errores if e else hechos).append(e or "correo")
@@ -138,7 +188,7 @@ def guardar(db_file: Path, usuario: str, gravedad: str, texto: str, correo: str,
     cur = conn.execute("INSERT INTO sugerencias (fecha, usuario, gravedad, texto, correo_respuesta, diagnostico) "
                        "VALUES (?, ?, ?, ?, ?, ?)",
                        (datetime.now().astimezone().isoformat(timespec="seconds"), usuario,
-                        gravedad if gravedad in GRAVEDADES else "problema", texto[:5000], correo[:200], diagnostico))
+                        gravedad if gravedad in GRAVEDADES or gravedad == "prueba" else "problema", texto[:5000], correo[:200], diagnostico))
     conn.commit()
     sid = cur.lastrowid
     conn.close()

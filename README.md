@@ -70,6 +70,14 @@ Después, en el panel: **Equipos → Añadir equipo**.
 
 El laboratorio de pruebas con máquinas virtuales está en la carpeta `maquinas` (al lado de esta).
 
+## Antes de publicar una versión (para que una actualización nunca rompa las copias)
+
+1. Cada cambio que se sube a GitHub pasa solo las pruebas automáticas (agente en Linux, Windows y Mac, instalador
+   del servidor en Mac, almacén con bloqueo por tiempo y sintaxis de todos los scripts). Si algo falla, no se publica.
+2. Antes de cambiar `VERSION`, se pasa la batería del laboratorio (`maquinas/EJECUTAR_PRUEBAS.bat`): tiene que salir
+   «TODO CORRECTO».
+3. Al actualizar un servidor, si la versión nueva no arranca, el instalador vuelve solo a la anterior.
+
 ## Versión
 
 Ver `VERSION`. La versión 2.2 añade: avisos con código, explicación y botón «Solucionar», banderines (pasos de cada

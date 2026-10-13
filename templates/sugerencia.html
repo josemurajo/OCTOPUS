@@ -24,6 +24,14 @@
     y se enviará en cuanto se configure.</p>
   {% endif %}
 </div>
+{% if puede_actuar() %}
+<div class="card">
+  <h2>Comprobar el envío al soporte</h2>
+  <p class="muted small">Manda un mensaje de prueba a {{ 'el buzón de OCTOPUS y los destinos configurados' if configurado else 'los destinos de soporte (todavía no hay ninguno configurado)' }}.</p>
+  <form method="post" action="{{ url_for('sugerencia_prueba') }}" style="margin-top:10px">
+    <button class="btn" type="submit">Enviar una prueba al soporte</button></form>
+</div>
+{% endif %}
 {% if envios %}
 <div class="card">
   <h2>Lo que has enviado</h2>

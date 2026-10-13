@@ -1021,6 +1021,42 @@ def asegurar_repo(cfg: dict) -> dict | None:
     return None
 
 
+ULTIMA_COPIA = STATE_DIR / "ultima_copia.txt"
+HORAS_COPIA_ATRASADA = 26
+
+
+def _apuntar_copia() -> None:
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        ULTIMA_COPIA.write_text(datetime.now().isoformat(timespec="seconds"))
+    except OSError:
+        pass
+
+
+def horas_desde_ultima_copia() -> float | None:
+    try:
+        return (datetime.now() - datetime.fromisoformat(ULTIMA_COPIA.read_text().strip())).total_seconds() / 3600
+    except (OSError, ValueError):
+        return None
+
+
+def copia_atrasada_loop() -> None:
+    """Si el equipo estaba apagado a la hora de la copia diaria (o hubo un corte de luz), la copia se hace sola en
+    cuanto el equipo vuelve a estar encendido, sin esperar al dia siguiente."""
+    time.sleep(300)   # deja arrancar el equipo con calma
+    while True:
+        try:
+            h = horas_desde_ultima_copia()
+            if h is None:
+                _apuntar_copia()          # recien instalado: se cuenta desde ahora (la primera copia la pide el panel)
+            elif h > HORAS_COPIA_ATRASADA and not esta_aislado():
+                log(f"La ultima copia es de hace {int(h)} h (el equipo estuvo apagado): copia atrasada ahora")
+                copia_programada()
+        except Exception as exc:
+            log(f"Copia atrasada: {exc}")
+        time.sleep(1800)
+
+
 def backup_forense(cfg: dict, path=None) -> dict:
     if not _BACKUP_LOCK.acquire(blocking=False):
         return {"status": "error", "message": "Ya hay una copia en curso en este equipo"}
@@ -1062,6 +1098,12 @@ def _backup_forense_pasos(cfg: dict, path, paso) -> dict:
     cmd = [binary, "backup", *targets, "--tag", "octopus-agent", "--host", agent_host(cfg), "--json",
            *opciones_backup(cfg)]
     result = run_cmd(cmd, env=env)
+    if result.returncode not in (0, 3) and "lock" in (result.stderr or "").lower():
+        # una copia anterior se corto (apagon, reinicio...) y dejo el almacen bloqueado: se quitan los bloqueos
+        # viejos (no se borra ninguna copia) y se repite una vez
+        paso("El almacen estaba bloqueado por una copia que se corto: se quita el bloqueo y se repite")
+        run_cmd([binary, "unlock"], env=env, timeout=300)
+        result = run_cmd(cmd, env=env)
     # restic devuelve 3 cuando la copia SE HA HECHO pero algun archivo no se pudo leer (en uso en Windows,
     # protegido por la privacidad de macOS...): es una copia valida, con aviso.
     incompleta = result.returncode == 3
@@ -1079,9 +1121,11 @@ def _backup_forense_pasos(cfg: dict, path, paso) -> dict:
     if incompleta:
         omitidos = [l for l in (result.stderr or "").splitlines() if l.strip()][:20]
         log(f"Backup OK con avisos snapshot={snapshot_id}: {len(omitidos)} archivos no se pudieron leer")
+        _apuntar_copia()
         return {"status": "success", "snapshot_id": snapshot_id, "paths": targets, "host": agent_host(cfg),
                 "aviso": "Algunos archivos no se pudieron leer (en uso o sin permiso)", "omitidos": omitidos}
     log(f"Backup OK snapshot={snapshot_id} rutas={targets}")
+    _apuntar_copia()
     return {"status": "success", "snapshot_id": snapshot_id, "paths": targets, "host": agent_host(cfg)}
 
 
@@ -1343,6 +1387,7 @@ def main() -> None:
     # El puerto local solo escucha en 127.0.0.1: las ordenes del servidor llegan por bucle_ordenes (HTTPS saliente)
     threading.Thread(target=detector_loop, daemon=True).start()
     threading.Thread(target=bucle_ordenes, daemon=True).start()
+    threading.Thread(target=copia_atrasada_loop, daemon=True).start()
     binds = load_config().get("bind_addresses") or ["127.0.0.1"]
 
     def escuchar(addr: str) -> None:
