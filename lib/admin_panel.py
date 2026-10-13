@@ -582,7 +582,6 @@ def _abrir_sesion(user, como):
 
 
 import dosfa as _dosfa
-_dosfa.init(DB_FILE)
 
 
 @app.route('/login/codigo', methods=['GET', 'POST'])
@@ -2346,6 +2345,8 @@ init_db()
 _ordenes.init(DB_FILE)
 _seg.init(DB_FILE)
 _mon.init(DB_FILE)
+import dosfa as _dosfa_ini
+_dosfa_ini.init(DB_FILE)
 
 
 def _agente_autenticado():
