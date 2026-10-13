@@ -284,6 +284,8 @@ def listar_en_servidor(system, snapshot, path):
         npath = node.get("path", "")
         if (npath.rsplit("/", 1)[0] or "/") != folder:
             continue
+        if node.get("name") in SENUELOS:   # los archivos señuelo no se enseñan
+            continue
         if windows and len(npath) > 2 and npath[0] == "/":
             vista = npath[1] + ":" + npath[2:].replace("/", "\\")
         else:
@@ -292,3 +294,60 @@ def listar_en_servidor(system, snapshot, path):
                       "mtime": node.get("mtime"), "path": vista})
     items.sort(key=lambda x: (x["type"] != "dir", (x["name"] or "").lower()))
     return {"status": "success", "path": path, "items": items}
+
+
+SENUELOS = {".octopus_no_tocar.docx", "~octopus_no_tocar.docx"}   # archivos trampa de los agentes (no se enseñan)
+
+
+def buscar_en_servidor(system, texto, exacta=None, max_copias=30, max_rutas=40):
+    """Busca un archivo o carpeta por su nombre (o parte) en las copias de un equipo, directamente en el servidor.
+    Devuelve cada ruta encontrada con sus versiones (de que copia, fecha, tamano), la mas reciente primero.
+    Con exacta=<ruta> solo devuelve esa ruta (para elegir de cuando recuperarla)."""
+    texto = (texto or "").replace("*", "").replace("?", "").strip()
+    if not texto:
+        return {"status": "error", "message": "Escribe el nombre (o parte del nombre) de lo que buscas"}
+    copias, _ = copias_por_equipo()
+    mias = [c for c in copias.get(system["hostname"].lower(), []) if "forense" not in c["tags"]][:max_copias]
+    if not mias:
+        return {"status": "error", "message": "Este equipo todavía no tiene copias"}
+    windows = (system["os_family"] or "").lower() == "windows"
+    restic, env, subprocess = _restic_servidor()
+    cmd = [restic, "find", "--json", "--no-lock", "--ignore-case"]
+    for c in mias:
+        cmd += ["--snapshot", c["id"]]
+    cmd.append(f"*{texto}*")
+    try:
+        r = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=600)
+    except Exception as exc:
+        return {"status": "error", "message": f"No se pudo buscar: {exc}"}
+    if r.returncode != 0 and not (r.stdout or "").strip():
+        return {"status": "error", "message": (r.stderr or "No se pudo buscar")[-300:]}
+    try:
+        bloques = json.loads(r.stdout or "[]") or []
+    except ValueError:
+        bloques = []
+    por_ruta = {}
+    for b in bloques:
+        sid = str(b.get("snapshot", ""))
+        copia = next((c for c in mias if sid.startswith(c["id"])), None)
+        if not copia:
+            continue
+        for m in b.get("matches") or []:
+            npath = m.get("path", "")
+            if npath.rsplit("/", 1)[-1] in SENUELOS:
+                continue
+            if windows and len(npath) > 2 and npath[0] == "/":
+                vista = npath[1] + ":" + npath[2:].replace("/", "\\")
+            else:
+                vista = npath
+            if exacta and vista.rstrip("/\\") != exacta.rstrip("/\\"):
+                continue
+            e = por_ruta.setdefault(vista, {"path": vista, "nombre": vista.replace("\\", "/").rsplit("/", 1)[-1],
+                                            "tipo": m.get("type"), "versiones": []})
+            e["versiones"].append({"copia": copia["id"], "fecha": copia["time"], "tamano": m.get("size", 0),
+                                   "mtime": m.get("mtime"), "etiquetas": copia["tags"]})
+    resultados = list(por_ruta.values())
+    for e in resultados:
+        e["versiones"].sort(key=lambda v: v["fecha"] or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+    resultados.sort(key=lambda e: (e["tipo"] != "file", len(e["path"])))
+    return {"status": "success", "resultados": resultados[:max_rutas], "total": len(resultados)}

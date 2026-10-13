@@ -14,10 +14,12 @@ RAIZ="$(cd "$(dirname "$0")" && pwd)"
 COMPOSE_FILE="$RAIZ/install/docker-compose.yml"
 HOST_ENV="$RAIZ/install/.env"
 
-paso()  { echo; printf '\033[1;36m==> %s\033[0m\n' "$*"; }
-bien()  { printf '    \033[32m%s\033[0m\n' "$*"; }
-aviso() { printf '    \033[33m%s\033[0m\n' "$*"; }
-fallo() { printf '\n\033[1;31mERROR: %s\033[0m\n' "$*"; exit 1; }
+PROGRESO="${OCTOPUS_PROGRESO:-$HOME/Library/Logs/OCTOPUS/instalacion_progreso.txt}"   # banderines: cada paso con la hora (para saber donde se paro)
+marca() { { mkdir -p "$(dirname "$PROGRESO")" && echo "[$(date '+%F %T')] $*" >> "$PROGRESO"; } 2>/dev/null || true; }
+paso() { marca "==> $*"; echo; printf '\033[1;36m==> %s\033[0m\n' "$*"; }
+bien() { marca "OK  $*"; printf '    \033[32m%s\033[0m\n' "$*"; }
+aviso() { marca "..  $*"; printf '    \033[33m%s\033[0m\n' "$*"; }
+fallo() { marca "ERROR $*"; printf '\n\033[1;31mERROR: %s\033[0m\n' "$*"; exit 1; }
 
 [ "$(uname -s)" = "Darwin" ] || fallo "Este instalador es para Mac. En Linux: sudo bash instalar_servidor.sh"
 [ "$(id -u)" -ne 0 ] || fallo "Ejecutalo con tu usuario, sin sudo (Homebrew no funciona como root): bash $0"

@@ -41,6 +41,9 @@
       <span><strong>Actuar automáticamente</strong> — aislar el equipo, guardar una copia forense, restaurar la última copia sana y avisar al usuario.</span></label>
     <label style="font-weight:400; display:flex; gap:10px; margin-bottom:10px"><input type="checkbox" name="aislado" {{ 'checked' if cfg.incident_keep_isolated }}>
       <span><strong>Mantener el equipo aislado</strong> hasta que alguien de seguridad lo revise y pulse «Liberar equipo».</span></label>
+    <label style="font-weight:400; display:flex; gap:10px; margin-bottom:10px"><input type="checkbox" name="senuelos" {{ 'checked' if cfg.senuelos }}>
+      <span><strong>Archivos señuelo</strong> (recomendado) — cada equipo guarda un archivo trampa oculto en sus carpetas protegidas.
+        Nadie lo usa: si cambia, es casi seguro un ataque y se actúa al momento.</span></label>
     <label style="font-weight:400; display:flex; gap:10px; margin-bottom:14px"><input type="checkbox" name="terminal" {{ 'checked' if cfg.sandbox_terminal }}>
       <span><strong>Permitir comandos en la sala de análisis</strong> (solo administradores; todo queda registrado).</span></label>
     <div class="field"><label for="contacto">A quién debe llamar el usuario afectado</label>
@@ -88,6 +91,8 @@
   {% else %}
   <p class="small muted">Todavía no se ha hecho ningún mantenimiento (se hace cada noche a las 03:30).</p>
   {% endif %}
+  <p style="margin-top:12px" class="small"><a class="btn btn-small" href="{{ url_for('descargar_diagnostico') }}">Descargar diagnóstico</a>
+    <span class="muted">Un .zip con los pasos y el estado del servidor para el soporte (sin contraseñas, claves ni nombres de archivos).</span></p>
   <h3 style="margin-top:18px" id="kit">Kit de recuperación</h3>
   <p class="small">Contiene las claves sin las que <strong>nadie</strong> podría recuperar las copias si se pierde este servidor.
     Descárgalo una vez y guárdalo fuera de aquí (gestor de contraseñas o papel en un lugar seguro).
@@ -110,7 +115,8 @@
   <ul class="lista-opciones">
     <li><a href="{{ url_for('config_wazuh') }}"><strong>Wazuh (SIEM)</strong></a><p class="hint">Conexión con Wazuh, si lo usas.</p></li>
     <li><a href="{{ url_for('deploy') }}"><strong>Red y puertos</strong></a><p class="hint">Direcciones y puertos del servidor.</p></li>
-    <li><a href="{{ url_for('audit') }}"><strong>Registro de actividad</strong></a><p class="hint">Quién ha hecho qué y cuándo.</p></li>
+    <li><a href="{{ url_for('audit') }}"><strong>Registro de actividad</strong></a><p class="hint">Quién ha hecho qué y cuándo (firmado: si alguien lo toca, se nota).</p></li>
+    <li><a href="{{ url_for('sugerencia') }}"><strong>Enviar sugerencia o problema</strong></a><p class="hint">Escribe al soporte de OCTOPUS.</p></li>
   </ul>
 </div>
 {% endif %}

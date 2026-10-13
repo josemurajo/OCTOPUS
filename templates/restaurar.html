@@ -3,6 +3,12 @@
 {% block content %}
 <h1>Recuperar archivos</h1>
 <p class="lead">¿Has borrado o estropeado algo? Elige el equipo y te enseñamos sus copias para que recuperes lo que necesites.</p>
+<div class="card hero ok" style="margin-bottom:20px">
+  <div class="hero-icon" aria-hidden="true">?</div>
+  <div style="flex:1"><h2 style="margin:0">¿No sabes dónde estaba?</h2>
+    <p class="muted">Escribe su nombre (o parte) y te decimos en qué copias está y de cuándo.</p></div>
+  <a class="btn btn-primary btn-big" href="{{ url_for('asistente_recuperar') }}">Buscar y recuperar</a>
+</div>
 <div class="grid">
   {% for e in lista %}
   <div class="card device" style="margin:0">

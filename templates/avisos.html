@@ -1,12 +1,10 @@
 {% extends "base.html" %}
+{% from "_aviso.html" import aviso %}
 {% block title %}Avisos{% endblock %}
 {% block content %}
 <h1>Avisos</h1>
-<p class="lead">Solo te avisamos de lo que importa, y siempre te decimos qué hacer.</p>
-{% for a in avisos %}
-  <div class="notice {{ a.nivel }}"><strong>{{ a.titulo }}</strong>{{ a.que_hacer }}
-    {% if a.id %}<a href="{{ url_for('equipo', system_id=a.id) }}" style="margin-left:6px">Ver equipo →</a>
-    {% elif a.enlace %}<a href="{{ a.enlace }}" style="margin-left:6px">Ir →</a>{% endif %}</div>
+<p class="lead">Solo te avisamos de lo que importa, y siempre te decimos qué hacer. Si se puede arreglar solo, pulsa «Solucionar».</p>
+{% for a in avisos %}{{ aviso(a, url_for('avisos')) }}
 {% else %}
   <div class="card hero ok"><div class="hero-icon">✓</div><div><h1>No hay nada que revisar</h1><p class="muted">Todos los equipos están funcionando bien.</p></div></div>
 {% endfor %}

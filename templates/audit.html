@@ -6,6 +6,9 @@
 <h1>Logs de Auditoría</h1>
 <p style="color: #aaa; margin-bottom: 2rem;">Historial de acciones realizadas en el sistema</p>
 
+<div class="notice {{ 'ok' if integro else 'problema' }}"><strong>{{ 'Registro íntegro' if integro else 'ATENCIÓN: el registro se ha manipulado' }}</strong>
+  {{ integridad }} Cada línea va firmada y encadenada con la anterior: si alguien borra o cambia una línea por detrás, se nota aquí.
+  {% if not integro %}Avisa a seguridad: alguien con acceso al servidor ha tocado el registro.{% endif %}</div>
 <div class="card">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
         <h2>Actividad Reciente</h2>

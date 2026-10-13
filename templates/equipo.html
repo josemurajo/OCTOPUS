@@ -84,6 +84,19 @@
   {% else %}<p class="muted">Todavía no hay copias de este equipo.</p>{% endif %}
 </div>
 
+<div class="card">
+  <h2>Últimos pasos</h2>
+  <p class="muted small" style="margin-bottom:8px">Lo último que ha pasado con este equipo (copias, recuperaciones, pruebas, avisos), paso a paso.</p>
+  {% if pasos %}
+  <ul class="pasos-lista">
+    {% for p in pasos %}
+    <li><span class="cuando">{{ p.t | hace }}</span>
+      <span class="{{ 'error' if p.nivel == 'error' else ('ok' if p.nivel == 'ok' else '') }}">{{ p.texto }}{% if p.codigo %} <span class="codigo">{{ p.codigo }}</span>{% endif %}</span></li>
+    {% endfor %}
+  </ul>
+  {% else %}<p class="muted small">Todavía no hay pasos registrados.</p>{% endif %}
+</div>
+
 {% if puede_actuar() %}
 <div class="card">
   <h2>Opciones</h2>

@@ -176,8 +176,10 @@ def enviar(env: dict, mes: str) -> dict:
         t = texto(d)
         cfg = cm.get_config()
         enviado = False
-        if cfg.get("email_notifications") and cfg.get("alert_email"):
-            enviado, _ = NotificationManager(cm).send_email(cfg["alert_email"], f"[OCTOPUS] Informe de {d['nombre_mes']}", t)
+        nm = NotificationManager(cm)
+        para = [c for c in nm.destinatarios("informe", cfg) if c]
+        if cfg.get("email_notifications") and para:
+            enviado = all(nm.send_email(c, f"[OCTOPUS] Informe de {d['nombre_mes']}", t)[0] for c in para)
         r = d["resumen"]
         TelegramIntegration(cm).send_alert("medium", f"Informe de {d['nombre_mes']}: {r['equipos']} equipos, "
                                                      f"{r['copias']} copias, {r['cobertura']} % de dias con copia, "

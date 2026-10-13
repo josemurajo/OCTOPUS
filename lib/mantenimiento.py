@@ -329,8 +329,9 @@ def vigilar(env: dict) -> dict:
     if sin_copia:
         avisos.append(f"Equipos sin copia reciente: {', '.join(sin_copia)}. Que hacer: comprueba que estan "
                       f"encendidos y conectados; en el panel, entra en el equipo y pulsa 'Hacer copia ahora'")
+    disco_lleno = uso is not None and uso >= float(env.get("ALERTA_DISCO_PORCENTAJE", "85"))
     return {"ok": not avisos, "detalle": "; ".join(avisos) or "Todo en orden", "uso_disco": uso,
-            "sin_copia": sin_copia}
+            "sin_copia": sin_copia, "disco_lleno": disco_lleno}
 
 
 # ---------------------------------------------------------------- prueba de recuperacion
@@ -501,8 +502,8 @@ def avisar(env: dict, texto: str) -> None:
         from notifications import NotificationManager
         from telegram_integration import TelegramIntegration
         cm = ConfigManager(str(db_path(env)))
-        NotificationManager(cm).send_alert("backup_failed", texto)
-        TelegramIntegration(cm).send_alert("backup_failed", texto)
+        NotificationManager(cm).send_alert("mantenimiento", texto)
+        TelegramIntegration(cm).send_alert("mantenimiento", texto)
     except Exception as exc:
         log(f"No se pudo enviar el aviso: {exc}")
 
@@ -538,16 +539,35 @@ def main(argv: list[str]) -> int:
     if any(t not in tareas for t in elegidas):
         print(__doc__)
         return 2
+    import avisos as _av
+    import banderines as _b
     resultados = {}
+    _b.marcar("mantenimiento", f"Empieza el mantenimiento ({cmd})")
     for t in elegidas:
         log(f"{NOMBRES[t]}...")
+        _b.marcar("mantenimiento", f"{NOMBRES[t]}...")
         inicio = time.time()
         try:
             resultados[t] = tareas[t](env)
         except Exception as exc:  # una tarea no debe impedir las demas
             resultados[t] = {"ok": False, "detalle": f"error inesperado: {exc}"}
         resultados[t]["segundos"] = round(time.time() - inicio)
+        if not resultados[t]["ok"]:
+            resultados[t]["codigo"] = _av.codigo_mantenimiento(t, resultados[t])
         log(f"  {'OK ' if resultados[t]['ok'] else 'MAL'} {resultados[t]['detalle']}")
+        _b.marcar("mantenimiento", f"{NOMBRES[t]}: {resultados[t]['detalle']} ({resultados[t]['segundos']} s)",
+                  codigo=resultados[t].get("codigo"), nivel="ok" if resultados[t]["ok"] else "error")
+    if cmd == "todo":
+        act = _av.comprobar_actualizacion()
+        _b.marcar("mantenimiento", f"Actualizaciones: {act.get('detalle')}",
+                  codigo="OCT-ACT-01" if act.get("hay_nueva") else None)
+        try:
+            import sugerencias
+            r = sugerencias.reenviar_pendientes(env)
+            if r.get("intentadas"):
+                _b.marcar("mantenimiento", f"Sugerencias pendientes: {r['detalle']}")
+        except Exception as exc:
+            _b.marcar("mantenimiento", f"Sugerencias pendientes: no se pudieron reenviar ({exc})", nivel="aviso")
     if cmd == "todo" and datetime.now().day == 1:
         try:
             import informe
@@ -557,10 +577,20 @@ def main(argv: list[str]) -> int:
         log(f"  Informe mensual: {resultados['informe']['detalle']}")
     if cmd == "todo":
         guardar_estado(resultados)
-    fallos = [f"{NOMBRES[k]}: {v['detalle']}" + (f"\n  Que hacer: {QUE_HACER[k]}" if k in QUE_HACER else "")
-              for k, v in resultados.items() if not v.get("ok")]
+    fallos = []
+    for k, v in resultados.items():
+        if v.get("ok"):
+            continue
+        if v.get("codigo"):
+            fallos.append(_av.texto(v["codigo"], detalle=str(v.get("detalle", ""))[:300]))
+        elif k != "vigilar" or not v.get("sin_copia"):
+            fallos.append(f"{NOMBRES[k]}: {v['detalle']}" + (f"\n  Que hacer: {QUE_HACER[k]}" if k in QUE_HACER else ""))
+        if k == "vigilar" and v.get("sin_copia"):
+            fallos.append(_av.texto("OCT-EQ-03", equipo=", ".join(v["sin_copia"]), detalle="hace demasiado"))
+    _b.marcar("mantenimiento", "Mantenimiento terminado " + ("con avisos" if fallos else "sin problemas"),
+              nivel="aviso" if fallos else "ok")
     if fallos:
-        avisar(env, "Mantenimiento del servidor OCTOPUS:\n" + "\n".join(fallos))
+        avisar(env, "Mantenimiento del servidor OCTOPUS:\n\n" + "\n\n".join(fallos))
     return 0 if not fallos else 1
 
 

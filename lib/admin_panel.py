@@ -42,7 +42,10 @@ from telegram_integration import TelegramIntegration
 from alert_manager import AlertManager
 from config_presets import ConfigPresets
 import agentes
+import avisos as _av
+import banderines as _ban
 from datetime import timezone
+from pathlib import Path
 
 app = Flask(__name__,
             template_folder=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'templates'))
@@ -325,10 +328,14 @@ def init_db():
         ('systems', 'tunnel_ip', 'TEXT'),
         ('systems', 'notes', 'TEXT'),
         ('systems', 'agent_info', 'TEXT'),
+        ('audit_logs', 'hash', 'TEXT'),
+        ('audit_logs', 'hash_anterior', 'TEXT'),
     ):
         cols = [r[1] for r in cursor.execute(f'PRAGMA table_info({table})').fetchall()]
         if col not in cols:
             cursor.execute(f'ALTER TABLE {table} ADD COLUMN {col} {ddl}')
+    import sugerencias as _sug_db
+    _sug_db.crear_tabla(conn)
 
     conn.commit()
     conn.close()
@@ -339,16 +346,49 @@ def get_db_connection():
     conn.row_factory = sqlite3.Row
     return conn
 
+def _hash_registro(anterior, rid, user_id, action, details, ts, ip):
+    base = '|'.join('' if x is None else str(x) for x in (anterior, rid, user_id, action, details, ts, ip))
+    return hashlib.sha256(base.encode('utf-8')).hexdigest()
+
+
 def log_audit(user_id, action, details="", ip_address=""):
-    """Registra acción en logs de auditoría"""
+    """Registra la acción en el registro de actividad. Cada línea va encadenada con la anterior (huella SHA-256):
+    si alguien borra o cambia una línea por detrás, la cadena se rompe y el panel lo avisa."""
     conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('''
-        INSERT INTO audit_logs (user_id, action, details, ip_address)
-        VALUES (?, ?, ?, ?)
-    ''', (user_id, action, details, ip_address))
-    conn.commit()
+    try:
+        conn.execute('BEGIN IMMEDIATE')
+        prev = conn.execute('SELECT hash FROM audit_logs ORDER BY id DESC LIMIT 1').fetchone()
+        anterior = prev['hash'] if prev and prev['hash'] else ''
+        ts = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+        cur = conn.execute('INSERT INTO audit_logs (user_id, action, details, ip_address, timestamp, hash_anterior) '
+                           'VALUES (?, ?, ?, ?, ?, ?)', (user_id, action, details, ip_address, ts, anterior))
+        conn.execute('UPDATE audit_logs SET hash = ? WHERE id = ?',
+                     (_hash_registro(anterior, cur.lastrowid, user_id, action, details, ts, ip_address), cur.lastrowid))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def verificar_registro():
+    """(correcto, explicación) tras recorrer la cadena del registro de actividad."""
+    conn = get_db_connection()
+    filas = conn.execute('SELECT id, user_id, action, details, timestamp, ip_address, hash, hash_anterior '
+                         'FROM audit_logs ORDER BY id').fetchall()
     conn.close()
+    previo, empezado, n = None, False, 0
+    for f in filas:
+        if not f['hash']:
+            if empezado:
+                return False, (f'La línea {f["id"]} ({f["action"]}) se añadió sin firma: alguien escribió directamente '
+                               f'en la base de datos.')
+            continue  # lineas de antes de esta version (sin firma)
+        if empezado and (f['hash_anterior'] or '') != previo:
+            return False, f'Se ha borrado o cambiado algo justo antes de la línea {f["id"]} ({f["action"]}).'
+        if _hash_registro(f['hash_anterior'] or '', f['id'], f['user_id'], f['action'], f['details'],
+                          f['timestamp'], f['ip_address']) != f['hash']:
+            return False, f'La línea {f["id"]} ({f["action"]}) se ha modificado después de escribirse.'
+        previo, empezado, n = f['hash'], True, n + 1
+    return True, (f'{n} líneas comprobadas: ninguna se ha borrado ni cambiado.' if n else 'Aún no hay líneas firmadas.')
 
 # Decoradores de autenticación
 def login_required(f):
@@ -787,45 +827,44 @@ def config_reset(key):
 @login_required
 @role_required('admin', 'supremo')
 def config_notifications():
-    """Configuración de notificaciones"""
+    """Avisos por correo: servidor de correo (SMTP), a quién y qué avisos, y quién recibe cada tipo."""
     if request.method == 'POST':
-        # Configuración SMTP
-        smtp_enabled = request.form.get('smtp_enabled') == 'true'
-        smtp_server = request.form.get('smtp_server', 'smtp.gmail.com')
-        smtp_port = int(request.form.get('smtp_port', 587))
-        smtp_username = request.form.get('smtp_username', '')
-        smtp_password = request.form.get('smtp_password', '')
-        smtp_from = request.form.get('smtp_from', '')
-        smtp_use_tls = request.form.get('smtp_use_tls') == 'true'
-        
-        # Configuración de alertas
-        email_notifications = request.form.get('email_notifications') == 'true'
-        alert_email = request.form.get('alert_email', '')
-        notification_levels = request.form.getlist('notification_levels[]')
-        
-        # Guardar configuración SMTP
-        config_manager.set_config('smtp_enabled', smtp_enabled, session['user_id'])
-        config_manager.set_config('smtp_server', smtp_server, session['user_id'])
-        config_manager.set_config('smtp_port', smtp_port, session['user_id'])
-        config_manager.set_config('smtp_username', smtp_username, session['user_id'])
-        config_manager.set_config('smtp_password', smtp_password, session['user_id'])
-        config_manager.set_config('smtp_from', smtp_from, session['user_id'])
-        config_manager.set_config('smtp_use_tls', smtp_use_tls, session['user_id'])
-        
-        # Guardar configuración de alertas
-        config_manager.set_config('email_notifications', email_notifications, session['user_id'])
-        config_manager.set_config('alert_email', alert_email, session['user_id'])
-        config_manager.set_config('notification_levels', notification_levels, session['user_id'])
-        
-        log_audit(session['user_id'], 'CONFIG_NOTIFICATIONS_UPDATE', 'Updated SMTP and alert configuration', request.remote_addr)
-        flash('Configuración de notificaciones actualizada', 'success')
-        
+        uid = session['user_id']
+        seccion = request.form.get('seccion', 'alertas')
+        if seccion == 'smtp':
+            config_manager.set_config('smtp_enabled', _marcado('smtp_enabled'), uid)
+            config_manager.set_config('smtp_server', (request.form.get('smtp_server') or 'smtp.gmail.com').strip(), uid)
+            try:
+                puerto = int(request.form.get('smtp_port') or 587)
+            except ValueError:
+                puerto = 587
+            config_manager.set_config('smtp_port', puerto, uid)
+            config_manager.set_config('smtp_username', (request.form.get('smtp_username') or '').strip(), uid)
+            if request.form.get('smtp_password'):   # vacío = se deja la que había (no se enseña nunca)
+                config_manager.set_config('smtp_password', request.form['smtp_password'], uid)
+            config_manager.set_config('smtp_from', (request.form.get('smtp_from') or '').strip(), uid)
+            config_manager.set_config('smtp_use_tls', _marcado('smtp_use_tls'), uid)
+            log_audit(uid, 'CONFIG_NOTIFICATIONS_UPDATE', 'Servidor de correo (SMTP)', request.remote_addr)
+        else:
+            config_manager.set_config('email_notifications', _marcado('email_notifications'), uid)
+            config_manager.set_config('alert_email', (request.form.get('alert_email') or '').strip(), uid)
+            config_manager.set_config('notification_levels', request.form.getlist('notification_levels[]'), uid)
+            por_tipo = {cat: (request.form.get(f'dest_{cat}') or '').strip()[:500]
+                        for cat in NotificationManager.NOMBRES_CATEGORIAS}
+            config_manager.set_config('avisos_destinatarios', json.dumps(por_tipo, ensure_ascii=False), uid)
+            log_audit(uid, 'CONFIG_NOTIFICATIONS_UPDATE', 'Avisos por correo y destinatarios', request.remote_addr)
+        flash('Guardado.', 'success')
         return redirect(url_for('config_notifications'))
-    
-    # GET: mostrar configuración actual
     config = config_manager.get_config()
-    
-    return render_template('config_notifications.html', config=config)
+    por_tipo = config.get('avisos_destinatarios') or {}
+    if isinstance(por_tipo, str):
+        try:
+            por_tipo = json.loads(por_tipo or '{}')
+        except ValueError:
+            por_tipo = {}
+    return render_template('config_notifications.html', config=config, por_tipo=por_tipo,
+                           categorias=NotificationManager.NOMBRES_CATEGORIAS,
+                           hay_password=bool(config.get('smtp_password')))
 
 @app.route('/test_notification')
 @login_required
@@ -998,8 +1037,8 @@ def wazuh_critical():
 def config_telegram():
     """Configuración de Telegram"""
     if request.method == 'POST':
-        telegram_enabled = request.form.get('telegram_enabled') == 'true'
-        telegram_bot_token = request.form.get('telegram_bot_token', '')
+        telegram_enabled = _marcado('telegram_enabled')
+        telegram_bot_token = (request.form.get('telegram_bot_token') or '').strip() or config_manager.get_config('telegram_bot_token') or ''
         telegram_chat_id = request.form.get('telegram_chat_id', '')
         telegram_notification_levels = request.form.getlist('telegram_notification_levels[]')
         
@@ -1013,8 +1052,9 @@ def config_telegram():
         
         return redirect(url_for('config_telegram'))
     
-    config = config_manager.get_config()
-    
+    config = dict(config_manager.get_config())
+    config['hay_token'] = bool(config.get('telegram_bot_token'))
+    config['telegram_bot_token'] = ''   # el token no se vuelve a enseñar en la página
     return render_template('config_telegram.html', config=config)
 
 @app.route('/test_telegram')
@@ -1119,8 +1159,8 @@ def audit():
     ''').fetchall()
     
     conn.close()
-    
-    return render_template('audit.html', logs=logs)
+    integro, integridad = verificar_registro()
+    return render_template('audit.html', logs=logs, integro=integro, integridad=integridad)
 
 @app.route('/audit/clear')
 @login_required
@@ -1137,7 +1177,7 @@ def clear_audit():
     conn.commit()
     conn.close()
     
-    log_audit(session['user_id'], 'AUDIT_CLEAR', 'Cleared old audit logs', request.remote_addr)
+    log_audit(session['user_id'], 'AUDIT_CLEAR', f'Borradas las líneas de antes del {cutoff_date:%d/%m/%Y}', request.remote_addr)
     flash('Logs antiguos eliminados (mantenidos últimos 30 días)', 'success')
     
     return redirect(url_for('audit'))
@@ -1403,64 +1443,228 @@ def _equipos_con_estado(force=False):
     return lista
 
 
+SOLUCIONES_FILE = Path(BASE_DIR) / 'data' / 'soluciones.json'
+
+
+def _leer_soluciones():
+    try:
+        return json.loads(SOLUCIONES_FILE.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+
+
+def _guardar_solucion(codigo, sid, estado, detalle):
+    """Último intento de «Solucionar» de cada aviso (se enseña debajo del aviso)."""
+    datos = _leer_soluciones()
+    datos[f'{codigo}:{sid or ""}'] = {'estado': estado, 'detalle': str(detalle)[:400],
+                                       'fecha': datetime.now().astimezone().isoformat(timespec='seconds')}
+    try:
+        SOLUCIONES_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = SOLUCIONES_FILE.with_suffix('.tmp')
+        tmp.write_text(json.dumps(datos, ensure_ascii=False), encoding='utf-8')
+        tmp.replace(SOLUCIONES_FILE)
+    except OSError:
+        pass
+
+
+def _aviso(codigo, equipo=None, sid=None, soluciones=None, **datos):
+    """Aviso del catálogo, rellenado para este caso (qué pasa, por qué importa, pasos y botón Solucionar)."""
+    a = _av.ficha(codigo, equipo=equipo, **datos)
+    a.update(equipo=equipo, id=sid)
+    if a.get('enlace'):
+        ruta, _, ancla = a['enlace'].partition('#')
+        a['enlace'] = url_for(ruta) + ('#' + ancla if ancla else '')
+    a['ultimo_intento'] = (soluciones or {}).get(f'{codigo}:{sid or ""}')
+    # para las pantallas que solo enseñan un texto corto
+    a['que_hacer'] = ' '.join(a['pasos'][:2])
+    return a
+
+
 def _avisos(lista):
-    """Avisos en lenguaje claro: qué pasa y qué hacer."""
+    """Avisos en lenguaje claro, con código, qué pasa, por qué importa, qué hacer y botón «Solucionar»."""
     import mantenimiento as _mant
     avisos = []
     pruebas = _mant.leer_pruebas()
+    sol = _leer_soluciones()
     for e in lista:
         nombre = e['sys']['hostname']
         est = e['est']
         sid = e['sys']['id']
         if est['nivel'] == 'problema':
-            avisos.append({'nivel': 'problema', 'equipo': nombre, 'id': sid,
-                           'titulo': f'No hay conexión con {nombre}',
-                           'que_hacer': 'Comprueba que el equipo está encendido y conectado a la red. '
-                                        'Mientras siga así no se hacen copias de este equipo.'})
+            avisos.append(_aviso('OCT-EQ-01', nombre, sid, sol))
         elif est['texto'] == 'Aún sin copias':
-            avisos.append({'nivel': 'atencion', 'equipo': nombre, 'id': sid,
-                           'titulo': f'{nombre} todavía no tiene ninguna copia',
-                           'que_hacer': 'Entra en el equipo y pulsa «Hacer copia ahora».'})
+            avisos.append(_aviso('OCT-EQ-02', nombre, sid, sol))
         elif est['texto'] == 'Copia antigua':
-            avisos.append({'nivel': 'atencion', 'equipo': nombre, 'id': sid,
-                           'titulo': f'La última copia de {nombre} es de {_hace(est["ultima"])}',
-                           'que_hacer': 'Las copias se hacen cada día. Si el equipo estuvo apagado es normal; '
-                                        'si no, haz una copia ahora.'})
+            avisos.append(_aviso('OCT-EQ-03', nombre, sid, sol, detalle=_hace(est['ultima'])))
         for t in e['trabajos']:
             if t['estado'] == 'error' and t.get('tipo', 'copia') == 'copia':
-                avisos.append({'nivel': 'problema', 'equipo': nombre, 'id': sid,
-                               'titulo': f'La última copia de {nombre} falló',
-                               'que_hacer': f'Motivo: {t["mensaje"]}. Vuelve a intentarlo; si se repite, revisa el equipo.'})
+                avisos.append(_aviso('OCT-EQ-04', nombre, sid, sol, detalle=str(t['mensaje'])[:300]))
         p = pruebas.get(nombre.lower())
         if p and not p.get('ok'):
-            avisos.append({'nivel': 'problema', 'equipo': nombre, 'id': sid,
-                           'titulo': f'La prueba de recuperación de {nombre} falló',
-                           'que_hacer': f'{p.get("detalle", "")}. Haz una copia nueva de este equipo y pulsa '
-                                        '«Probar recuperación» en su ficha. Si vuelve a fallar, avisa al técnico.'})
+            avisos.append(_aviso('OCT-EQ-05', nombre, sid, sol, detalle=p.get('detalle', '')))
         if est['copias'] and _inc.marcar_copias(sid, est['copias'][:1])[0]['sospechosa']:
-            avisos.append({'nivel': 'atencion', 'equipo': nombre, 'id': sid,
-                           'titulo': f'La última copia de {nombre} se hizo durante un ataque',
-                           'que_hacer': 'Si tienes que recuperar algo, usa una copia limpia (en la ficha del equipo '
-                                        'se ve cuál es). Cuando el equipo esté limpio, haz una copia nueva.'})
+            avisos.append(_aviso('OCT-EQ-06', nombre, sid, sol))
     # Avisos generales (no de un equipo concreto): id=None
     if lista:
         mant = _mant.leer_estado()
         for k, r in (mant.get('resultados') or {}).items():
-            if not r.get('ok') and k in _mant.QUE_HACER:
-                avisos.append({'nivel': 'problema', 'equipo': None, 'id': None,
-                               'titulo': f'Mantenimiento del servidor: {_mant.NOMBRES.get(k, k)}',
-                               'que_hacer': f'{r.get("detalle", "")[:300]}. Qué hacer: {_mant.QUE_HACER[k]}'})
+            if r.get('ok'):
+                continue
+            codigo = r.get('codigo') or _av.codigo_mantenimiento(k, r)
+            if codigo:
+                avisos.append(_aviso(codigo, None, None, sol, detalle=str(r.get('detalle', ''))[:300]))
+        atraso = _av.mantenimiento_atrasado(mant, Path(DB_FILE))
+        if atraso:
+            avisos.append(_aviso('OCT-SRV-02', None, None, sol, detalle=atraso))
+        dias = _av.caducidad_certificado()
+        if dias is not None and dias < 30:
+            avisos.append(_aviso('OCT-CERT-01', None, None, sol, detalle=f'quedan {dias} días'))
+        act = _av.leer_actualizacion()
+        if act.get('hay_nueva'):
+            avisos.append(_aviso('OCT-ACT-01', None, None, sol, detalle=act.get('remota', '')))
         try:
             with get_db_connection() as c:
                 kit_bajado = c.execute("SELECT 1 FROM audit_logs WHERE action = 'RECOVERY_KIT' LIMIT 1").fetchone()
         except sqlite3.Error:
             kit_bajado = True
         if not kit_bajado:
-            avisos.append({'nivel': 'atencion', 'equipo': None, 'id': None, 'enlace': url_for('ajustes') + '#kit',
-                           'titulo': 'Todavía no has descargado el kit de recuperación',
-                           'que_hacer': 'Sin él, si se pierde este servidor nadie podría abrir las copias. Descárgalo en '
-                                        'Ajustes y guárdalo fuera del servidor (pendrive, gestor de contraseñas o papel).'})
+            avisos.append(_aviso('OCT-KIT-01', None, None, sol))
+        try:
+            import sugerencias as _sug
+            if _sug.pendientes(Path(DB_FILE)) and _sug.hay_destino(_mant.leer_env()):
+                avisos.append(_aviso('OCT-SUG-01', None, None, sol))
+        except Exception:
+            pass
+    # lo grave primero
+    avisos.sort(key=lambda a: 0 if a['nivel'] == 'problema' else 1)
     return avisos
+
+
+@app.route('/avisos/solucionar', methods=['POST'])
+@login_required
+def avisos_solucionar():
+    """Botón «Solucionar» de un aviso: hace sola la solución cuando se puede."""
+    codigo = request.form.get('codigo', '')
+    sid = request.form.get('system_id', type=int)
+    volver = request.form.get('volver', '')
+    if not volver.startswith('/') or volver.startswith('//'):
+        volver = url_for('avisos')
+    if not puede_actuar():
+        flash('Tu usuario no tiene permiso para hacer cambios.', 'error')
+        return redirect(volver)
+    accion = (_av.CATALOGO.get(codigo) or {}).get('accion')
+    if not accion:
+        flash('Este aviso no se puede arreglar solo: sigue los pasos que indica.', 'error')
+        return redirect(volver)
+    row = _get_system(sid) if sid else None
+    equipo = row['hostname'] if row else None
+    usuario = session.get('username', '?')
+    log_audit(session['user_id'], 'AVISO_SOLUCIONAR', f'{codigo} ({accion}) {equipo or ""}'.strip(), request.remote_addr)
+    _ban.marcar('avisos', f'{usuario} pulsa Solucionar: {accion}', equipo=equipo, codigo=codigo)
+
+    if accion in ('copia_equipo', 'prueba_equipo'):
+        if not row:
+            flash('Ese equipo ya no existe.', 'error')
+            return redirect(volver)
+        uid = session['user_id']
+
+        def _fin(s_id, ok, resp, _row=row, _prueba=(accion == 'prueba_equipo')):
+            _copia_terminada(s_id, ok, resp)
+            _guardar_solucion(codigo, s_id, 'ok' if ok else 'error',
+                              ('Copia hecha' + ('; repitiendo la prueba de recuperación' if _prueba else '')) if ok
+                              else f'La copia volvió a fallar: {str(resp.get("message", ""))[:200]}')
+            if ok and _prueba:
+                _lanzar_prueba(_row, uid)
+        agentes.lanzar_copia(row, on_done=_fin)
+        _guardar_solucion(codigo, sid, 'en_curso', 'Copia en marcha...')
+        flash(f'Copia de {row["hostname"]} en marcha' + (' (después se repite la prueba)' if accion == 'prueba_equipo'
+              else '') + '. Cuando termine bien, el aviso desaparecerá solo.', 'success')
+        return redirect(volver)
+
+    if accion == 'reenviar_sugerencias':
+        import sugerencias as _sug
+        import mantenimiento as _m2
+        r = _sug.reenviar_pendientes(_m2.leer_env(), Path(DB_FILE))
+        _guardar_solucion(codigo, None, 'ok' if r.get('ok') else 'error', r['detalle'])
+        flash(r['detalle'], 'success' if r.get('ok') else 'error')
+        return redirect(volver)
+
+    fn = _av.ACCIONES_SERVIDOR.get(accion)
+    if not fn:
+        flash('Acción desconocida.', 'error')
+        return redirect(volver)
+    if accion in ('mantenimiento_ahora', 'comprobar_actualizacion', 'renovar_certificado'):
+        try:
+            r = fn()
+        except Exception as exc:
+            r = {'ok': False, 'detalle': f'Error inesperado: {exc}'}
+        _guardar_solucion(codigo, None, 'ok' if r.get('ok') else ('en_curso' if r.get('en_marcha') else 'error'),
+                          r['detalle'])
+        _ban.marcar('avisos', f'Solucionar {accion}: {r["detalle"]}', codigo=codigo,
+                    nivel='ok' if r.get('ok') else 'error')
+        flash(r['detalle'], 'success' if r.get('ok') else 'error')
+        return redirect(volver)
+
+    _guardar_solucion(codigo, None, 'en_curso', 'Arreglando... (puede tardar unos minutos)')
+
+    def _run():
+        try:
+            r = fn()
+        except Exception as exc:
+            r = {'ok': False, 'detalle': f'Error inesperado: {exc}'}
+        _guardar_solucion(codigo, None, 'ok' if r.get('ok') else 'error', r.get('detalle', ''))
+        _ban.marcar('avisos', f'Solucionar {accion}: {r.get("detalle", "")}', codigo=codigo,
+                    nivel='ok' if r.get('ok') else 'error')
+        if r.get('ok'):  # el aviso desaparece: se apunta en el estado del mantenimiento que ya está arreglado
+            try:
+                import mantenimiento as _m3
+                est = _m3.leer_estado()
+                tareas = {'desbloquear_almacen': ('verificar', 'retencion'), 'reparar_almacen': ('verificar',),
+                          'limpiar_copias': ('retencion',), 'copia_servidor': ('autocopia',)}.get(accion, ())
+                cambiado = False
+                for t in tareas:
+                    if t in (est.get('resultados') or {}):
+                        est['resultados'][t].update(ok=True, codigo=None,
+                                                    detalle=f'Solucionado desde el panel: {r.get("detalle", "")}'[:300])
+                        cambiado = True
+                if accion == 'limpiar_copias' and 'vigilar' in (est.get('resultados') or {}):
+                    est['resultados']['vigilar']['disco_lleno'] = False
+                    cambiado = True
+                if cambiado:
+                    _m3.guardar_estado(est['resultados'])
+            except Exception:
+                pass
+    threading.Thread(target=_run, daemon=True).start()
+    flash('Arreglando... puede tardar unos minutos. El resultado aparecerá debajo del aviso.', 'success')
+    return redirect(volver)
+
+
+def _semaforo_321(lista):
+    """Regla de oro de las copias: 3 copias de los datos, en 2 soportes distintos, 1 fuera de la oficina."""
+    import mantenimiento as _mant
+    env = _mant.leer_env()
+    auto = (_mant.leer_estado().get('resultados') or {}).get('autocopia') or {}
+    sin_copia = [e['sys']['hostname'] for e in lista if not e['est']['copias']]
+    todos = bool(lista) and not sin_copia
+    externo = bool(env.get('OFFSITE_RESTIC_REPOSITORY'))
+    externo_ok = externo and bool(auto.get('ok')) and 'externo' in str(auto.get('detalle', ''))
+    if not externo:
+        falta_ext = ('Configura un almacén externo (Backblaze, Wasabi, S3 o un NAS en otro sitio) con '
+                     '«sudo bash octopus.sh ajustes». Está explicado en PRODUCCION.md.')
+    else:
+        falta_ext = 'El almacén externo está configurado pero la última copia allí no salió bien: revisa los avisos.'
+    luces = [
+        {'n': '3', 'titulo': '3 copias de tus datos', 'ok': todos and externo_ok,
+         'texto': 'El original en cada equipo, la copia del servidor y la del almacén externo.' if todos and externo_ok
+         else (('Faltan copias de: ' + ', '.join(sin_copia[:5]) + '. ') if sin_copia else '') + ('' if externo_ok else falta_ext)},
+        {'n': '2', 'titulo': '2 soportes distintos', 'ok': todos,
+         'texto': 'Cada equipo tiene su copia en el disco del servidor.' if todos else
+         ('Aún no hay equipos.' if not lista else 'Sin copia todavía: ' + ', '.join(sin_copia[:5]) + '. Pulsa «Copiar todo ahora».')},
+        {'n': '1', 'titulo': '1 copia fuera de la oficina', 'ok': externo_ok,
+         'texto': 'Hay copia fuera de la oficina (con bloqueo por tiempo, ni un atacante puede borrarla).'
+         if externo_ok else falta_ext},
+    ]
+    return {'luces': luces, 'ok': all(l['ok'] for l in luces)}
 
 
 @app.route('/inicio')
@@ -1488,7 +1692,7 @@ def inicio():
         "ORDER BY a.timestamp DESC LIMIT 8").fetchall()
     conn.close()
     return render_template('inicio.html', lista=lista, resumen=resumen, avisos=avisos_lista[:5],
-                           total=total, ok=ok, actividad=actividad)
+                           total=total, ok=ok, actividad=actividad, semaforo=_semaforo_321(lista))
 
 
 @app.route('/equipos')
@@ -1520,7 +1724,8 @@ def equipo(system_id):
                            horas_propias=agentes.notas_equipo(row).get('horas_sin_copia'),
                            completa_activa=bool(agentes.notas_equipo(row).get('copia_completa')),
                            ultima_completa=next((c for c in copias if 'completa' in (c.get('tags') or [])), None),
-                           limpia=_inc.ultima_limpia(copias) if any(c['sospechosa'] for c in copias) else None)
+                           limpia=_inc.ultima_limpia(copias) if any(c['sospechosa'] for c in copias) else None,
+                           pasos=_ban.leer(equipo=row['hostname'], limite=12))
 
 
 def _lanzar_prueba(row, user_id=None):
@@ -1537,6 +1742,7 @@ def _lanzar_prueba(row, user_id=None):
                                 'inicio': datetime.now(timezone.utc), 'fin': None}
 
     def _run():
+        _ban.marcar('pruebas', 'Empieza la prueba de recuperación', equipo=row['hostname'])
         try:
             r = _mant.probar_equipo(_mant.leer_env(), row['hostname'])
         except Exception as exc:
@@ -1545,9 +1751,10 @@ def _lanzar_prueba(row, user_id=None):
             agentes.JOBS[job_id].update(estado='ok' if r['ok'] else 'error', mensaje=r['detalle'],
                                         fin=datetime.now(timezone.utc))
         log_audit(user_id, 'RESTORE_TEST_OK' if r['ok'] else 'RESTORE_TEST_ERROR', f'{row["hostname"]}: {r["detalle"]}'[:300])
+        _ban.marcar('pruebas', f'Prueba de recuperación: {r["detalle"]}', equipo=row['hostname'],
+                    codigo=None if r['ok'] else 'OCT-EQ-05', nivel='ok' if r['ok'] else 'error')
         if not r['ok']:
-            _notificar_incidente('prueba_fallida', f'La prueba de recuperación de {row["hostname"]} ha fallado: '
-                                 f'{r["detalle"]}\nQué hacer: {_mant.QUE_HACER["probar"]}')
+            _notificar_incidente('prueba_fallida', _av.texto('OCT-EQ-05', equipo=row['hostname'], detalle=r['detalle']))
 
     threading.Thread(target=_run, daemon=True).start()
     return job_id
@@ -1627,10 +1834,22 @@ def _ajustes_agente(row):
     """Ajustes generales de las copias + los propios de este equipo (los recibe el agente en cada consulta)."""
     aj = _ajustes_copias()
     return {'limite_kbps': aj['limite_kbps'], 'solo_horario': aj['solo_horario'],
-            'copia_completa': bool(agentes.notas_equipo(row).get('copia_completa')), 'copia_completa_dias': 7}
+            'copia_completa': bool(agentes.notas_equipo(row).get('copia_completa')), 'copia_completa_dias': 7,
+            'senuelos': config_manager.get_config('senuelos') is not False}
 
 
 def _copia_terminada(system_id, ok, resp):
+    try:
+        fila = _get_system(system_id)
+        nombre = fila['hostname'] if fila else str(system_id)
+        for paso in (resp.get('pasos') or [])[-30:]:
+            _ban.marcar('copias', f'(en el equipo) {paso}', equipo=nombre)
+        motivo = str(resp.get('message', ''))[:300]
+        _ban.marcar('copias', ('Copia terminada' + (f' con aviso: {resp.get("aviso")}' if resp.get('aviso') else ''))
+                    if ok else f'La copia falló: {motivo}', equipo=nombre,
+                    codigo=None if ok else 'OCT-EQ-04', nivel='ok' if ok else 'error')
+    except Exception:
+        nombre, motivo = str(system_id), str(resp.get('message', ''))[:300]
     try:
         conn = get_db_connection()
         if ok:
@@ -1639,9 +1858,9 @@ def _copia_terminada(system_id, ok, resp):
         conn.commit()
         conn.close()
         log_audit(None, 'BACKUP_OK' if ok else 'BACKUP_ERROR',
-                  f'equipo={system_id} ' + ('' if ok else str(resp.get('message', ''))[:200]))
+                  f'equipo={nombre} ' + ('' if ok else motivo[:200]))
         if not ok:
-            _notificar_incidente('backup_failed', f'Falló la copia del equipo {system_id}: {resp.get("message")}')
+            _notificar_incidente('backup_failed', _av.texto('OCT-EQ-04', equipo=nombre, detalle=motivo))
     except Exception as e:
         print(f'[copia] aviso registrando resultado: {e}')
 
@@ -1655,6 +1874,7 @@ def equipo_copia(system_id):
     row = _get_system(system_id)
     if row:
         agentes.lanzar_copia(row, on_done=_copia_terminada)
+        _ban.marcar('copias', f'Copia pedida desde el panel por {session.get("username", "?")}', equipo=row['hostname'])
         log_audit(session['user_id'], 'BACKUP_START', f'equipo={row["hostname"]}', request.remote_addr)
         flash(f'Copia de {row["hostname"]} en marcha. Tarda unos minutos; puedes seguir usando el panel.', 'success')
     volver = request.form.get('volver', '')
@@ -1674,6 +1894,7 @@ def copiar_todo():
     conn.close()
     for r in rows:
         agentes.lanzar_copia(r, on_done=_copia_terminada)
+        _ban.marcar('copias', f'Copia pedida con «Copiar todo» por {session.get("username", "?")}', equipo=r['hostname'])
     log_audit(session['user_id'], 'BACKUP_START', f'todos ({len(rows)} equipos)', request.remote_addr)
     flash(f'Copias en marcha en {len(rows)} equipos. Tardan unos minutos.', 'success')
     return redirect(url_for('inicio'))
@@ -1739,12 +1960,19 @@ def restaurar_ruta(system_id):
     copia = request.form.get('copia', 'latest')
     destino = 'aparte' if request.form.get('destino') == 'aparte' else 'original'
     volver = url_for('explorar', system_id=system_id, copia=copia, ruta=request.form.get('carpeta', ''))
+    if request.form.get('volver', '').startswith('/') and not request.form.get('volver', '').startswith('//'):
+        volver = request.form['volver']
     if not row or not ruta:
         return redirect(url_for('restaurar'))
     if not puede_actuar():
         flash('Tu usuario no tiene permiso para restaurar.', 'error')
         return redirect(volver)
+    _ban.marcar('recuperacion', f'Recuperar «{ruta}» de la copia {copia} ({destino}), pedido por '
+                f'{session.get("username", "?")}', equipo=row['hostname'])
     r = agentes.Agente(agentes.ip_de(row)).restore(ruta, copia, destino)
+    _ban.marcar('recuperacion', f'Recuperado en {r.get("file")}' if r.get('status') == 'success'
+                else f'La recuperación falló: {str(r.get("message", ""))[:300]}', equipo=row['hostname'],
+                nivel='ok' if r.get('status') == 'success' else 'error')
     if r.get('status') == 'success':
         log_audit(session['user_id'], 'RESTORE_OK', f'{row["hostname"]}:{ruta} copia={copia} destino={destino}', request.remote_addr)
         _notificar_incidente('restauracion', f'Recuperación terminada en {row["hostname"]}: «{ruta}» '
@@ -1938,6 +2166,7 @@ def ajustes():
     conn.close()
     cfg = {k: config_manager.get_config(k) for k in ('incident_auto_response', 'incident_keep_isolated',
                                                     'security_contact', 'sandbox_terminal')}
+    cfg['senuelos'] = config_manager.get_config('senuelos') is not False
     import mantenimiento as _mant
     with get_db_connection() as c:
         kit = c.execute("SELECT timestamp FROM audit_logs WHERE action = 'RECOVERY_KIT' ORDER BY timestamp DESC LIMIT 1").fetchone()
@@ -2145,6 +2374,8 @@ def api_agente_alerta():
         auto=_cfg_bool('incident_auto_response'), mantener_aislado=_cfg_bool('incident_keep_isolated'),
         contacto=config_manager.get_config('security_contact') or 'el departamento de seguridad')
     log_audit(None, 'INCIDENT_CREATED' if nuevo else 'INCIDENT_REPEAT', f'#{inc_id} {host}: {data.get("motivo", "")}'[:300], origen_ip)
+    _ban.marcar('incidentes', f'Alerta del equipo: {data.get("motivo", "")} (incidente #{inc_id})', equipo=host,
+                codigo='OCT-SEN-01' if 'señuelo' in str(data.get('motivo', '')).lower() else None, nivel='error')
     return jsonify({'incidente': inc_id, 'nuevo': nuevo})
 
 
@@ -2333,11 +2564,103 @@ def ajustes_incidentes():
     config_manager.set_config('incident_auto_response', request.form.get('auto') == 'on', uid)
     config_manager.set_config('incident_keep_isolated', request.form.get('aislado') == 'on', uid)
     config_manager.set_config('sandbox_terminal', request.form.get('terminal') == 'on', uid)
+    config_manager.set_config('senuelos', request.form.get('senuelos') == 'on', uid)
     contacto = (request.form.get('contacto') or '').strip()[:200] or 'el departamento de seguridad'
     config_manager.set_config('security_contact', contacto, uid)
     log_audit(uid, 'CONFIG_INCIDENTS', 'Ajustes de respuesta a ataques', request.remote_addr)
     flash('Ajustes de respuesta a ataques guardados.', 'success')
     return redirect(url_for('ajustes'))
+
+
+# ------------------------------------------------------------------ diagnóstico para soporte
+@app.route('/ajustes/diagnostico')
+@login_required
+@role_required('admin', 'supremo')
+def descargar_diagnostico():
+    """Zip con los banderines y el estado del servidor, sin contraseñas ni nombres de archivos."""
+    import diagnostico
+    from flask import Response
+    datos = diagnostico.zip_bytes(Path(DB_FILE))
+    log_audit(session['user_id'], 'DIAGNOSTICO', 'Descargado el diagnóstico para soporte', request.remote_addr)
+    nombre = f'octopus_diagnostico_{datetime.now():%Y%m%d_%H%M}.zip'
+    return Response(datos, mimetype='application/zip',
+                    headers={'Content-Disposition': f'attachment; filename="{nombre}"', 'Cache-Control': 'no-store'})
+
+
+# ------------------------------------------------------------------ asistente para recuperar
+@app.route('/recuperar/asistente')
+@login_required
+def asistente_recuperar():
+    """¿Qué quieres recuperar? → ¿De cuándo? → Listo. Busca por nombre en las copias del servidor."""
+    lista = [e for e in _equipos_con_estado() if e['est']['copias']]
+    sid = request.args.get('equipo', type=int)
+    if not sid and len(lista) == 1:
+        sid = lista[0]['sys']['id']
+    row = _get_system(sid) if sid else None
+    q = (request.args.get('q') or '').strip()[:100]
+    ruta = request.args.get('ruta') or ''
+    resultados, versiones, error = None, None, None
+    if row and q and not ruta:
+        r = agentes.buscar_en_servidor(row, q)
+        if r.get('status') == 'success':
+            resultados = r['resultados']
+        else:
+            error = r.get('message')
+    if row and ruta:
+        r = agentes.buscar_en_servidor(row, ruta.replace('\\', '/').rstrip('/').rsplit('/', 1)[-1], exacta=ruta)
+        if r.get('status') == 'success' and r['resultados']:
+            versiones = r['resultados'][0]['versiones']
+        else:
+            error = r.get('message') or 'No se encuentra en ninguna copia.'
+    paso = 1 if not row else (2 if not q and not ruta else (3 if not ruta else 4))
+    return render_template('asistente.html', lista=lista, s=row, q=q, ruta=ruta, resultados=resultados,
+                           versiones=versiones, error=error, paso=paso)
+
+
+# ------------------------------------------------------------------ sugerencias y problemas para el soporte
+@app.route('/sugerencia', methods=['GET', 'POST'])
+@login_required
+def sugerencia():
+    import sugerencias as _sug
+    import mantenimiento as _m
+    env = _m.leer_env()
+    if request.method == 'POST':
+        texto = (request.form.get('texto') or '').strip()
+        if len(texto) < 5:
+            flash('Cuéntanos un poco más (al menos unas palabras).', 'error')
+            return redirect(url_for('sugerencia'))
+        diag = ''
+        if request.form.get('diagnostico') == 'on':
+            try:
+                import diagnostico
+                diag = diagnostico.resumen_texto(Path(DB_FILE))
+            except Exception as exc:
+                diag = f'(no se pudo generar el diagnóstico: {exc})'
+        sid = _sug.guardar(Path(DB_FILE), session.get('username', '?'), request.form.get('gravedad', 'problema'),
+                           texto, (request.form.get('correo') or '').strip(), diag)
+        log_audit(session['user_id'], 'SUGERENCIA', f'#{sid} {request.form.get("gravedad", "")}', request.remote_addr)
+        _ban.marcar('sugerencias', f'Sugerencia {sid} recibida ({request.form.get("gravedad", "")})')
+        if _sug.hay_destino(env):
+            threading.Thread(target=_sug.enviar, args=(env, Path(DB_FILE), sid), daemon=True).start()
+            flash('¡Gracias! Lo hemos recibido y se está enviando al soporte.', 'success')
+        else:
+            flash('¡Gracias! Queda guardado en el servidor. (El envío al soporte todavía no está configurado en este '
+                  'servidor: se enviará en cuanto se configure.)', 'success')
+        return redirect(url_for('sugerencia'))
+    with get_db_connection() as c:
+        correo = (c.execute('SELECT email FROM users WHERE id = ?', (session['user_id'],)).fetchone() or {'email': ''})['email']
+        try:
+            envios = c.execute('SELECT id, fecha, gravedad, estado, destinos, error FROM sugerencias '
+                               'WHERE usuario = ? ORDER BY id DESC LIMIT 10', (session.get('username'),)).fetchall()
+        except sqlite3.Error:
+            envios = []
+    return render_template('sugerencia.html', gravedades=_sug.GRAVEDADES, correo=correo, envios=envios,
+                           configurado=_sug.hay_destino(env))
+
+
+def _marcado(nombre):
+    """Casillas de los formularios (los navegadores mandan «on»; algunos formularios antiguos «true»)."""
+    return (request.form.get(nombre) or '').strip().lower() in ('on', 'true', '1', 'si', 'yes')
 
 
 # Funciones auxiliares

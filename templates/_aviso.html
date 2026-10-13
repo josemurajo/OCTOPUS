@@ -1,0 +1,25 @@
+{# Un aviso completo: qué pasa, por qué importa, qué hacer y botón «Solucionar» (si se puede arreglar solo) #}
+{% macro aviso(a, volver) %}
+<div class="notice {{ a.nivel }} aviso">
+  <div class="aviso-cab"><strong>{{ a.titulo }}</strong><span class="codigo" title="Código del aviso (díselo al soporte si llamas)">{{ a.codigo }}</span></div>
+  {% if a.por_que %}<p class="small"><em>Por qué importa:</em> {{ a.por_que }}</p>{% endif %}
+  {% if a.pasos %}<ol class="pasos small">{% for p in a.pasos %}<li>{{ p }}</li>{% endfor %}</ol>{% endif %}
+  <div class="aviso-acciones">
+    {% if a.accion and puede_actuar() %}
+    <form method="post" action="{{ url_for('avisos_solucionar') }}" style="display:inline">
+      <input type="hidden" name="codigo" value="{{ a.codigo }}">
+      {% if a.id %}<input type="hidden" name="system_id" value="{{ a.id }}">{% endif %}
+      <input type="hidden" name="volver" value="{{ volver }}">
+      <button class="btn btn-primary btn-small" type="submit">Solucionar: {{ a.boton }}</button>
+    </form>
+    {% endif %}
+    {% if a.id %}<a href="{{ url_for('equipo', system_id=a.id) }}">Ver equipo →</a>
+    {% elif a.enlace %}<a href="{{ a.enlace }}">Ir →</a>{% endif %}
+  </div>
+  {% if a.ultimo_intento %}
+  <p class="small muted" style="margin-top:6px">Último intento ({{ a.ultimo_intento.fecha | hace }}):
+    {% if a.ultimo_intento.estado == 'en_curso' %}en marcha…{% elif a.ultimo_intento.estado == 'ok' %}<span style="color:var(--ok)">hecho</span>{% else %}<span style="color:var(--bad)">no se arregló</span>{% endif %}
+    — {{ a.ultimo_intento.detalle }}</p>
+  {% endif %}
+</div>
+{% endmacro %}

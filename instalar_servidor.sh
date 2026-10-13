@@ -12,10 +12,12 @@ RAIZ="$(cd "$(dirname "$(realpath "$0")")" && pwd)"
 COMPOSE_FILE="$RAIZ/install/docker-compose.yml"
 HOST_ENV="$RAIZ/install/.env"
 
-paso()  { echo; echo -e "\033[1;36m==> $*\033[0m"; }
-bien()  { echo -e "    \033[32m$*\033[0m"; }
-aviso() { echo -e "    \033[33m$*\033[0m"; }
-fallo() { echo -e "\n\033[1;31mERROR: $*\033[0m"; exit 1; }
+PROGRESO="${OCTOPUS_PROGRESO:-/var/log/octopus/instalacion_progreso.txt}"   # banderines: cada paso con la hora (para saber donde se paro)
+marca() { { mkdir -p "$(dirname "$PROGRESO")" && echo "[$(date '+%F %T')] $*" >> "$PROGRESO"; } 2>/dev/null || true; }
+paso() { marca "==> $*"; echo; echo -e "\033[1;36m==> $*\033[0m"; }
+bien() { marca "OK  $*"; echo -e "    \033[32m$*\033[0m"; }
+aviso() { marca "..  $*"; echo -e "    \033[33m$*\033[0m"; }
+fallo() { marca "ERROR $*"; echo -e "\n\033[1;31mERROR: $*\033[0m"; exit 1; }
 [ "$(id -u)" -eq 0 ] || fallo "Ejecutalo con sudo: sudo bash $0"
 [ -f "$COMPOSE_FILE" ] || fallo "No encuentro $COMPOSE_FILE: ejecuta el script desde la carpeta de OCTOPUS"
 

@@ -162,7 +162,17 @@ def main() -> int:
     if cred.is_file():
         log(f"Acceso inicial: ver {cred} (docker exec octopus cat /data/panel/CREDENCIALES_INICIALES.txt)")
     espera: dict[str, float] = {}
+    flag = DATA / "reiniciar_servicios"   # lo pone el panel tras renovar el certificado (boton Solucionar)
     while not _parar.wait(2):
+        try:
+            if flag.exists() and time.time() >= float(flag.read_text(encoding="utf-8").strip() or 0):
+                flag.unlink(missing_ok=True)
+                log("Reiniciando el panel y el almacen para usar el certificado nuevo")
+                for nombre in ("almacen", "panel"):
+                    if nombre in _procesos and _procesos[nombre].poll() is None:
+                        _procesos[nombre].terminate()
+        except (OSError, ValueError):
+            flag.unlink(missing_ok=True)
         for nombre, p in list(_procesos.items()):
             if p.poll() is not None:
                 retraso = min(espera.get(nombre, 1) * 2, 60)

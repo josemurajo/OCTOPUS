@@ -19,10 +19,13 @@ $WgExe   = Join-Path $env:ProgramFiles 'WireGuard\wireguard.exe'   # solo para q
 $ResticVer = '0.16.4'
 $PythonVer = '3.12.7'
 
-function Paso($t)  { Write-Host ""; Write-Host "==> $t" -ForegroundColor Cyan }
-function Bien($t)  { Write-Host "    $t" -ForegroundColor Green }
-function Aviso($t) { Write-Host "    $t" -ForegroundColor Yellow }
-function Fallo($t) { Write-Host ""; Write-Host "ERROR: $t" -ForegroundColor Red; exit 1 }
+# Banderines: cada paso con la hora en C:\ProgramData\OCTOPUS\instalacion_agente_progreso.txt
+$Progreso = Join-Path $env:ProgramData "OCTOPUS\instalacion_agente_progreso.txt"
+function Marca($t) { try { New-Item -ItemType Directory -Force -Path (Split-Path $Progreso) | Out-Null; Add-Content -Path $Progreso -Value ("[{0}] {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $t) } catch { } }
+function Paso($t)  { Marca "==> $t"; Write-Host ""; Write-Host "==> $t" -ForegroundColor Cyan }
+function Bien($t)  { Marca "OK  $t"; Write-Host "    $t" -ForegroundColor Green }
+function Aviso($t) { Marca "..  $t"; Write-Host "    $t" -ForegroundColor Yellow }
+function Fallo($t) { Marca "ERROR $t"; Write-Host ""; Write-Host "ERROR: $t" -ForegroundColor Red; exit 1 }
 
 $esAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
     [Security.Principal.WindowsBuiltInRole]::Administrator)

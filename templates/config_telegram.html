@@ -18,7 +18,7 @@
         
         <div class="form-group">
             <label for="telegram_bot_token">Bot Token</label>
-            <input type="password" id="telegram_bot_token" name="telegram_bot_token" value="{{ config.telegram_bot_token }}" placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz">
+            <input type="password" id="telegram_bot_token" name="telegram_bot_token" value="" placeholder="{{ '•••••• (guardado; déjalo vacío para no cambiarlo)' if config.hay_token else '123456789:ABCdefGHIjklMNOpqrsTUVwxyz' }}" autocomplete="off">
         </div>
         
         <div class="form-group">

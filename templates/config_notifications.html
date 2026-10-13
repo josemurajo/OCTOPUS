@@ -9,6 +9,7 @@
 <div class="card">
     <h2>Configuración SMTP</h2>
     <form method="POST">
+        <input type="hidden" name="seccion" value="smtp">
         <div class="form-group">
             <label>
                 <input type="checkbox" name="smtp_enabled" {{ 'checked' if config.smtp_enabled }}>
@@ -33,7 +34,7 @@
         
         <div class="form-group">
             <label for="smtp_password">Contraseña SMTP (o App Password)</label>
-            <input type="password" id="smtp_password" name="smtp_password" value="{{ config.smtp_password }}" placeholder="Contraseña o App Password">
+            <input type="password" id="smtp_password" name="smtp_password" value="" placeholder="{{ '•••••• (guardada; déjalo vacío para no cambiarla)' if hay_password else 'Contraseña o App Password' }}" autocomplete="new-password">
         </div>
         
         <div class="form-group">
@@ -55,6 +56,7 @@
 <div class="card">
     <h2>Configuración de Alertas</h2>
     <form method="POST">
+        <input type="hidden" name="seccion" value="alertas">
         <div class="form-group">
             <label>
                 <input type="checkbox" name="email_notifications" {{ 'checked' if config.email_notifications }}>
@@ -89,6 +91,15 @@
             </div>
         </div>
         
+        <div class="form-group">
+            <label>¿Quién recibe cada tipo de aviso? <span class="muted small">(opcional)</span></label>
+            <p class="hint" style="margin-bottom:8px">Uno o varios correos separados por comas. Si dejas uno vacío, ese aviso va al «Email para alertas» de arriba.</p>
+            {% for cat, nombre in categorias.items() %}
+            <div class="field" style="margin-bottom:10px"><label for="dest_{{ cat }}" style="font-weight:400">{{ nombre }}</label>
+              <input type="text" id="dest_{{ cat }}" name="dest_{{ cat }}" value="{{ por_tipo.get(cat, '') }}" placeholder="{{ config.alert_email or 'correo@empresa.com' }}"></div>
+            {% endfor %}
+        </div>
+
         <button type="submit" class="btn btn-primary">Guardar Configuración de Alertas</button>
     </form>
 </div>

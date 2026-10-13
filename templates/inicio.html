@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_aviso.html" import aviso %}
 {% block title %}Inicio{% endblock %}
 {% block content %}
 {% if incidentes_abiertos %}
@@ -25,11 +26,20 @@
 {% if avisos %}
 <div class="card">
   <h2>Qué hay que revisar</h2>
-  {% for a in avisos %}
-  <div class="notice {{ a.nivel }}"><strong>{{ a.titulo }}</strong>{{ a.que_hacer }}
-    {% if a.id %}<a href="{{ url_for('equipo', system_id=a.id) }}" style="margin-left:6px">Ver equipo →</a>
-    {% elif a.enlace %}<a href="{{ a.enlace }}" style="margin-left:6px">Ir →</a>{% endif %}</div>
-  {% endfor %}
+  {% for a in avisos %}{{ aviso(a, url_for('inicio')) }}{% endfor %}
+  <p class="small"><a href="{{ url_for('avisos') }}">Ver todos los avisos →</a></p>
+</div>
+{% endif %}
+
+{% if total %}
+<div class="card">
+  <h2>Regla 3-2-1 de las copias {% if semaforo.ok %}<span class="pill ok">Se cumple</span>{% else %}<span class="pill atencion">Se puede mejorar</span>{% endif %}</h2>
+  <div class="semaforo">
+    {% for l in semaforo.luces %}
+    <div class="luz {{ 'ok' if l.ok else 'mal' }}"><span class="num">{{ l.n }}</span>
+      <div><strong>{{ l.titulo }}</strong> <span class="small">{{ '✓' if l.ok else '—' }}</span><p class="small muted">{{ l.texto }}</p></div></div>
+    {% endfor %}
+  </div>
 </div>
 {% endif %}
 

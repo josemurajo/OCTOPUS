@@ -72,6 +72,9 @@ El laboratorio de pruebas con máquinas virtuales está en la carpeta `maquinas`
 
 ## Versión
 
-Ver `VERSION`. La versión 2.1 añade: prueba de recuperación automática, copias sospechosas marcadas,
+Ver `VERSION`. La versión 2.2 añade: avisos con código, explicación y botón «Solucionar», banderines (pasos de cada
+proceso) y diagnóstico descargable, semáforo 3-2-1, archivos señuelo contra ransomware, asistente «Buscar y
+recuperar», «Enviar sugerencia o problema», quién recibe cada aviso, registro de actividad firmado y aviso de
+versión nueva. La versión 2.1 añadió: prueba de recuperación automática, copias sospechosas marcadas,
 aviso sin copia configurable por equipo, aviso al terminar una recuperación, kit cifrado opcional,
 límite de velocidad de las copias e informe mensual.

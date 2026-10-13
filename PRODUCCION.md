@@ -132,9 +132,29 @@ recuperar con normalidad (`octopus.sh recuperar-servidor <almacén>` o `restic .
   **Ajustes → Copias e informes → Ver el informe**.
 
 El resultado se ve en **Ajustes → Mantenimiento del servidor** y, si algo falla, en **Avisos** y por correo, siempre
-con lo que hay que hacer.
+con lo que hay que hacer. Cada noche también se comprueba si hay una **versión nueva** de OCTOPUS (se puede desactivar
+con `OCTOPUS_COMPROBAR_ACTUALIZACIONES=no` en `octopus.sh ajustes`).
+
+### Avisos que explican y se solucionan solos
+
+Cada aviso tiene un **código** (por ejemplo `OCT-ALM-01`), dice **qué pasa**, **por qué importa** y los **pasos**
+exactos para arreglarlo. Si se puede arreglar solo, tiene un botón **«Solucionar»**: volver a copiar un equipo,
+repetir la prueba de recuperación, quitar el bloqueo del almacén tras un apagón, reparar el almacén, liberar
+espacio, repetir la copia del servidor, hacer el mantenimiento ahora o renovar el certificado. El mismo código sale
+en el correo/Telegram y en los **banderines** (los pasos de cada proceso), así el soporte sabe de qué se habla.
+
+- **Ficha de cada equipo → Últimos pasos**: lo último que ha pasado con ese equipo, paso a paso.
+- **Ajustes → Mantenimiento → Descargar diagnóstico**: un .zip para el soporte, sin contraseñas, claves ni nombres
+  de archivos (los equipos salen como equipo-1, equipo-2...).
+- **Ajustes → Avisos por correo**: se puede elegir quién recibe cada tipo de aviso (ataques, copias, servidor, informe).
+- Los instaladores dejan también sus banderines: `C:\ProgramData\OCTOPUS\instalacion_*progreso.txt` en Windows,
+  `/var/log/octopus/instalacion*_progreso.txt` en Linux y `~/Library/Logs/OCTOPUS/` en Mac.
 
 ## 7. Si atacan un equipo (ransomware)
+
+Cada equipo tiene además un **archivo señuelo** oculto en sus carpetas protegidas (`.octopus_no_tocar.docx` o
+`~octopus_no_tocar.docx` en Windows). Nadie lo usa: si cambia o desaparece, es casi seguro un ransomware y se actúa al
+momento, sin esperar a que cifre más archivos. Se puede desactivar en Ajustes → Respuesta a ataques.
 
 Si un equipo empieza a cifrar archivos en masa, OCTOPUS (si está activado en Ajustes → Respuesta a ataques):
 lo **aísla de la red**, guarda una **copia forense** del estado del equipo, **restaura la última copia limpia** y
@@ -198,4 +218,24 @@ restic -r <ruta-o-direccion-del-almacen> restore latest --host <equipo> --target
 - Cada equipo tiene su propia clave; quitar un equipo del panel la invalida.
 - Panel: bloqueo de la cuenta tras 5 intentos fallidos, la sesión se cierra tras 30 minutos sin uso, registro
   de todo lo que se hace (Ajustes → Opciones avanzadas → Registro de actividad).
+- El **registro de actividad va firmado**: cada línea se encadena con la anterior (SHA-256). Si alguien con acceso al
+  servidor borra o cambia una línea, el panel lo avisa en Ajustes → Registro de actividad.
+- Las contraseñas y tokens de correo/Telegram ya no se vuelven a enseñar en las páginas de ajustes.
 - Pendiente para una próxima versión: doble autenticación (código de una app) al entrar en el panel.
+
+## 11. Sugerencias y problemas (soporte)
+
+En el pie de cada página del panel hay **«Enviar sugerencia o problema»**. Lo que se escribe se guarda en el servidor y
+se envía al soporte por los destinos que se configuren en `sudo bash octopus.sh ajustes`:
+
+```
+SOPORTE_CORREO=soporte@tudominio.com        # se envía con el correo de avisos configurado en el panel
+SOPORTE_TELEGRAM_TOKEN=...                   # bot de Telegram del soporte
+SOPORTE_TELEGRAM_CHAT=...                    # chat al que avisa
+SOPORTE_GITHUB_REPO=usuario/repositorio      # solo las sugerencias (nunca problemas ni diagnósticos)
+SOPORTE_GITHUB_TOKEN=...                     # se publican como incidencia pública
+```
+
+Si no hay ninguno configurado o no hay Internet, se queda guardado y se reintenta cada noche. El diagnóstico solo se
+adjunta si el usuario marca la casilla. **No pongas estos valores en el código del repositorio** (es público): van en
+el `.env` del servidor.

@@ -70,7 +70,7 @@ class NotificationManager:
     
     # Gravedad de cada tipo de aviso (los niveles que se eligen en el panel son critical/high/medium/low)
     LEVELS = {'incidente': 'critical', 'incident': 'critical', 'critical': 'critical',
-              'backup_failed': 'high', 'restauracion': 'high', 'prueba_fallida': 'high', 'high': 'high', 'medium': 'medium', 'low': 'low', 'test': 'test'}
+              'backup_failed': 'high', 'restauracion': 'high', 'prueba_fallida': 'high', 'mantenimiento': 'high', 'senuelo': 'critical', 'high': 'high', 'medium': 'medium', 'low': 'low', 'test': 'test'}
 
     def send_alert(self, alert_type, details, recipients=None, level=None):
         """Envía alerta del sistema (respeta los niveles elegidos en el panel; 'test' siempre se envía)"""
@@ -88,9 +88,9 @@ class NotificationManager:
             print(f"[NOTIFICATION] Nivel de alerta no configurado para envío: {alert_type}")
             return False, "Nivel de alerta no configurado"
         
-        # Determinar destinatarios
+        # Determinar destinatarios: los elegidos para este tipo de aviso (Ajustes -> Avisos) o el correo general
         if recipients is None:
-            recipients = [config.get('alert_email', 'admin@zerotouch.local')]
+            recipients = self.destinatarios(alert_type, config)
         
         if not recipients or recipients == ['']:
             print(f"[NOTIFICATION] No hay destinatarios configurados")
@@ -127,6 +127,27 @@ No responda a este email.
         else:
             return False, f"Alerta enviada a {success_count}/{len(recipients)} destinatarios"
     
+    # Tipos de aviso agrupados para elegir quien recibe cada grupo
+    CATEGORIAS = {'incidente': 'ataques', 'incident': 'ataques', 'critical': 'ataques', 'senuelo': 'ataques',
+                  'backup_failed': 'copias', 'restauracion': 'copias', 'prueba_fallida': 'copias',
+                  'mantenimiento': 'servidor', 'informe': 'informe'}
+    NOMBRES_CATEGORIAS = {'ataques': 'Ataques e incidentes', 'copias': 'Copias y recuperaciones',
+                          'servidor': 'Servidor y mantenimiento', 'informe': 'Informe mensual'}
+
+    def destinatarios(self, alert_type, config=None):
+        """Correos que reciben este tipo de aviso. Si para su grupo no se ha elegido a nadie, el correo general."""
+        import json as _json
+        config = config or self.config.get_config()
+        por_tipo = config.get('avisos_destinatarios') or {}
+        if isinstance(por_tipo, str):
+            try:
+                por_tipo = _json.loads(por_tipo or '{}')
+            except ValueError:
+                por_tipo = {}
+        cat = self.CATEGORIAS.get(str(alert_type).lower())
+        lista = [c.strip() for c in str((por_tipo or {}).get(cat) or '').replace(';', ',').split(',') if c.strip()]
+        return lista or [config.get('alert_email', '')]
+
     def send_approval_request(self, approval_details, requester_email, approver_email):
         """Envía solicitud de aprobación"""
         subject = "[OCTOPUS] Solicitud de Aprobación Requerida"

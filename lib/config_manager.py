@@ -121,6 +121,13 @@ class ConfigManager:
         # Informe mensual por correo el dia 1
         "informe_mensual": True,
 
+        # Archivos señuelo en los equipos (un archivo trampa oculto por carpeta protegida)
+        "senuelos": True,
+
+        # Quien recibe cada tipo de aviso: {"ataques": "a@x, b@x", "copias": "", "servidor": "", "informe": ""}
+        # (vacio = el correo general alert_email)
+        "avisos_destinatarios": {},
+
         # Custom paths
         "protected_paths": {
             "windows": ["C:\\Users", "C:\\Program Files", "C:\\Windows"],
@@ -237,9 +244,10 @@ class ConfigManager:
         """Establece valor de configuración"""
         conn = self.get_db_connection()
         
-        # Verificar que la clave existe
+        # Verificar que la clave existe (si no, se avisa en el registro: antes se ignoraba sin decir nada)
         if key not in self.DEFAULT_CONFIG:
             conn.close()
+            print(f"[CONFIG] AVISO: '{key}' no es un ajuste conocido; no se guarda")
             return False, "Configuración no válida"
         
         # Validar valor según tipo esperado

@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Buscar y recuperar{% endblock %}
+{% block content %}
+<h1>Buscar y recuperar</h1>
+<p class="lead">Tres pasos: <strong {% if paso <= 2 %}style="color:var(--accent)"{% endif %}>1. ¿Qué?</strong> ·
+  <strong {% if paso == 3 or paso == 4 %}style="color:var(--accent)"{% endif %}>2. ¿De cuándo?</strong> · <strong>3. Listo</strong></p>
+{% if error %}<div class="notice atencion"><strong>No hemos encontrado nada</strong>{{ error }}</div>{% endif %}
+
+{% if paso == 1 %}
+<div class="card">
+  <h2>¿De qué equipo?</h2>
+  <div class="grid">
+    {% for e in lista %}
+    <a class="card device" style="margin:0; color:inherit" href="{{ url_for('asistente_recuperar', equipo=e.sys.id) }}">
+      <span class="device-name">{{ e.sys.hostname }}</span>
+      <span class="muted small">{{ e.est.copias | length }} copias · la última {{ e.est.ultima | hace }}</span></a>
+    {% else %}<p class="muted">Ningún equipo tiene copias todavía.</p>{% endfor %}
+  </div>
+</div>
+{% else %}
+<div class="card">
+  <h2>1. ¿Qué quieres recuperar de {{ s.hostname }}?</h2>
+  <form method="get" action="{{ url_for('asistente_recuperar') }}" style="display:flex; gap:10px; flex-wrap:wrap">
+    <input type="hidden" name="equipo" value="{{ s.id }}">
+    <input type="text" name="q" value="{{ q }}" placeholder="Nombre del archivo o carpeta, o parte (ej.: presupuesto, fotos 2025)" style="flex:1; min-width:260px" autofocus required>
+    <button class="btn btn-primary" type="submit">Buscar</button>
+  </form>
+  <p class="hint">No hace falta escribirlo exacto ni respetar mayúsculas. ¿Prefieres navegar por las carpetas?
+    <a href="{{ url_for('explorar', system_id=s.id) }}">Ver las carpetas de las copias</a>.
+    {% if lista | length > 1 %}· <a href="{{ url_for('asistente_recuperar') }}">Cambiar de equipo</a>{% endif %}</p>
+</div>
+
+{% if paso == 3 and resultados is not none %}
+<div class="card">
+  <h2>¿Cuál de estos es? <span class="muted small">({{ resultados | length }} encontrado{{ 's' if resultados | length != 1 }})</span></h2>
+  {% if resultados %}
+  <table>
+    <thead><tr><th>Nombre</th><th>Dónde estaba</th><th>Versiones</th><th></th></tr></thead>
+    {% for r in resultados %}
+    <tr><td><span class="file-icon">{{ '📁' if r.tipo == 'dir' else '📄' }}</span><strong>{{ r.nombre }}</strong></td>
+      <td class="muted small mono">{{ r.path }}</td>
+      <td class="small">{{ r.versiones | length }} · la última de {{ r.versiones[0].fecha | hace }}</td>
+      <td style="text-align:right"><a class="btn btn-small btn-primary" href="{{ url_for('asistente_recuperar', equipo=s.id, q=q, ruta=r.path) }}">Elegir</a></td></tr>
+    {% endfor %}
+  </table>
+  {% else %}<p class="muted">No hay nada con ese nombre en las copias. Prueba con otra palabra o con una parte del nombre.</p>{% endif %}
+</div>
+{% endif %}
+
+{% if paso == 4 and versiones %}
+<div class="card">
+  <h2>2. ¿De cuándo quieres «{{ ruta.replace('\\', '/').rstrip('/').split('/')[-1] }}»?</h2>
+  <p class="muted small mono" style="margin-bottom:10px">{{ ruta }}</p>
+  <form method="post" action="{{ url_for('restaurar_ruta', system_id=s.id) }}">
+    <input type="hidden" name="ruta" value="{{ ruta }}">
+    <input type="hidden" name="volver" value="{{ url_for('asistente_recuperar', equipo=s.id) }}">
+    <table>
+      <thead><tr><th></th><th>Copia del</th><th>Hace</th><th>Tamaño</th></tr></thead>
+      {% for v in versiones %}
+      <tr><td style="width:30px"><input type="radio" name="copia" value="{{ v.copia }}" {{ 'checked' if loop.first }} required></td>
+        <td>{{ v.fecha | fecha }}{% if 'completa' in (v.etiquetas or []) %} <span class="pill ok">Completa</span>{% endif %}</td>
+        <td class="muted">{{ v.fecha | hace }}</td><td class="muted small">{{ v.tamano | tamano }}</td></tr>
+      {% endfor %}
+    </table>
+    <h2 style="margin-top:18px">3. ¿Dónde lo dejamos?</h2>
+    <label style="font-weight:400; display:flex; gap:10px; margin-bottom:8px"><input type="radio" name="destino" value="aparte" checked>
+      <span><strong>Al lado, sin tocar lo que hay ahora</strong> (lo más seguro si dudas): se guarda con «.restaurado-fecha» en el nombre.</span></label>
+    <label style="font-weight:400; display:flex; gap:10px; margin-bottom:14px"><input type="radio" name="destino" value="original">
+      <span><strong>En su sitio</strong>, sustituyendo la versión actual.</span></label>
+    {% if puede_actuar() %}<button class="btn btn-primary btn-big" type="submit">Recuperar</button>
+    {% else %}<p class="muted">Tu usuario no tiene permiso para recuperar; pídeselo a un administrador.</p>{% endif %}
+    <a class="btn" href="{{ url_for('asistente_recuperar', equipo=s.id, q=q) }}" style="margin-left:6px">Volver</a>
+  </form>
+  <p class="hint">El equipo tiene que estar encendido y conectado. Si no lo está, la recuperación fallará y te lo diremos.</p>
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}

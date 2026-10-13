@@ -25,7 +25,7 @@ from datetime import datetime
 from pathlib import Path
 
 PORT = int(os.environ.get("OCTOPUS_AGENT_PORT", "9999"))
-AGENT_VERSION = "3.2"
+AGENT_VERSION = "3.3"
 _BACKUP_LOCK = threading.Lock()
 SYSTEM = platform.system().lower()
 
@@ -420,9 +420,126 @@ def suspender_detector(segundos: int = 120) -> None:
         _detector_state["suspended_until"] = time.time() + segundos
 
 
+# ---- archivos señuelo: un archivo trampa oculto en cada carpeta protegida. Nadie lo usa: si cambia o
+# desaparece, casi seguro es un ransomware recorriendo las carpetas -> alerta inmediata (sin esperar umbrales).
+SENUELOS_FILE = STATE_DIR / "senuelos.json"
+_NOMBRE_SENUELO = "~octopus_no_tocar.docx" if SYSTEM == "windows" else ".octopus_no_tocar.docx"
+
+
+def senuelos_activos(cfg: dict) -> bool:
+    return bool(cfg.get("senuelos", True)) and AJUSTES_SERVIDOR.get("senuelos", True) is not False
+
+
+def _leer_senuelos() -> dict:
+    try:
+        return json.loads(SENUELOS_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def _guardar_senuelos(datos: dict) -> None:
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        SENUELOS_FILE.write_text(json.dumps(datos), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _crear_senuelo(ruta: str) -> str | None:
+    import hashlib
+    contenido = ("OCTOPUS - archivo de proteccion. No lo abras, no lo muevas y no lo borres.\n"
+                 "Si este archivo cambia, OCTOPUS entiende que hay un ataque y protege el equipo.\n" * 40
+                 + f"id {os.urandom(8).hex()}\n").encode()
+    try:
+        if os.path.exists(ruta) and SYSTEM == "windows":
+            run_cmd(["attrib", "-h", ruta], timeout=20)
+        with open(ruta, "wb") as fh:
+            fh.write(contenido)
+        if SYSTEM == "windows":
+            run_cmd(["attrib", "+h", ruta], timeout=20)
+        return hashlib.sha256(contenido).hexdigest()
+    except OSError:
+        return None
+
+
+def preparar_senuelos(cfg: dict) -> None:
+    """Crea los señuelos que falten (solo en carpetas protegidas nuevas) o los quita si se desactivan."""
+    estado = _leer_senuelos()
+    if not senuelos_activos(cfg):
+        if estado:
+            for ruta in estado:
+                try:
+                    os.remove(ruta)
+                except OSError:
+                    pass
+            _guardar_senuelos({})
+        return
+    bases = [b for b in backup_paths(cfg) if os.path.isdir(b)]
+    nuevo = {r: h for r, h in estado.items() if os.path.dirname(r) in bases}
+    for b in bases:
+        ruta = os.path.join(b, _NOMBRE_SENUELO)
+        if ruta not in nuevo:
+            h = _crear_senuelo(ruta)
+            if h:
+                nuevo[ruta] = h
+                log(f"Señuelo creado en {b}")
+    if nuevo != estado:
+        _guardar_senuelos(nuevo)
+
+
+def revisar_senuelos() -> list[str]:
+    import hashlib
+    tocados = []
+    for ruta, h in _leer_senuelos().items():
+        try:
+            with open(ruta, "rb") as fh:
+                if hashlib.sha256(fh.read()).hexdigest() != h:
+                    tocados.append(f"{ruta} (modificado)")
+        except FileNotFoundError:
+            tocados.append(f"{ruta} (borrado o renombrado)")
+        except OSError as exc:
+            tocados.append(f"{ruta} (no se puede leer: {exc.__class__.__name__})")
+    return tocados
+
+
+def rehacer_senuelos(tocados: list[str]) -> None:
+    """Tras avisar, se vuelven a poner (con una huella nueva) para seguir vigilando."""
+    estado = _leer_senuelos()
+    for t in tocados:
+        ruta = t.rsplit(" (", 1)[0]
+        if ruta in estado:
+            h = _crear_senuelo(ruta)
+            if h:
+                estado[ruta] = h
+    _guardar_senuelos(estado)
+
+
+def aceptar_senuelos_actuales() -> None:
+    """Despues de una recuperacion (legitima) los señuelos pueden volver con otro contenido: se aceptan tal cual
+    estan y, si alguno falta, se vuelve a crear."""
+    import hashlib
+    estado = _leer_senuelos()
+    for ruta in list(estado):
+        try:
+            with open(ruta, "rb") as fh:
+                estado[ruta] = hashlib.sha256(fh.read()).hexdigest()
+        except OSError:
+            h = _crear_senuelo(ruta)
+            if h:
+                estado[ruta] = h
+    _guardar_senuelos(estado)
+
+
 def _escanear(cfg: dict) -> dict | None:
     """Compara el estado actual con el anterior y devuelve una alerta si parece un ataque."""
     now = time.time()
+    if senuelos_activos(cfg) and now >= _detector_state["suspended_until"]:
+        tocados = revisar_senuelos()
+        if tocados:
+            rehacer_senuelos(tocados)
+            return {"severidad": "critica", "motivo": "Archivo señuelo tocado (casi seguro un ransomware): " +
+                    "; ".join(tocados[:5]), "evidencias": [t.rsplit(" (", 1)[0] for t in tocados][:80],
+                    "detectado": datetime.now().astimezone().isoformat()}
     previo = _detector_state["mtimes"]
     actual, cambiados, nuevos = {}, [], []
     contados = 0
@@ -510,6 +627,10 @@ def detector_loop() -> None:
         try:
             cfg = load_config()
             if cfg.get("detector", True) and not esta_aislado():
+                try:
+                    preparar_senuelos(cfg)
+                except Exception as exc:
+                    log(f"Señuelos: {exc}")
                 with _detector_lock:
                     alerta = _escanear(cfg)
                 if alerta and time.time() - _detector_state["last_alert"] > 600:
@@ -596,6 +717,7 @@ def restaurar_limpio(cfg: dict, snapshot: str) -> dict:
             else:
                 shutil.copy2(restored, base)
             resultados.append({"ruta": base, "ok": True})
+    aceptar_senuelos_actuales()
     suspender_detector(120)
     _detector_state["mtimes"] = {}
     ok = all(r["ok"] for r in resultados) and resultados
@@ -909,17 +1031,34 @@ def backup_forense(cfg: dict, path=None) -> dict:
 
 
 def _backup_forense(cfg: dict, path=None) -> dict:
-    log("Copia de seguridad")
+    pasos: list[str] = []
+    inicio = time.time()
+
+    def paso(texto: str) -> None:
+        pasos.append(f"[{datetime.now():%H:%M:%S}] {texto}")
+        log(texto)
+    res = _backup_forense_pasos(cfg, path, paso)
+    paso(f"Fin de la copia ({int(time.time() - inicio)} s): {res.get('status')}")
+    res["pasos"] = pasos
+    return res
+
+
+def _backup_forense_pasos(cfg: dict, path, paso) -> dict:
+    paso("Copia de seguridad: empieza")
     env = restic_env(cfg)
     binary = restic_bin()
     if not _restic_ready(binary):
         return {"status": "error", "message": f"restic no encontrado: {binary}"}
     targets = backup_paths(cfg, path)
     if not targets:
+        paso("No existe ninguna de las carpetas a copiar")
         return {"status": "error", "message": "Ninguna ruta de backup existe en esta maquina"}
+    paso(f"Carpetas a copiar: {len(targets)}")
     err = asegurar_repo(cfg)
     if err:
+        paso("No se pudo abrir el almacen del servidor")
         return err
+    paso("Almacen del servidor accesible; copiando...")
     cmd = [binary, "backup", *targets, "--tag", "octopus-agent", "--host", agent_host(cfg), "--json",
            *opciones_backup(cfg)]
     result = run_cmd(cmd, env=env)
@@ -996,7 +1135,9 @@ def restaurar_backup(cfg: dict, target: str = "/", snapshot: str = "latest") -> 
     cmd = [restic_bin(), "restore", snapshot, "--target", target]
     if snapshot == "latest":
         cmd += ["--host", agent_host(cfg)]
+    suspender_detector(600)
     result = run_cmd(cmd, env=env)
+    aceptar_senuelos_actuales()
     if result.returncode != 0:
         return {"status": "error", "message": result.stderr or result.stdout}
     return {"status": "success", "output": result.stdout}
@@ -1032,6 +1173,7 @@ def restaurar_archivo(cfg: dict, path_archivo: str, snapshot: str = "latest", de
         else:
             os.makedirs(os.path.dirname(original), exist_ok=True)
             shutil.copy2(restored, original)
+    aceptar_senuelos_actuales()
     log(f"Restaurado: {original}")
     return {"status": "success", "file": original}
 

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Enviar sugerencia o problema{% endblock %}
+{% block content %}
+<h1>Enviar sugerencia o problema</h1>
+<p class="lead">¿Algo no funciona, tienes una duda o una idea para mejorar OCTOPUS? Cuéntanoslo aquí.</p>
+<div class="card">
+  <form method="post" action="{{ url_for('sugerencia') }}">
+    <div class="field"><label for="gravedad">¿Qué es?</label>
+      <select id="gravedad" name="gravedad" style="max-width:520px">
+        {% for k, t in gravedades.items() %}<option value="{{ k }}" {{ 'selected' if k == 'problema' }}>{{ t }}</option>{% endfor %}
+      </select></div>
+    <div class="field"><label for="texto">Cuéntanos qué pasa o qué te gustaría</label>
+      <textarea id="texto" name="texto" rows="6" required minlength="5" maxlength="5000"
+        placeholder="Qué estabas haciendo, qué esperabas que pasara y qué pasó. Si sale un código de aviso (OCT-...), cópialo."></textarea></div>
+    <div class="field"><label for="correo">Correo para responderte (opcional)</label>
+      <input type="email" id="correo" name="correo" value="{{ correo }}" style="max-width:420px"></div>
+    <label style="font-weight:400; display:flex; gap:10px; margin-bottom:14px"><input type="checkbox" name="diagnostico">
+      <span><strong>Adjuntar diagnóstico</strong>: versión, estado de las tareas del servidor y últimos fallos. No incluye contraseñas,
+        claves ni nombres de archivos, y los equipos aparecen como «equipo-1», «equipo-2»…</span></label>
+    <button class="btn btn-primary" type="submit">Enviar</button>
+  </form>
+  {% if not configurado %}
+  <p class="hint" style="margin-top:12px">En este servidor todavía no está configurado a dónde se envían: lo que escribas se guarda aquí
+    y se enviará en cuanto se configure.</p>
+  {% endif %}
+</div>
+{% if envios %}
+<div class="card">
+  <h2>Lo que has enviado</h2>
+  <table class="small">
+    <thead><tr><th>Fecha</th><th>Tipo</th><th>Estado</th></tr></thead>
+    {% for e in envios %}
+    <tr><td>{{ e.fecha | hace }}</td><td>{{ gravedades.get(e.gravedad, e.gravedad) }}</td>
+      <td>{% if e.estado == 'enviada' %}<span class="pill ok">Enviado</span>{% elif e.estado == 'sin_destino' %}<span class="pill atencion">Guardado (falta configurar el envío)</span>{% else %}<span class="pill atencion">Pendiente de enviar</span>{% endif %}</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+{% endblock %}
