@@ -57,10 +57,18 @@ actualización a distancia firmada).
 3. **Avisos → Correo** (o Telegram): pon el correo al que deben llegar los avisos y pulsa "Probar".
 4. **Ajustes → Copias e informes:** cuántas copias se guardan, límite de velocidad (para no saturar la red en
    horario de trabajo) e informe mensual por correo.
+5. **Ajustes → Usuarios** (si va a entrar más gente): cada uno con su usuario y su papel — *Administrador*, *Solo
+   recuperar archivos* o *Solo ver*. Se crean con una contraseña temporal que se ve una sola vez.
+6. **Ajustes → Funciones:** todo lo que OCTOPUS puede hacer, para encender, apagar y ajustar. Lo que viene encendido es
+   lo recomendado. Con «Pasar al modo experto» salen los números finos y las opciones avanzadas (usuarios de la
+   empresa con Active Directory, Microsoft 365 o RADIUS, panel solo desde la red de la oficina, doble aprobación...).
+   Lo marcado **«En pruebas»** viene apagado hasta que termine su batería de pruebas.
 
 ## 4. Añadir los equipos
 
-**Lo más cómodo: Equipos → «Buscar equipos en la red»** (también sale en el inicio mientras no hay equipos):
+**Lo más cómodo: Equipos → «Buscar equipos en la red»** (también sale en el inicio mientras no hay equipos). Al terminar
+de instalar el servidor, el instalador pregunta si quieres hacerlo ya, y lo abre en la propia consola, con ventanas y
+ratón (también: `sudo bash octopus.sh buscar-equipos`, o `octopus.ps1 buscar-equipos` en Windows):
 1. Elige la red (el panel propone la del servidor) y pulsa Buscar: encuentra los equipos encendidos, dice qué sistema
    tienen (Windows, Linux, Mac) y cuáles ya tienen OCTOPUS.
 2. Marca los que quieras, revisa su nombre y ponlos en grupos («Oficina», «Servidores»...).
@@ -196,6 +204,8 @@ revise y pulse "Liberar equipo". También se puede declarar a mano: ficha del eq
 sudo bash octopus.sh estado          # cómo está todo
 sudo bash octopus.sh logs            # registro en directo
 sudo bash octopus.sh kit             # kit de recuperación por pantalla
+sudo bash octopus.sh buscar-equipos  # buscar los equipos de la red y protegerlos, con ventanas (sin abrir el panel)
+sudo bash octopus.sh acceso-emergencia  # si te has quedado fuera del panel (bloqueado o «solo red de la oficina»)
 sudo bash octopus.sh mantenimiento   # el mantenimiento de la noche, ahora
 sudo bash octopus.sh ajustes         # ajustes del servidor (almacén externo, avisos de disco...)
 sudo bash octopus.sh actualizar      # instala la versión de esta carpeta (conserva datos y copias)
@@ -266,6 +276,14 @@ restic -r <ruta-o-direccion-del-almacen> restore latest --host <equipo> --target
 - El **registro de actividad va firmado**: cada línea se encadena con la anterior (SHA-256). Si alguien con acceso al
   servidor borra o cambia una línea, el panel lo avisa en Ajustes → Registro de actividad.
 - Las contraseñas y tokens de correo/Telegram ya no se vuelven a enseñar en las páginas de ajustes.
+- Usuarios con papeles (Administrador / Solo recuperar / Solo ver) que se aplican al momento; cambiar una contraseña
+  cierra las demás sesiones. El administrador principal solo lo puede tocar él mismo.
+- Aviso por correo/Telegram cuando alguien entra desde un navegador nuevo.
+- En Ajustes → Funciones (modo experto, «En pruebas»): bloqueo automático de quien prueba contraseñas o páginas, panel
+  solo desde la red de la oficina o VPN, doble aprobación de lo peligroso por otro administrador, y entrar con los
+  usuarios de la empresa (Active Directory/LDAP, OIDC, RADIUS). Los usuarios locales nunca se pueden suplantar con
+  uno de la empresa. Si alguien se queda fuera: `octopus.sh acceso-emergencia` en el servidor.
+- En Windows, el firewall se abre en cualquier tipo de red (Windows marca muchas redes de oficina como «públicas»).
 - Pendiente para una próxima versión: doble autenticación (código de una app) al entrar en el panel.
 
 ## 11. Sugerencias y problemas (soporte)

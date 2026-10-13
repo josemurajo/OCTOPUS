@@ -136,6 +136,19 @@
       </form>
     </li>
     <li>
+      <strong>Levantar el equipo entero</strong>
+      <p class="hint">Para cuando el equipo ya no arranca o hay que montarlo en un disco nuevo.</p>
+      <div style="display:flex; gap:10px; flex-wrap:wrap">
+      {% for clave, texto in [('usb_rescate', 'Crear USB de rescate'), ('imagen_disco', 'Copia «imagen de disco»'), ('arranque_red', 'Arrancar por red (PXE)')] %}
+        {% set ok, motivo = para_equipo(clave, s.os_family) %}
+        {% if ok %}<a class="btn" href="{{ url_for('levantar', system_id=s.id, que=clave) }}">{{ texto }}</a>
+        {% else %}<span title="{{ motivo }}"><button class="btn" type="button" disabled>{{ texto }}</button></span>{% endif %}
+      {% endfor %}
+      </div>
+      {% set ok, motivo = para_equipo('usb_rescate', s.os_family) %}
+      {% if not ok %}<p class="hint" style="margin-top:6px">{{ motivo }}</p>{% endif %}
+    </li>
+    <li>
       <strong>Declarar incidencia</strong>
       <p class="hint">¿Crees que este equipo está infectado? Aísla el equipo, guarda su estado actual para analizarlo y restaura la última copia sana.</p>
       <form method="post" action="{{ url_for('declarar_incidente', system_id=s.id) }}"

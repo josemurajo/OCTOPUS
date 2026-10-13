@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}{{ f.nombre }} · {{ s.hostname }}{% endblock %}
+{% block content %}
+<p class="small"><a href="{{ url_for('equipo', system_id=s.id) }}">← {{ s.hostname }}</a></p>
+<h1>{{ f.nombre }}</h1>
+<p class="lead">{{ f.explica }}</p>
+<div class="notice atencion"><strong>Función en pruebas</strong>
+  Se ha encendido a mano en Ajustes → Funciones. Todavía no se puede usar en este servidor: falta terminar su batería de
+  pruebas con equipos reales. Cuando pase las pruebas, este botón hará el trabajo completo.</div>
+{% endblock %}

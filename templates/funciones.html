@@ -22,7 +22,7 @@
 
 <h1>Funciones</h1>
 <p class="lead">Todo lo que OCTOPUS puede hacer, para encender, apagar y ajustar. Lo que viene encendido es lo recomendado:
-  si no sabes qué tocar, no toques nada.</p>
+  si no sabes qué tocar, no toques nada. Los interruptores se guardan solos al pulsarlos.</p>
 
 <div class="card nivel">
   <span>Estás en <strong>{{ 'modo experto' if modo_experto() else 'modo básico' }}</strong>
@@ -46,7 +46,8 @@
     <div class="fun-cab">
       <input class="interruptor" type="checkbox" name="encendida" id="sw-{{ f.clave }}" aria-label="Encender {{ f.nombre }}"
              {{ 'checked' if f.encendida }} {{ 'disabled' if not puede_actuar() or (not f.disponible and not f.encendida)
-             or (f.en_pruebas and not modo_experto() and not f.encendida) }}>
+             or (f.en_pruebas and not modo_experto() and not f.encendida) }}
+             {% if not f.opciones and not (f.en_pruebas and not f.encendida) %}onchange="this.form.submit()"{% endif %}>
       <div class="txt">
         <label for="sw-{{ f.clave }}" style="font-weight:400"><strong>{{ f.nombre }}</strong>
           {% if f.en_pruebas %}<span class="etq etq-pruebas" title="Hecha, pero apagada hasta que termine la batería de pruebas">En pruebas</span>{% endif %}
@@ -87,7 +88,8 @@
       {% endfor %}
     </div>
     {% endif %}
-    {% if puede_actuar() %}<div style="margin:10px 0 0 34px"><button class="btn btn-primary" type="submit">Guardar</button></div>{% endif %}
+    {% if puede_actuar() and (f.opciones or (f.en_pruebas and not f.encendida and modo_experto())) and (f.disponible or f.encendida) %}
+    <div style="margin:10px 0 0 34px"><button class="btn btn-primary" type="submit">Guardar</button></div>{% endif %}
   </form>
   {% endfor %}
 </div>

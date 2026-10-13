@@ -3,7 +3,7 @@
 {% block content %}
 <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
   <div><h1>Equipos</h1><p class="lead">Los ordenadores y servidores que OCTOPUS protege.</p></div>
-  {% if puede_actuar() %}<div class="actions">{% if funcion_activa('buscar_equipos') %}<a class="btn" href="{{ url_for('buscar_equipos') }}">Buscar equipos en la red</a>{% endif %}
+  {% if puede_actuar() %}<div class="actions">{% if modo_experto() %}<span title="{{ 'Desplegar una instalación de referencia en muchos equipos a la vez (Windows y Linux). En Mac no se puede: Apple solo lo permite con su gestión de dispositivos (MDM).' if funcion_activa('despliegue_masa') else 'En pruebas: se podrá usar cuando termine la batería de pruebas. En Mac no se puede: Apple solo lo permite con su gestión de dispositivos (MDM).' }}"><button class="btn" type="button" disabled>Desplegar sistema en varios equipos</button></span>{% endif %}{% if funcion_activa('buscar_equipos') %}<a class="btn" href="{{ url_for('buscar_equipos') }}">Buscar equipos en la red</a>{% endif %}
     <a class="btn btn-primary" href="{{ url_for('equipo_nuevo') }}">+ Añadir equipo</a></div>{% endif %}
 </div>
 <div class="card" style="padding:6px 10px">

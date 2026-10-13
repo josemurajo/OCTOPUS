@@ -18,21 +18,21 @@
     {% for u in filas %}
     <tr>
       <td><strong>{{ u.username }}</strong>{% if u.id == session.get('user_id') %} <span class="muted small">(tú)</span>{% endif %}
-        {% if u.origen and u.origen != 'local' %}<div class="muted small">usuario de la empresa ({{ {'ldap': 'Active Directory', 'radius': 'RADIUS', 'oidc': 'OIDC'}.get(u.origen, u.origen) }}): su papel sale de sus grupos</div>
+        {% if u.origen and u.origen != 'local' %}<div class="muted small">usuario de la empresa ({{ {'ldap': 'Active Directory', 'radius': 'RADIUS', 'oidc': 'OIDC'}.get(u.origen, u.origen) }}): {{ 'su papel es el elegido en Ajustes → Funciones → RADIUS' if u.origen == 'radius' else 'su papel sale de sus grupos' }}</div>
         {% elif u.must_change_password %}<div class="muted small">aún no ha elegido su contraseña</div>{% endif %}</td>
       <td class="small">{{ u.email }}</td>
       <td>
-        {% if u.role == 'supremo' or u.id == session.get('user_id') %}{{ NOMBRE_ROL.get(u.role, u.role) }}
+        {% if u.role == 'supremo' or u.id == session.get('user_id') or (u.origen and u.origen != 'local') %}{{ NOMBRE_ROL.get(u.role, u.role) }}
         {% else %}
         <form method="post" action="{{ url_for('usuario_cambiar', uid=u.id) }}" style="display:flex; gap:6px">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="accion" value="rol">
-          <select name="role" aria-label="Papel de {{ u.username }}">{% for r, n, _ in roles %}<option value="{{ r }}" {{ 'selected' if u.role == r }}>{{ n }}</option>{% endfor %}</select>
+          <select name="role" style="min-width:210px" aria-label="Papel de {{ u.username }}">{% for r, n, _ in roles %}<option value="{{ r }}" {{ 'selected' if u.role == r }}>{{ n }}</option>{% endfor %}</select>
           <button class="btn btn-small" type="submit">Cambiar</button>
         </form>{% endif %}
       </td>
       <td class="small">{{ u.last_login | hace }}</td>
       <td style="white-space:nowrap">
-        {% if u.id != session.get('user_id') %}
+        {% if u.id != session.get('user_id') and (u.role != 'supremo' or session.get('role') == 'supremo') %}
         {% if not u.origen or u.origen == 'local' %}
         <form method="post" action="{{ url_for('usuario_cambiar', uid=u.id) }}" style="display:inline" data-confirm="¿Poner una contraseña temporal nueva a {{ u.username }}? La que tenía dejará de valer.">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="accion" value="clave">

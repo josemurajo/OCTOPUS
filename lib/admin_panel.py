@@ -2474,6 +2474,23 @@ def ajustes_incidentes():
 import funciones as _fun
 _fun.usar(config_manager)
 app.jinja_env.globals['funcion_activa'] = _fun.activa
+app.jinja_env.globals['para_equipo'] = _fun.para_equipo
+
+
+@app.route('/equipos/<int:system_id>/levantar/<que>')
+@login_required
+@role_required('admin', 'supremo')
+def levantar(system_id, que):
+    """USB de rescate, imagen de disco o arranque por red de un equipo (funciones en pruebas)."""
+    row = _get_system(system_id)
+    if not row or que not in ('usb_rescate', 'imagen_disco', 'arranque_red'):
+        return redirect(url_for('equipos'))
+    ok, motivo = _fun.para_equipo(que, row['os_family'])
+    if not ok:
+        flash(motivo, 'error')
+        return redirect(url_for('equipo', system_id=system_id))
+    f = next(x for x in _fun.FUNCIONES if x['clave'] == que)
+    return render_template('levantar.html', s=row, f=f)
 
 
 def _funciones_vista():
@@ -2740,12 +2757,15 @@ def usuario_cambiar(uid):
         flash('Ese usuario ya no existe.', 'error')
         return redirect(url_for('usuarios'))
     yo = uid == session['user_id']
-    if u['role'] == 'supremo' and session.get('role') != 'supremo' and accion != 'clave':
+    if u['role'] == 'supremo' and session.get('role') != 'supremo':   # ni su papel, ni su contraseña, ni borrarlo
         flash('Al administrador principal solo lo puede cambiar él mismo.', 'error')
         return redirect(url_for('usuarios'))
     if accion == 'rol':
         rol = request.form.get('role', '')
-        if rol not in [r for r, _, _ in ROLES] or u['role'] == 'supremo':
+        if (u['origen'] or 'local') != 'local':
+            flash('Es un usuario de la empresa: su papel sale de sus grupos (o del ajuste de RADIUS) cada vez que entra.',
+                  'error')
+        elif rol not in [r for r, _, _ in ROLES] or u['role'] == 'supremo':
             flash('Ese papel no se puede poner aquí.', 'error')
         elif yo:
             flash('No puedes cambiar tu propio papel (pídeselo a otro administrador).', 'error')
