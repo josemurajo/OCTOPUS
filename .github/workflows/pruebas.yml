@@ -144,6 +144,8 @@ jobs:
           python-version: "3.12"
       - run: pip install -r requirements.txt
       - run: python tests/ci/prueba_consola.py
+      - name: Entrar con OIDC (proveedor simulado)
+        run: python tests/ci/prueba_oidc.py
 
   servidor-windows-nativo:
     name: Servidor en Windows (nativo, sin WSL2 ni Docker)

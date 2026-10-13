@@ -62,7 +62,7 @@ class TelegramIntegration:
             return {'success': False, 'error': str(e)}
     
     LEVELS = {'incidente': 'critical', 'incident': 'critical', 'critical': 'critical',
-              'backup_failed': 'high', 'restauracion': 'high', 'prueba_fallida': 'high', 'mantenimiento': 'high', 'senuelo': 'critical', 'high': 'high', 'medium': 'medium', 'low': 'low', 'test': 'test'}
+              'backup_failed': 'high', 'restauracion': 'high', 'prueba_fallida': 'high', 'mantenimiento': 'high', 'senuelo': 'critical', 'acceso': 'high', 'high': 'high', 'medium': 'medium', 'low': 'low', 'test': 'test'}
 
     def send_alert(self, alert_type: str, details: str, include_timestamp: bool = True, level: str = None) -> dict:
         """Envía alerta formateada por Telegram"""

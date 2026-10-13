@@ -187,3 +187,13 @@ echo "  Usuario:      admin"
 echo "  Puertos:      $PUERTO (panel) y $(leer ALMACEN_PUERTO) (almacen), TCP. Para equipos fuera de la oficina,"
 echo "                abrelos en el router, pon el nombre publico en OCTOPUS_PUBLIC_HOST (install/.env) y vuelve a ejecutar esto"
 echo "  Gestion:      sudo bash $RAIZ/octopus.sh ayuda"
+
+# Seguir sin parar: buscar ya los equipos de la red y protegerlos (solo si hay alguien delante)
+if [ -t 0 ] && [ -t 1 ] && [ "${OCTOPUS_SIN_PREGUNTAS:-0}" != 1 ] && ! printf '%s\n' "$@" | grep -qx -- "--sin-preguntas"; then
+    echo
+    read -r -p "¿Busco ahora los equipos de la red para protegerlos? [S/n] " RESP || RESP=n
+    case "${RESP:-s}" in
+        [sS]*|"") bash "$RAIZ/octopus.sh" buscar-equipos ;;
+        *) echo "Cuando quieras: botón «Buscar los equipos de la red» en el panel, o sudo bash $RAIZ/octopus.sh buscar-equipos" ;;
+    esac
+fi

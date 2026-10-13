@@ -70,7 +70,7 @@ class NotificationManager:
     
     # Gravedad de cada tipo de aviso (los niveles que se eligen en el panel son critical/high/medium/low)
     LEVELS = {'incidente': 'critical', 'incident': 'critical', 'critical': 'critical',
-              'backup_failed': 'high', 'restauracion': 'high', 'prueba_fallida': 'high', 'mantenimiento': 'high', 'senuelo': 'critical', 'high': 'high', 'medium': 'medium', 'low': 'low', 'test': 'test'}
+              'backup_failed': 'high', 'restauracion': 'high', 'prueba_fallida': 'high', 'mantenimiento': 'high', 'senuelo': 'critical', 'acceso': 'high', 'high': 'high', 'medium': 'medium', 'low': 'low', 'test': 'test'}
 
     def send_alert(self, alert_type, details, recipients=None, level=None):
         """Envía alerta del sistema (respeta los niveles elegidos en el panel; 'test' siempre se envía)"""
@@ -128,7 +128,7 @@ No responda a este email.
             return False, f"Alerta enviada a {success_count}/{len(recipients)} destinatarios"
     
     # Tipos de aviso agrupados para elegir quien recibe cada grupo
-    CATEGORIAS = {'incidente': 'ataques', 'incident': 'ataques', 'critical': 'ataques', 'senuelo': 'ataques',
+    CATEGORIAS = {'incidente': 'ataques', 'incident': 'ataques', 'critical': 'ataques', 'senuelo': 'ataques', 'acceso': 'ataques',
                   'backup_failed': 'copias', 'restauracion': 'copias', 'prueba_fallida': 'copias',
                   'mantenimiento': 'servidor', 'informe': 'informe'}
     NOMBRES_CATEGORIAS = {'ataques': 'Ataques e incidentes', 'copias': 'Copias y recuperaciones',

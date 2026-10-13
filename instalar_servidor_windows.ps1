@@ -310,6 +310,13 @@ Marca "---- instalacion terminada correctamente ----"
 if (-not $SinPreguntas) {
     if (Test-Path $credOrig) { Start-Process notepad.exe $credOrig -ErrorAction SilentlyContinue }
     Start-Process "https://$($IP):$pPanel" -ErrorAction SilentlyContinue
+    Write-Host ""
+    $resp = Read-Host "Busco ahora los equipos de la red para protegerlos? [S/n]"
+    if ($resp -eq "" -or $resp -match "^[sS]") {
+        & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $R "octopus.ps1") buscar-equipos
+    } else {
+        Write-Host "Cuando quieras: boton 'Buscar los equipos de la red' en el panel, o $R\octopus.ps1 buscar-equipos"
+    }
 }
 if ($Registro) { Stop-Transcript | Out-Null }
 Pausa

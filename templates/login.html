@@ -20,6 +20,9 @@
       </div>
       <button class="btn btn-primary btn-big" type="submit" style="width:100%; justify-content:center;">Entrar</button>
     </form>
+    {% if oidc %}
+    <div style="margin-top:12px"><a class="btn btn-big" href="{{ url_for('login_oidc') }}" style="width:100%; justify-content:center;">{{ oidc }}</a></div>
+    {% endif %}
     <p class="small muted" style="margin-top:16px; text-align:center;">
       <a href="{{ url_for('recover_password') }}">¿Has olvidado la contraseña?</a>
     </p>

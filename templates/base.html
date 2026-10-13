@@ -181,7 +181,7 @@ pre.box { background: #0f172a; color: #e2e8f0; padding: 14px; border-radius: 10p
       <a href="{{ url_for('restaurar') }}" class="{{ 'active' if ep in ['restaurar','explorar','asistente_recuperar'] }}">Recuperar archivos</a>
       <a href="{{ url_for('avisos') }}" class="{{ 'active' if ep == 'avisos' }}">Avisos</a>
       <a href="{{ url_for('incidentes') }}" class="{{ 'active' if ep in ['incidentes','incidente','sala'] }}">Incidentes{% if incidentes_abiertos %}<span class="badge">{{ incidentes_abiertos }}</span>{% endif %}</a>
-      <a href="{{ url_for('ajustes') }}" class="{{ 'active' if ep == 'ajustes' or ep.startswith('config') or ep in ['audit','approvals','deploy','dashboard_avanzado','cambiar_password'] }}">Ajustes</a>
+      <a href="{{ url_for('ajustes') }}" class="{{ 'active' if ep == 'ajustes' or ep.startswith('config') or ep in ['audit','deploy','cambiar_password','ajustes_funciones','usuarios'] }}">Ajustes</a>
     </nav>
     <div class="user">{{ session.get('username') }} <a href="{{ url_for('logout') }}">Salir</a></div>
   </div>

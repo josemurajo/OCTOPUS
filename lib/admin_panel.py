@@ -150,6 +150,78 @@ app.jinja_env.globals['csrf_token'] = csrf_token
 PUBLIC_ENDPOINTS = {'login', 'static', 'recover_password', 'reset_password', 'index', 'healthz'}
 
 
+# ------------------------------------------------------------------ capas de seguridad (Ajustes -> Funciones)
+import seguridad as _seg
+
+_SIN_FILTRO_RED = ('/api/agente/', '/healthz')   # los equipos siempre pueden hablar con el servidor
+
+
+def _seg_confianza():
+    import funciones as _f
+    return _f.opcion('bloqueo_atacantes', 'confianza') if _f.activa('bloqueo_atacantes') else ''
+
+
+def _seg_fallo(motivo):
+    """Un intento sospechoso desde esta dirección (contraseña mal, página que no existe...)."""
+    import funciones as _f
+    if not _f.activa('bloqueo_atacantes'):
+        return
+    ip = request.remote_addr or ''
+    minutos = int(_f.opcion('bloqueo_atacantes', 'minutos'))
+    if _seg.fallo(DB_FILE, ip, motivo, int(_f.opcion('bloqueo_atacantes', 'intentos')), minutos, _seg_confianza()):
+        log_audit(None, 'IP_BLOQUEADA', f'{ip} bloqueada {minutos} min ({motivo})', ip)
+        _ban.marcar('seguridad', f'Dirección {ip} bloqueada {minutos} min: {motivo}', nivel='aviso')
+        _notificar_incidente('acceso', f'OCTOPUS ha bloqueado la dirección {ip} durante {minutos} minutos: {motivo}.\n'
+                                       f'Si eras tú, espera o desbloquéala en Ajustes → Funciones (modo experto). '
+                                       f'Desde la consola del servidor: octopus.sh acceso-emergencia')
+
+
+@app.before_request
+def _seguridad_entrada():
+    import funciones as _f
+    ip = request.remote_addr or ''
+    if request.path.startswith(_SIN_FILTRO_RED):
+        return None
+    if _f.activa('panel_solo_redes') and not _seg.nunca_bloquear(ip, _f.opcion('panel_solo_redes', 'redes')):
+        return ('Este panel solo se puede abrir desde la red de la oficina (o por VPN).\n'
+                'Si es tu red y te has quedado fuera, en la consola del servidor: octopus.sh acceso-emergencia\n',
+                403, {'Content-Type': 'text/plain; charset=utf-8'})
+    if _f.activa('bloqueo_atacantes'):
+        mins = _seg.bloqueada(DB_FILE, ip, _seg_confianza())
+        if mins:
+            return (f'Demasiados intentos fallidos desde tu dirección ({ip}). Vuelve a intentarlo en {mins} minutos.\n',
+                    429, {'Content-Type': 'text/plain; charset=utf-8', 'Retry-After': str(mins * 60)})
+    return None
+
+
+@app.errorhandler(404)
+def _no_existe(e):
+    if not request.path.startswith(_SIN_FILTRO_RED + ('/static/', '/favicon')):
+        _seg_fallo(f'página que no existe: {request.path[:80]}')
+    return ('No existe esa página.', 404, {'Content-Type': 'text/plain; charset=utf-8'})
+
+
+def _aviso_acceso(user):
+    """Tras entrar bien: ¿desde un navegador nuevo? Devuelve la cookie a poner (o None)."""
+    import funciones as _f
+    _seg.acierto(DB_FILE, request.remote_addr or '')
+    cookie = request.cookies.get('octopus_disp', '')
+    ua = request.headers.get('User-Agent', '')
+    estado = _seg.acceso(DB_FILE, user['id'], cookie, request.remote_addr, ua)
+    if estado == 'conocido':
+        return None
+    cookie = secrets.token_urlsafe(32)
+    _seg.recordar(DB_FILE, user['id'], cookie, request.remote_addr, ua)
+    if estado == 'nuevo' and _f.activa('aviso_acceso_nuevo'):
+        nav = _seg.nombre_navegador(ua)
+        log_audit(user['id'], 'ACCESO_NUEVO', f'{nav} desde {request.remote_addr}', request.remote_addr)
+        _notificar_incidente('acceso', f'Nuevo acceso al panel de OCTOPUS: el usuario «{user["username"]}» ha entrado desde '
+                                       f'{nav} ({request.remote_addr}) el {datetime.now():%d/%m/%Y a las %H:%M}.\n'
+                                       f'Si has sido tú, no hagas nada. Si no, cambia la contraseña ya '
+                                       f'(Ajustes → Tu cuenta) y revisa el registro de actividad.')
+    return cookie
+
+
 @app.before_request
 def security_checks():
     # CSRF: todo POST debe traer el token de la sesion (campo oculto o cabecera)
@@ -174,6 +246,13 @@ def security_checks():
         if not (request.args.get('auto') == '1' or request.headers.get('X-Auto') == '1'):
             session['_last_seen'] = now
         session.permanent = True
+        # el papel se lee en cada visita: si otro administrador lo cambia o borra el usuario, se aplica al momento
+        with get_db_connection() as _c:
+            _u = _c.execute('SELECT role, sesion_gen FROM users WHERE id = ?', (session['user_id'],)).fetchone()
+        if not _u or (_u['sesion_gen'] or 0) != session.get('gen', 0):
+            session.clear()
+            return redirect(url_for('login'))
+        session['role'] = _u['role']
         # Contrasena inicial: obligar a cambiarla antes de usar el panel
         if session.get('must_change') and request.endpoint not in ('cambiar_password', 'logout', 'static'):
             return redirect(url_for('cambiar_password'))
@@ -295,27 +374,14 @@ def init_db():
         )
     ''')
     
-    # Tabla de aprobaciones
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS approvals (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            requester_id INTEGER NOT NULL,
-            approver_id INTEGER,
-            action TEXT NOT NULL,
-            details TEXT,
-            status TEXT DEFAULT 'pending',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            decided_at TIMESTAMP,
-            FOREIGN KEY (requester_id) REFERENCES users (id),
-            FOREIGN KEY (approver_id) REFERENCES users (id)
-        )
-    ''')
-    
     # Migraciones (columnas nuevas en instalaciones existentes)
     for table, col, ddl in (
         ('users', 'must_change_password', 'INTEGER DEFAULT 0'),
         ('users', 'failed_logins', 'INTEGER DEFAULT 0'),
         ('users', 'locked_until', 'TIMESTAMP'),
+        ('users', 'nivel', "TEXT DEFAULT 'basico'"),
+        ('users', 'sesion_gen', 'INTEGER DEFAULT 0'),   # sube al cambiar la contraseña: cierra las demás sesiones
+        ('users', 'origen', "TEXT DEFAULT 'local'"),     # local / ldap / radius / oidc
         ('systems', 'tunnel_ip', 'TEXT'),
         ('systems', 'notes', 'TEXT'),
         ('systems', 'agent_info', 'TEXT'),
@@ -389,7 +455,7 @@ def role_required(*roles):
             
             if not user or user['role'] not in roles:
                 flash('No tienes permisos para esta acción', 'error')
-                return redirect(url_for('dashboard'))
+                return redirect(url_for('inicio'))
             
             return f(*args, **kwargs)
         return decorated_function
@@ -421,23 +487,28 @@ def login():
                 flash(f'Demasiados intentos fallidos. Prueba de nuevo en {mins} minutos.', 'error')
                 return render_template('login.html'), 429
 
-        if user and verify_password(password, user['password_hash']):
-            conn.execute('UPDATE users SET last_login = ?, failed_logins = 0, locked_until = NULL WHERE id = ?',
-                         (datetime.now(), user['id']))
-            conn.commit()
+        local = not user or (user['origen'] if 'origen' in user.keys() else 'local') in (None, '', 'local')
+        if user and local and verify_password(password, user['password_hash']):
             conn.close()
-            session.clear()  # evita fijacion de sesion
-            session['user_id'] = user['id']
-            session['username'] = user['username']
-            session['role'] = user['role']
-            session['must_change'] = bool(user['must_change_password'])
-            session['_last_seen'] = datetime.now().timestamp()
-            session.permanent = True
-            log_audit(user['id'], 'LOGIN', 'Inicio de sesion', request.remote_addr)
-            if session['must_change']:
-                flash('Por seguridad, elige una contrasena nueva antes de continuar.', 'info')
-                return redirect(url_for('cambiar_password'))
-            return redirect(url_for('inicio'))
+            return _iniciar_sesion(user, 'contraseña de OCTOPUS')
+
+        if not local or not user:
+            # usuarios de la empresa (LDAP / RADIUS), si están encendidos; un usuario local nunca pasa por aquí
+            import identidad as _id
+            datos, proveedor, error_ext = _id.entrar_con_contrasena(username, password)
+            if datos:
+                uid, error_ext = _id.usuario_local(DB_FILE, datos, proveedor)
+                if uid:
+                    fila = conn.execute('SELECT * FROM users WHERE id = ?', (uid,)).fetchone()
+                    conn.close()
+                    return _iniciar_sesion(fila, {'ldap': 'Active Directory / LDAP', 'radius': 'RADIUS'}[proveedor])
+            if error_ext and 'incorrect' not in error_ext:
+                conn.close()
+                _seg_fallo(f'acceso de empresa fallido ({username[:40]})')
+                log_audit(user['id'] if user else None, 'LOGIN_FAILED', f'{username[:40]}: {error_ext}'[:200],
+                          request.remote_addr)
+                flash(error_ext, 'error')
+                return render_template('login.html', oidc=_oidc_boton())
 
         if user:
             fails = (user['failed_logins'] or 0) + 1
@@ -447,9 +518,83 @@ def login():
             conn.commit()
             log_audit(user['id'], 'LOGIN_FAILED', f'Contrasena incorrecta ({fails})', request.remote_addr)
         conn.close()
+        _seg_fallo('contraseña incorrecta' + ('' if user else f' (usuario «{username[:40]}» no existe)'))
         flash('Usuario o contrasena incorrectos.', 'error')
 
-    return render_template('login.html')
+    return render_template('login.html', oidc=_oidc_boton())
+
+
+def _oidc_boton():
+    """Texto del botón «Entrar con...» si OIDC está encendido (None si no)."""
+    try:
+        return config_manager.get_config('oidc.nombre_boton') or 'Entrar con la cuenta de la empresa' \
+            if _fun.activa('oidc') else None
+    except Exception:
+        return None
+
+
+def _iniciar_sesion(user, como):
+    """Abre la sesión (local o de la empresa) y devuelve la respuesta."""
+    with get_db_connection() as c:
+        c.execute('UPDATE users SET last_login = ?, failed_logins = 0, locked_until = NULL WHERE id = ?',
+                  (datetime.now(), user['id']))
+    session.clear()  # evita fijacion de sesion
+    session['user_id'] = user['id']
+    session['username'] = user['username']
+    session['role'] = user['role']
+    session['nivel'] = (user['nivel'] if 'nivel' in user.keys() else None) or 'basico'
+    session['gen'] = (user['sesion_gen'] if 'sesion_gen' in user.keys() else 0) or 0
+    session['must_change'] = bool(user['must_change_password'])
+    session['_last_seen'] = datetime.now().timestamp()
+    session.permanent = True
+    log_audit(user['id'], 'LOGIN', f'Inicio de sesion ({como})', request.remote_addr)
+    cookie = _aviso_acceso(user)
+    if session['must_change']:
+        flash('Por seguridad, elige una contrasena nueva antes de continuar.', 'info')
+        resp = redirect(url_for('cambiar_password'))
+    else:
+        resp = redirect(url_for('inicio'))
+    if cookie:
+        resp.set_cookie('octopus_disp', cookie, max_age=400 * 86400, httponly=True, secure=USE_HTTPS, samesite='Lax')
+    return resp
+
+
+@app.route('/login/empresa')
+def login_oidc():
+    """Botón «Entrar con...»: manda al proveedor de la empresa (OIDC)."""
+    import identidad as _id
+    if not _fun.activa('oidc'):
+        return redirect(url_for('login'))
+    try:
+        destino, datos = _id.oidc_inicio(url_for('login_oidc_vuelta', _external=True))
+    except Exception as exc:
+        flash(str(exc) if isinstance(exc, _id.ErrorIdentidad) else 'No se puede hablar con el proveedor de la empresa. '
+              'Entra con el usuario local de OCTOPUS.', 'error')
+        return redirect(url_for('login'))
+    session['_oidc'] = datos
+    return redirect(destino)
+
+
+@app.route('/login/empresa/vuelta')
+def login_oidc_vuelta():
+    import identidad as _id
+    if not _fun.activa('oidc'):
+        return redirect(url_for('login'))
+    guardado = session.pop('_oidc', None)
+    try:
+        datos = _id.oidc_vuelta(request.args, guardado)
+        uid, error = _id.usuario_local(DB_FILE, datos, 'oidc')
+        if not uid:
+            raise _id.ErrorIdentidad(error)
+    except Exception as exc:
+        _seg_fallo('acceso de empresa (OIDC) fallido')
+        log_audit(None, 'LOGIN_FAILED', f'OIDC: {exc}'[:200], request.remote_addr)
+        flash(str(exc) if isinstance(exc, _id.ErrorIdentidad) else 'No se ha podido entrar con la cuenta de la empresa.',
+              'error')
+        return redirect(url_for('login'))
+    with get_db_connection() as c:
+        fila = c.execute('SELECT * FROM users WHERE id = ?', (uid,)).fetchone()
+    return _iniciar_sesion(fila, 'cuenta de la empresa (OIDC)')
 
 @app.route('/logout')
 def logout():
@@ -468,6 +613,8 @@ def recover_password():
         email = (request.form.get('email') or '').strip().lower()
         conn = get_db_connection()
         user = conn.execute('SELECT * FROM users WHERE lower(email) = ?', (email,)).fetchone()
+        if user and (user['origen'] or 'local') != 'local':
+            user = None   # los usuarios de la empresa cambian su contraseña en la empresa, no aquí
         if user:
             token = secrets.token_urlsafe(32)
             expiry = datetime.now() + timedelta(minutes=30)
@@ -510,7 +657,8 @@ def reset_password(token):
         
         # Actualizar contraseña
         password_hash = hash_password(new_password)
-        conn.execute('UPDATE users SET password_hash = ?, recovery_token = NULL, recovery_token_expiry = NULL, failed_logins = 0, locked_until = NULL WHERE id = ?',
+        conn.execute('UPDATE users SET password_hash = ?, recovery_token = NULL, recovery_token_expiry = NULL, failed_logins = 0, '
+                     'locked_until = NULL, sesion_gen = COALESCE(sesion_gen, 0) + 1 WHERE id = ?',
                    (password_hash, user['id']))
         conn.commit()
         conn.close()
@@ -545,7 +693,7 @@ def config_notifications():
             config_manager.set_config('smtp_use_tls', _marcado('smtp_use_tls'), uid)
             log_audit(uid, 'CONFIG_NOTIFICATIONS_UPDATE', 'Servidor de correo (SMTP)', request.remote_addr)
         else:
-            config_manager.set_config('email_notifications', _marcado('email_notifications'), uid)
+            _guardar_protegido('email_notifications', _marcado('email_notifications'), uid)
             config_manager.set_config('alert_email', (request.form.get('alert_email') or '').strip(), uid)
             config_manager.set_config('notification_levels', request.form.getlist('notification_levels[]'), uid)
             por_tipo = {cat: (request.form.get(f'dest_{cat}') or '').strip()[:500]
@@ -658,7 +806,7 @@ def config_telegram():
         telegram_chat_id = request.form.get('telegram_chat_id', '')
         telegram_notification_levels = request.form.getlist('telegram_notification_levels[]')
         
-        config_manager.set_config('telegram_enabled', telegram_enabled, session['user_id'])
+        _guardar_protegido('telegram_enabled', telegram_enabled, session['user_id'])
         config_manager.set_config('telegram_bot_token', telegram_bot_token, session['user_id'])
         config_manager.set_config('telegram_chat_id', telegram_chat_id, session['user_id'])
         config_manager.set_config('telegram_notification_levels', telegram_notification_levels, session['user_id'])
@@ -716,7 +864,14 @@ def delete_system(system_id):
     """Eliminar sistema"""
     conn = get_db_connection()
     system = conn.execute('SELECT * FROM systems WHERE id = ?', (system_id,)).fetchone()
-    
+    if not system:
+        conn.close()
+        flash('Ese equipo ya no existe.', 'error')
+        return redirect(url_for('equipos'))
+    if _pedir_aprobacion('borrar_equipo', {'id': system_id, 'hostname': system['hostname']},
+                         f'Quitar el equipo «{system["hostname"]}» del panel'):
+        conn.close()
+        return redirect(url_for('equipo', system_id=system_id))
     conn.execute('DELETE FROM systems WHERE id = ?', (system_id,))
     conn.commit()
     conn.close()
@@ -815,6 +970,27 @@ def estado_red():
 
 def puede_actuar():
     return session.get('role') in ('admin', 'supremo')
+
+
+def puede_recuperar():
+    """Recuperar archivos: administradores y el papel «Solo recuperar archivos»."""
+    return session.get('role') in ('admin', 'supremo', 'recuperar')
+
+
+app.jinja_env.globals['puede_recuperar'] = puede_recuperar
+
+ROLES = [('admin', 'Administrador', 'Puede hacerlo todo.'),
+         ('recuperar', 'Solo recuperar archivos', 'Ve los equipos y recupera archivos; no cambia nada más.'),
+         ('lectura', 'Solo ver', 'Ve cómo va todo, sin tocar nada.')]
+NOMBRE_ROL = {'supremo': 'Administrador principal', **{k: n for k, n, _ in ROLES}}
+app.jinja_env.globals['NOMBRE_ROL'] = NOMBRE_ROL
+
+
+def modo_experto():
+    return session.get('nivel') == 'experto'
+
+
+app.jinja_env.globals['modo_experto'] = modo_experto
 
 
 def _hace(dt):
@@ -1586,7 +1762,7 @@ def restaurar_ruta(system_id):
         volver = request.form['volver']
     if not row or not ruta:
         return redirect(url_for('restaurar'))
-    if not puede_actuar():
+    if not puede_recuperar():
         flash('Tu usuario no tiene permiso para restaurar.', 'error')
         return redirect(volver)
     _ban.marcar('recuperacion', f'Recuperar «{ruta}» de la copia {copia} ({destino}), pedido por '
@@ -1793,6 +1969,7 @@ def ajustes():
     with get_db_connection() as c:
         kit = c.execute("SELECT timestamp FROM audit_logs WHERE action = 'RECOVERY_KIT' ORDER BY timestamp DESC LIMIT 1").fetchone()
     return render_template('ajustes.html', user=user, eventos=eventos, https=USE_HTTPS, cfg=cfg,
+                           aprobaciones=_seg.pendientes(DB_FILE),
                            mant=_mant.leer_estado(), mant_nombres=_mant.NOMBRES,
                            kit_fecha=kit['timestamp'] if kit else None,
                            ajustes_copias=_ajustes_copias(), act=_av.leer_actualizacion(),
@@ -1939,9 +2116,10 @@ def cambiar_password():
             conn.close()
             flash(error, 'error')
             return redirect(url_for('cambiar_password'))
-        conn.execute('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?',
-                     (hash_password(nueva), user['id']))
+        conn.execute('UPDATE users SET password_hash = ?, must_change_password = 0, sesion_gen = COALESCE(sesion_gen, 0) + 1 '
+                     'WHERE id = ?', (hash_password(nueva), user['id']))
         conn.commit()
+        session['gen'] = conn.execute('SELECT sesion_gen FROM users WHERE id = ?', (user['id'],)).fetchone()[0]
         conn.close()
         session['must_change'] = False
         log_audit(user['id'], 'PASSWORD_CHANGE', 'Contraseña cambiada', request.remote_addr)
@@ -1999,6 +2177,7 @@ import ordenes as _ordenes
 # primero las tablas del panel: en una instalacion nueva, ordenes.init anade columnas a «systems» y tiene que existir ya
 init_db()
 _ordenes.init(DB_FILE)
+_seg.init(DB_FILE)
 
 
 def _agente_autenticado():
@@ -2051,6 +2230,22 @@ def api_agente_resultado():
     return jsonify({'ok': ok})
 
 
+def _dias_aprendiendo(system):
+    """Días que le quedan al equipo en su periodo de aprendizaje (None si ya acabó o está apagado)."""
+    if not _fun.activa('periodo_prueba'):
+        return None
+    try:
+        alta = agentes.parse_time(system['created_at'])
+    except (KeyError, IndexError, TypeError):
+        return None
+    if not alta:
+        return None
+    if alta.tzinfo is None:
+        alta = alta.replace(tzinfo=timezone.utc)
+    quedan = int(_fun.opcion('periodo_prueba', 'dias')) - (datetime.now(timezone.utc) - alta).days
+    return quedan if quedan > 0 else None
+
+
 @app.route('/api/agente/alerta', methods=['POST'])
 @limiter.exempt
 def api_agente_alerta():
@@ -2061,14 +2256,23 @@ def api_agente_alerta():
     data = request.get_json(silent=True) or {}
     host = system['hostname']
     origen_ip = request.remote_addr
+    motivo = str(data.get('motivo', 'Ataque detectado'))[:500]
+    senuelo = 'señuelo' in motivo.lower() or 'senuelo' in motivo.lower()
+    auto, severidad = _cfg_bool('incident_auto_response'), data.get('severidad', 'critica')
+    dias = _dias_aprendiendo(system)
+    if dias is not None and not senuelo:
+        # equipo nuevo: la deteccion aun no sabe lo que es normal en el. Aviso amarillo, sin aislar (un señuelo si actua)
+        auto, severidad = False, 'aviso'
+        motivo = (f'{motivo} — equipo en periodo de aprendizaje (quedan {dias} días): no se ha aislado. '
+                  f'Revísalo y pulsa «Responder» si es un ataque de verdad.')[:600]
     inc_id, nuevo = _inc.crear(
-        system, str(data.get('motivo', 'Ataque detectado'))[:500], data.get('evidencias', [])[:100],
-        detectado=data.get('detectado'), origen='detector del agente', severidad=data.get('severidad', 'critica'),
-        auto=_cfg_bool('incident_auto_response'), mantener_aislado=_cfg_bool('incident_keep_isolated'),
+        system, motivo, data.get('evidencias', [])[:100],
+        detectado=data.get('detectado'), origen='detector del agente', severidad=severidad,
+        auto=auto, mantener_aislado=_cfg_bool('incident_keep_isolated'),
         contacto=config_manager.get_config('security_contact') or 'el departamento de seguridad')
     log_audit(None, 'INCIDENT_CREATED' if nuevo else 'INCIDENT_REPEAT', f'#{inc_id} {host}: {data.get("motivo", "")}'[:300], origen_ip)
     _ban.marcar('incidentes', f'Alerta del equipo: {data.get("motivo", "")} (incidente #{inc_id})', equipo=host,
-                codigo='OCT-SEN-01' if 'señuelo' in str(data.get('motivo', '')).lower() else None, nivel='error')
+                codigo='OCT-SEN-01' if senuelo else None, nivel='aviso' if severidad == 'aviso' else 'error')
     return jsonify({'incidente': inc_id, 'nuevo': nuevo})
 
 
@@ -2241,7 +2445,7 @@ def ajustes_copias():
     import mantenimiento as _mant
     ret = request.form.get('retencion', '')
     if ret in _mant.POLITICAS:
-        config_manager.set_config('backup_retention', ret, uid)
+        _guardar_protegido('backup_retention', ret, uid)
     log_audit(uid, 'CONFIG_BACKUP_SPEED', f'limite={kbps} KB/s solo_horario={request.form.get("solo_horario") == "on"} '
                                           f'retencion={ret or "sin cambios"}',
               request.remote_addr)
@@ -2254,16 +2458,349 @@ def ajustes_copias():
 @role_required('admin', 'supremo')
 def ajustes_incidentes():
     uid = session['user_id']
-    config_manager.set_config('incident_auto_response', request.form.get('auto') == 'on', uid)
-    config_manager.set_config('incident_keep_isolated', request.form.get('aislado') == 'on', uid)
+    _guardar_protegido('incident_auto_response', request.form.get('auto') == 'on', uid)
+    _guardar_protegido('incident_keep_isolated', request.form.get('aislado') == 'on', uid)
     config_manager.set_config('sandbox_terminal', request.form.get('terminal') == 'on', uid)
-    config_manager.set_config('senuelos', request.form.get('senuelos') == 'on', uid)
+    _guardar_protegido('senuelos', request.form.get('senuelos') == 'on', uid)
     config_manager.set_config('autoarreglo', request.form.get('autoarreglo') == 'on', uid)
     contacto = (request.form.get('contacto') or '').strip()[:200] or 'el departamento de seguridad'
     config_manager.set_config('security_contact', contacto, uid)
     log_audit(uid, 'CONFIG_INCIDENTS', 'Ajustes de respuesta a ataques', request.remote_addr)
     flash('Ajustes de respuesta a ataques guardados.', 'success')
     return redirect(url_for('ajustes'))
+
+
+# ------------------------------------------------------------------ Ajustes -> Funciones (todo lo configurable)
+import funciones as _fun
+_fun.usar(config_manager)
+app.jinja_env.globals['funcion_activa'] = _fun.activa
+
+
+def _funciones_vista():
+    """Las funciones por grupos, con su estado, para la pantalla (en modo básico no salen las de experto)."""
+    experto = modo_experto()
+    aceptadas = set(config_manager.get_config('funciones_en_pruebas_aceptadas') or [])
+    grupos = []
+    for g, titulo, explica in _fun.GRUPOS:
+        filas = []
+        for f in _fun.FUNCIONES:
+            if f['grupo'] != g or (f['nivel'] == 'experto' and not experto):
+                continue
+            ok, motivo = _fun.disponible(f['clave'])
+            valor = config_manager.get_config(f['clave'])
+            opciones = []
+            for (k, nombre, tipo, defecto, nivel, ayuda, extra) in f.get('opciones', []):
+                if nivel == 'experto' and not experto:
+                    continue
+                v = config_manager.get_config(f"{f['clave']}.{k}")
+                opciones.append({'k': k, 'nombre': nombre, 'tipo': tipo, 'ayuda': ayuda, 'extra': extra,
+                                 'valor': '' if tipo == 'secreto' else (defecto if v is None else v),
+                                 'tiene_secreto': tipo == 'secreto' and bool(v)})
+            filas.append({**{k: f.get(k) for k in ('clave', 'nombre', 'explica', 'nivel', 'requiere')},
+                          'en_pruebas': bool(f.get('en_pruebas')), 'aceptada': f['clave'] in aceptadas,
+                          'encendida': bool(valor), 'disponible': ok, 'motivo': motivo, 'opciones': opciones,
+                          'no_mac': bool(f.get('no_mac'))})
+        if filas:
+            grupos.append({'clave': g, 'titulo': titulo, 'explica': explica, 'filas': filas})
+    return grupos
+
+
+# ---- doble aprobación: lo peligroso lo aprueba otro administrador (si la función está encendida)
+_PROTEGIDOS_AL_APAGAR = {'senuelos', 'incident_auto_response', 'incident_keep_isolated', 'aviso_acceso_nuevo',
+                         'bloqueo_atacantes', 'panel_solo_redes', 'doble_aprobacion', 'email_notifications',
+                         'telegram_enabled'}
+_PROTEGIDOS_SIEMPRE = {'backup_retention'}
+_NOMBRES_PROTEGIDOS = {'email_notifications': 'Avisos por correo', 'telegram_enabled': 'Avisos por Telegram',
+                       'backup_retention': 'Cuántas copias se guardan',
+                       **{f['clave']: f['nombre'] for f in _fun.FUNCIONES}}
+
+
+def _pedir_aprobacion(accion, datos, resumen):
+    """Si hace falta doble aprobación, deja la petición pendiente, avisa y devuelve True (no hacer nada aún)."""
+    if not _fun.activa('doble_aprobacion'):
+        return False
+    with get_db_connection() as c:
+        otros = c.execute("SELECT COUNT(*) FROM users WHERE role IN ('admin','supremo') AND id != ?",
+                          (session['user_id'],)).fetchone()[0]
+    if not otros:   # no hay nadie más que pueda aprobar: no se bloquea al único administrador
+        return False
+    aid = _seg.pedir(DB_FILE, accion, datos, resumen, session['user_id'], session.get('username', '?'),
+                     int(_fun.opcion('doble_aprobacion', 'horas')))
+    log_audit(session['user_id'], 'APROBACION_PEDIDA', f'#{aid}: {resumen}', request.remote_addr)
+    _notificar_incidente('acceso', f'OCTOPUS: {session.get("username")} pide aprobar «{resumen}». Lo tiene que aprobar '
+                                   f'otro administrador en Ajustes → Pendiente de aprobar.')
+    flash(f'«{resumen}» necesita que lo apruebe otro administrador. Queda pendiente en Ajustes → Pendiente de aprobar.',
+          'info')
+    return True
+
+
+def _guardar_protegido(clave, valor, uid):
+    """Guarda un ajuste; si apagarlo (o cambiarlo) es peligroso y hay doble aprobación, lo deja pendiente."""
+    actual = config_manager.get_config(clave)
+    peligroso = (clave in _PROTEGIDOS_SIEMPRE and valor != actual) or \
+                (clave in _PROTEGIDOS_AL_APAGAR and bool(actual) and not valor)
+    if peligroso and _pedir_aprobacion('ajuste', {'clave': clave, 'valor': valor},
+                                       f'{"Cambiar" if clave in _PROTEGIDOS_SIEMPRE else "Apagar"} '
+                                       f'«{_NOMBRES_PROTEGIDOS.get(clave, clave)}»'
+                                       + (f' a «{valor}»' if clave in _PROTEGIDOS_SIEMPRE else '')):
+        return False
+    config_manager.set_config(clave, valor, uid)
+    return True
+
+
+def _ejecutar_aprobada(p, uid):
+    """Hace lo que se aprobó. Devuelve el texto para el mensaje."""
+    if p['accion'] == 'ajuste':
+        config_manager.set_config(p['datos']['clave'], p['datos']['valor'], uid)
+        return 'hecho'
+    if p['accion'] == 'borrar_usuario':
+        with get_db_connection() as c:
+            u = c.execute('SELECT role FROM users WHERE id = ?', (p['datos']['id'],)).fetchone()
+        if not u:
+            return 'ese usuario ya no existía'
+        if u['role'] in ('admin', 'supremo') and not _admins_restantes(p['datos']['id']):
+            return 'no se ha borrado: tiene que quedar al menos un administrador'
+        _borrar_usuario(p['datos']['id'])
+        return 'usuario borrado'
+    if p['accion'] == 'borrar_equipo':
+        with get_db_connection() as c:
+            c.execute('DELETE FROM systems WHERE id = ?', (p['datos']['id'],))
+        return 'equipo quitado del panel (sus copias siguen guardadas)'
+    return 'acción desconocida: no se ha hecho nada'
+
+
+@app.route('/aprobaciones/<int:aid>', methods=['POST'])
+@login_required
+@role_required('admin', 'supremo')
+def decidir_aprobacion(aid):
+    aprobar = request.form.get('decision') == 'aprobar'
+    p, motivo = _seg.decidir(DB_FILE, aid, session['user_id'], session.get('username', '?'), aprobar)
+    if not p:
+        flash(motivo, 'error')
+        return redirect(url_for('ajustes') + '#aprobaciones')
+    if aprobar:
+        resultado = _ejecutar_aprobada(p, session['user_id'])
+        log_audit(session['user_id'], 'APROBACION_OK', f'#{aid}: {p["resumen"]} (pedido por {p["pedido_nombre"]}): '
+                                                       f'{resultado}', request.remote_addr)
+        flash(f'Aprobado: «{p["resumen"]}» — {resultado}.', 'success')
+    else:
+        log_audit(session['user_id'], 'APROBACION_NO', f'#{aid}: {p["resumen"]} (pedido por {p["pedido_nombre"]})',
+                  request.remote_addr)
+        flash(f'Rechazado: «{p["resumen"]}».', 'success')
+    return redirect(url_for('ajustes') + '#aprobaciones')
+
+
+@app.route('/ajustes/bloqueos/quitar', methods=['POST'])
+@login_required
+@role_required('admin', 'supremo')
+def quitar_bloqueo():
+    ip = (request.form.get('ip') or '').strip()[:64] or None
+    n = _seg.desbloquear(DB_FILE, ip)
+    log_audit(session['user_id'], 'IP_DESBLOQUEADA', ip or f'todas ({n})', request.remote_addr)
+    flash(f'Desbloqueada{"s" if not ip else ""} {ip or f"{n} direcciones"}.', 'success')
+    return redirect(url_for('ajustes_funciones') + '#bloqueo_atacantes')
+
+
+@app.route('/ajustes/funciones', methods=['GET', 'POST'])
+@login_required
+def ajustes_funciones():
+    if request.method == 'GET':
+        return render_template('funciones.html', grupos=_funciones_vista(), mi_ip=request.remote_addr,
+                               bloqueadas=_seg.lista_bloqueadas(DB_FILE) if modo_experto() else [],
+                               nombres={f['clave']: f['nombre'] for f in _fun.FUNCIONES})
+    if not puede_actuar():
+        flash('Solo un administrador puede cambiar las funciones.', 'error')
+        return redirect(url_for('ajustes_funciones'))
+    uid, experto = session['user_id'], modo_experto()
+    clave = request.form.get('clave', '')
+    f = next((x for x in _fun.FUNCIONES if x['clave'] == clave), None)
+    if not f or (f['nivel'] == 'experto' and not experto):
+        flash('Esa función no existe o necesita el modo experto.', 'error')
+        return redirect(url_for('ajustes_funciones'))
+    volver = url_for('ajustes_funciones') + '#' + clave
+    errores, cambios = [], []
+    encender = request.form.get('encendida') == 'on'
+    if encender and not config_manager.get_config(clave):
+        ok, motivo = _fun.disponible(clave)
+        if not ok:
+            flash(motivo, 'error')
+            return redirect(volver)
+        if f.get('en_pruebas'):
+            if not experto or request.form.get('acepto_pruebas') != 'on':
+                flash(f'«{f["nombre"]}» está en pruebas: para encenderla marca «Sé que está en pruebas».', 'error')
+                return redirect(volver)
+            aceptadas = list(config_manager.get_config('funciones_en_pruebas_aceptadas') or [])
+            if clave not in aceptadas:
+                config_manager.set_config('funciones_en_pruebas_aceptadas', aceptadas + [clave], uid)
+        if f.get('requiere') and not config_manager.get_config(f['requiere']):
+            nombre = next(x['nombre'] for x in _fun.FUNCIONES if x['clave'] == f['requiere'])
+            flash(f'Para «{f["nombre"]}» hace falta encender antes «{nombre}».', 'error')
+            return redirect(volver)
+    nuevos = {}
+    for (k, nombre, tipo, defecto, nivel, ayuda, extra) in f.get('opciones', []):
+        campo = f'op_{k}'
+        if (nivel == 'experto' and not experto) or campo not in request.form:
+            continue
+        texto = request.form.get(campo, '')
+        if tipo == 'secreto' and not texto:
+            continue        # vacio = dejar el que habia (nunca se enseña)
+        try:
+            nuevos[k] = _fun.validar(tipo, texto, extra)
+        except ValueError as exc:
+            errores.append(f'{nombre}: {exc}')
+    if clave == 'panel_solo_redes' and encender:
+        redes = nuevos.get('redes', _fun.opcion(clave, 'redes'))
+        if not _fun.en_redes(request.remote_addr, redes):
+            # para no quedarse fuera: se añade la red desde la que se esta ahora
+            nuevos['redes'] = ', '.join(x for x in [redes, request.remote_addr + '/32'] if x)
+            cambios.append(f'añadida tu dirección actual ({request.remote_addr}) para que no te quedes fuera')
+    if clave == 'doble_aprobacion' and encender:
+        with get_db_connection() as c:
+            n = c.execute("SELECT COUNT(*) FROM users WHERE role IN ('admin','supremo')").fetchone()[0]
+        if n < 2:
+            errores.append('hacen falta al menos dos administradores (crea otro usuario administrador primero)')
+    if errores:
+        flash('No se ha guardado: ' + '; '.join(errores) + '.', 'error')
+        return redirect(volver)
+    for k, v in nuevos.items():
+        config_manager.set_config(f'{clave}.{k}', v, uid)
+    antes = bool(config_manager.get_config(clave))
+    if not _guardar_protegido(clave, encender, uid):
+        return redirect(volver)
+    detalle = ('encendida' if encender else 'apagada') + (f'; opciones: {", ".join(sorted(nuevos))}' if nuevos else '')
+    log_audit(uid, 'FUNCION_CAMBIADA', f'{clave}: {detalle}', request.remote_addr)
+    if antes != encender:
+        _ban.marcar('ajustes', f'«{f["nombre"]}» {"encendida" if encender else "apagada"} por {session.get("username")}')
+    flash(f'«{f["nombre"]}» {"encendida" if encender else "apagada"}' + (f' ({"; ".join(cambios)})' if cambios else '')
+          + '.', 'success')
+    return redirect(volver)
+
+
+# ------------------------------------------------------------------ Ajustes -> Usuarios
+_RE_USUARIO = re.compile(r'^[A-Za-z0-9._-]{3,40}$')
+
+
+def _admins_restantes(sin_id):
+    with get_db_connection() as c:
+        return c.execute("SELECT COUNT(*) FROM users WHERE role IN ('admin','supremo') AND id != ?", (sin_id,)).fetchone()[0]
+
+
+def _clave_temporal():
+    return secrets.token_urlsafe(9)   # 12 caracteres; se cambia obligatoriamente al entrar
+
+
+@app.route('/ajustes/usuarios')
+@login_required
+@role_required('admin', 'supremo')
+def usuarios():
+    with get_db_connection() as c:
+        filas = c.execute('SELECT id, username, email, role, last_login, locked_until, must_change_password, origen '
+                          'FROM users ORDER BY id').fetchall()
+    nueva = session.pop('clave_una_vez', None)   # la contraseña temporal se enseña una sola vez
+    return render_template('usuarios.html', filas=filas, roles=ROLES, nueva=nueva)
+
+
+@app.route('/ajustes/usuarios/nuevo', methods=['POST'])
+@login_required
+@role_required('admin', 'supremo')
+def usuario_nuevo():
+    nombre = (request.form.get('username') or '').strip()
+    correo = (request.form.get('email') or '').strip().lower()
+    rol = request.form.get('role', 'lectura')
+    if not _RE_USUARIO.match(nombre):
+        flash('El nombre de usuario tiene que tener de 3 a 40 letras, números, puntos o guiones (sin espacios).', 'error')
+        return redirect(url_for('usuarios'))
+    if not re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+', correo):
+        flash('Escribe un correo válido (sirve para recuperar la contraseña).', 'error')
+        return redirect(url_for('usuarios'))
+    if rol not in [r for r, _, _ in ROLES]:
+        flash('Elige un papel de la lista.', 'error')
+        return redirect(url_for('usuarios'))
+    clave = _clave_temporal()
+    try:
+        with get_db_connection() as c:
+            c.execute('INSERT INTO users (username, email, password_hash, role, must_change_password) VALUES (?, ?, ?, ?, 1)',
+                      (nombre, correo, hash_password(clave), rol))
+    except sqlite3.IntegrityError:
+        flash('Ya hay un usuario con ese nombre o ese correo.', 'error')
+        return redirect(url_for('usuarios'))
+    log_audit(session['user_id'], 'USER_ADD', f'{nombre} ({NOMBRE_ROL[rol]})', request.remote_addr)
+    session['clave_una_vez'] = {'usuario': nombre, 'clave': clave}
+    return redirect(url_for('usuarios'))
+
+
+@app.route('/ajustes/usuarios/<int:uid>', methods=['POST'])
+@login_required
+@role_required('admin', 'supremo')
+def usuario_cambiar(uid):
+    accion = request.form.get('accion', '')
+    with get_db_connection() as c:
+        u = c.execute('SELECT * FROM users WHERE id = ?', (uid,)).fetchone()
+    if not u:
+        flash('Ese usuario ya no existe.', 'error')
+        return redirect(url_for('usuarios'))
+    yo = uid == session['user_id']
+    if u['role'] == 'supremo' and session.get('role') != 'supremo' and accion != 'clave':
+        flash('Al administrador principal solo lo puede cambiar él mismo.', 'error')
+        return redirect(url_for('usuarios'))
+    if accion == 'rol':
+        rol = request.form.get('role', '')
+        if rol not in [r for r, _, _ in ROLES] or u['role'] == 'supremo':
+            flash('Ese papel no se puede poner aquí.', 'error')
+        elif yo:
+            flash('No puedes cambiar tu propio papel (pídeselo a otro administrador).', 'error')
+        elif u['role'] in ('admin', 'supremo') and rol not in ('admin',) and not _admins_restantes(uid):
+            flash('Tiene que quedar al menos un administrador.', 'error')
+        else:
+            with get_db_connection() as c:
+                c.execute('UPDATE users SET role = ? WHERE id = ?', (rol, uid))
+            log_audit(session['user_id'], 'USER_ROLE', f'{u["username"]}: {NOMBRE_ROL.get(u["role"])} → {NOMBRE_ROL[rol]}',
+                      request.remote_addr)
+            flash(f'{u["username"]} ahora es «{NOMBRE_ROL[rol]}».', 'success')
+    elif accion == 'clave':
+        if yo:
+            flash('Para tu propia contraseña usa «Cambiar contraseña».', 'error')
+            return redirect(url_for('usuarios'))
+        if (u['origen'] or 'local') != 'local':
+            flash('Es un usuario de la empresa: su contraseña se cambia en el servidor de la empresa.', 'error')
+            return redirect(url_for('usuarios'))
+        clave = _clave_temporal()
+        with get_db_connection() as c:
+            c.execute('UPDATE users SET password_hash = ?, must_change_password = 1, failed_logins = 0, locked_until = NULL, '
+                      'recovery_token = NULL, sesion_gen = COALESCE(sesion_gen, 0) + 1 WHERE id = ?',
+                      (hash_password(clave), uid))
+        _seg.olvidar_dispositivos(DB_FILE, uid)
+        log_audit(session['user_id'], 'USER_PASSWORD_RESET', u['username'], request.remote_addr)
+        session['clave_una_vez'] = {'usuario': u['username'], 'clave': clave}
+    elif accion == 'borrar':
+        if yo:
+            flash('No puedes borrar tu propio usuario.', 'error')
+        elif u['role'] in ('admin', 'supremo') and not _admins_restantes(uid):
+            flash('Tiene que quedar al menos un administrador.', 'error')
+        elif not _pedir_aprobacion('borrar_usuario', {'id': uid, 'usuario': u['username']},
+                                   f'Borrar el usuario «{u["username"]}»'):
+            _borrar_usuario(uid)
+            log_audit(session['user_id'], 'USER_DELETE', u['username'], request.remote_addr)
+            flash(f'Usuario {u["username"]} borrado.', 'success')
+    return redirect(url_for('usuarios'))
+
+
+def _borrar_usuario(uid):
+    with get_db_connection() as c:
+        c.execute('DELETE FROM users WHERE id = ?', (uid,))
+    _seg.olvidar_dispositivos(DB_FILE, uid)
+
+
+@app.route('/ajustes/nivel', methods=['POST'])
+@login_required
+def cambiar_nivel():
+    """Modo básico (lo justo) o experto (todos los números finos). Cada usuario elige el suyo."""
+    nivel = 'experto' if request.form.get('nivel') == 'experto' else 'basico'
+    with get_db_connection() as c:
+        c.execute('UPDATE users SET nivel = ? WHERE id = ?', (nivel, session['user_id']))
+    session['nivel'] = nivel
+    destino = request.form.get('volver', '')
+    return redirect(destino if destino.startswith('/') and not destino.startswith('//') else url_for('ajustes'))
 
 
 # ------------------------------------------------------------------ diagnóstico para soporte
@@ -2378,6 +2915,14 @@ GRUPOS_SUGERIDOS = ['Oficina', 'Servidores', 'Portátiles', 'Dirección', 'Almac
 def _conocidos():
     import alta_grupo
     return alta_grupo.conocidos(DB_FILE)
+
+
+@app.before_request
+def _buscar_apagado():
+    if request.endpoint in ('buscar_equipos', 'buscar_resultado', 'buscar_credenciales', 'buscar_progreso') \
+            and not _fun.activa('buscar_equipos'):
+        flash('«Buscar equipos en la red» está apagada en Ajustes → Funciones.', 'error')
+        return redirect(url_for('equipos'))
 
 
 @app.route('/equipos/buscar', methods=['GET', 'POST'])

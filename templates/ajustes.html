@@ -7,8 +7,9 @@
   <div class="card">
     <h2>Tu cuenta</h2>
     <dl class="kv"><dt>Usuario</dt><dd>{{ user.username }}</dd><dt>Correo</dt><dd>{{ user.email }}</dd>
-      <dt>Último acceso</dt><dd>{{ user.last_login | hace }}</dd></dl>
-    <p style="margin-top:14px"><a class="btn" href="{{ url_for('cambiar_password') }}">Cambiar contraseña</a></p>
+      <dt>Papel</dt><dd>{{ NOMBRE_ROL.get(user.role, user.role) }}</dd><dt>Último acceso</dt><dd>{{ user.last_login | hace }}</dd></dl>
+    <p style="margin-top:14px"><a class="btn" href="{{ url_for('cambiar_password') }}">Cambiar contraseña</a>
+      {% if puede_actuar() %}<a class="btn" href="{{ url_for('usuarios') }}">Usuarios</a>{% endif %}</p>
   </div>
   <div class="card">
     <h2>Seguridad</h2>
@@ -23,6 +24,13 @@
     <table class="small">{% for e in eventos %}<tr><td>{{ e.timestamp | hace }}</td><td>{{ 'Correcto' if e.action == 'LOGIN' else 'Fallido' if e.action == 'LOGIN_FAILED' else 'Bloqueado' }}</td><td class="muted">{{ e.ip_address }}</td></tr>{% endfor %}</table>
   </div>
   <div class="card">
+    <h2>Funciones</h2>
+    <p class="muted small">Encender, apagar y ajustar todo lo que hace OCTOPUS. Modo {{ 'experto' if modo_experto() else 'básico' }}.</p>
+    <div class="actions" style="margin-top:10px">
+      <a class="btn" href="{{ url_for('ajustes_funciones') }}">Ver todas las funciones</a>
+    </div>
+  </div>
+  <div class="card">
     <h2>Avisos</h2>
     <p class="muted small">Recibe un mensaje si algo falla.</p>
     <div class="actions" style="margin-top:10px">
@@ -31,6 +39,22 @@
     </div>
   </div>
 </div>
+{% if aprobaciones and puede_actuar() %}
+<div class="card" id="aprobaciones" style="border-left:4px solid var(--warn, #c90)">
+  <h2>Pendiente de aprobar</h2>
+  <p class="muted small">Con la doble aprobación encendida, lo peligroso lo tiene que aprobar otro administrador.</p>
+  <table class="small">
+    {% for a in aprobaciones %}<tr>
+      <td><strong>{{ a.resumen }}</strong><br><span class="muted">pedido por {{ a.pedido_nombre }} · {{ a.creado }} · caduca {{ a.caduca }}</span></td>
+      <td style="white-space:nowrap">
+        <form method="post" action="{{ url_for('decidir_aprobacion', aid=a.id) }}" style="display:inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          {% if a.pedido_por != session.get('user_id') %}<button class="btn btn-primary" name="decision" value="aprobar">Aprobar</button>{% endif %}
+          <button class="btn" name="decision" value="rechazar">{{ 'Cancelar' if a.pedido_por == session.get('user_id') else 'Rechazar' }}</button>
+        </form></td></tr>{% endfor %}
+  </table>
+</div>
+{% endif %}
 {% if puede_actuar() %}
 <div class="card">
   <h2>Respuesta a ataques</h2>

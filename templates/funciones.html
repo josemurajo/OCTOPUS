@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Funciones{% endblock %}
+{% block content %}
+<style>
+.fun { border-top: 1px solid var(--border); padding: 14px 0; }
+.fun:first-of-type { border-top: 0; }
+.fun-cab { display: flex; gap: 12px; align-items: flex-start; }
+.fun-cab .txt { flex: 1; }
+.fun-cab strong { font-size: 15px; }
+.etq { display: inline-block; font-size: 12px; border-radius: 10px; padding: 1px 8px; margin-left: 6px; vertical-align: 1px; }
+.etq-pruebas { background: #fff3cd; color: #7a5a00; }
+.etq-experto { background: var(--accent-soft); color: var(--accent); }
+.etq-no { background: #eee; color: #555; }
+.opciones { margin: 10px 0 0 34px; display: grid; gap: 10px; max-width: 640px; }
+.opciones label { font-size: 13px; }
+.interruptor { width: 22px; height: 22px; margin-top: 2px; }
+.nivel { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.nivel form { display: inline; }
+.motivo { color: var(--muted); font-size: 13px; margin-top: 4px; }
+@media (max-width: 600px) { .opciones { margin-left: 0; } }
+</style>
+
+<h1>Funciones</h1>
+<p class="lead">Todo lo que OCTOPUS puede hacer, para encender, apagar y ajustar. Lo que viene encendido es lo recomendado:
+  si no sabes qué tocar, no toques nada.</p>
+
+<div class="card nivel">
+  <span>Estás en <strong>{{ 'modo experto' if modo_experto() else 'modo básico' }}</strong>
+    — {{ 'se ven todas las opciones y los números finos.' if modo_experto() else 'se ve solo lo importante.' }}</span>
+  <form method="post" action="{{ url_for('cambiar_nivel') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="volver" value="{{ url_for('ajustes_funciones') }}">
+    <input type="hidden" name="nivel" value="{{ 'basico' if modo_experto() else 'experto' }}">
+    <button class="btn" type="submit">{{ 'Volver al modo básico' if modo_experto() else 'Pasar al modo experto' }}</button>
+  </form>
+</div>
+
+{% for g in grupos %}
+<div class="card" id="grupo-{{ g.clave }}">
+  <h2>{{ g.titulo }}</h2>
+  <p class="muted small">{{ g.explica }}</p>
+  {% for f in g.filas %}
+  <form class="fun" id="{{ f.clave }}" method="post" action="{{ url_for('ajustes_funciones') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="clave" value="{{ f.clave }}">
+    <div class="fun-cab">
+      <input class="interruptor" type="checkbox" name="encendida" id="sw-{{ f.clave }}" aria-label="Encender {{ f.nombre }}"
+             {{ 'checked' if f.encendida }} {{ 'disabled' if not puede_actuar() or (not f.disponible and not f.encendida)
+             or (f.en_pruebas and not modo_experto() and not f.encendida) }}>
+      <div class="txt">
+        <label for="sw-{{ f.clave }}" style="font-weight:400"><strong>{{ f.nombre }}</strong>
+          {% if f.en_pruebas %}<span class="etq etq-pruebas" title="Hecha, pero apagada hasta que termine la batería de pruebas">En pruebas</span>{% endif %}
+          {% if f.nivel == 'experto' %}<span class="etq etq-experto">Experto</span>{% endif %}
+          {% if f.no_mac %}<span class="etq etq-no" title="Apple no lo permite en los Mac">No en Mac</span>{% endif %}</label>
+        <div class="small">{{ f.explica }}</div>
+        {% if not f.disponible %}<div class="motivo">⚠ {{ f.motivo }}</div>{% endif %}
+        {% if f.requiere %}<div class="motivo">Necesita «{{ nombres[f.requiere] }}».</div>{% endif %}
+        {% if f.en_pruebas and not modo_experto() and not f.encendida %}
+          <div class="motivo">Se podrá encender cuando termine la batería de pruebas (o, si sabes lo que haces, en modo experto).</div>{% endif %}
+        {% if f.en_pruebas and modo_experto() and not f.encendida and puede_actuar() %}
+          <label class="small" style="font-weight:400; display:flex; gap:8px; margin-top:6px">
+            <input type="checkbox" name="acepto_pruebas"> Sé que está en pruebas y quiero encenderla igualmente.</label>{% endif %}
+        {% if f.clave == 'bloqueo_atacantes' and bloqueadas %}<div class="motivo">Hay {{ bloqueadas|length }} dirección(es) bloqueada(s): mira abajo del todo.</div>{% endif %}
+        {% if f.clave == 'panel_solo_redes' %}<div class="motivo">Ahora estás entrando desde {{ mi_ip }}.</div>{% endif %}
+      </div>
+    </div>
+    {% if f.opciones %}
+    <div class="opciones">
+      {% for o in f.opciones %}
+      <div class="field" style="margin:0">
+        <label for="{{ f.clave }}-{{ o.k }}">{{ o.nombre }}</label>
+        {% if o.tipo == 'int' %}
+          <input type="number" id="{{ f.clave }}-{{ o.k }}" name="op_{{ o.k }}" value="{{ o.valor }}"
+                 min="{{ o.extra.min }}" max="{{ o.extra.max }}" style="max-width:160px" {{ 'disabled' if not puede_actuar() }}>
+        {% elif o.tipo == 'eleccion' %}
+          <select id="{{ f.clave }}-{{ o.k }}" name="op_{{ o.k }}" style="max-width:320px" {{ 'disabled' if not puede_actuar() }}>
+            {% for v, t in o.extra.valores %}<option value="{{ v }}" {{ 'selected' if o.valor == v }}>{{ t }}</option>{% endfor %}
+          </select>
+        {% elif o.tipo == 'secreto' %}
+          <input type="password" id="{{ f.clave }}-{{ o.k }}" name="op_{{ o.k }}" autocomplete="new-password"
+                 placeholder="{{ 'guardado (escribe para cambiarlo)' if o.tiene_secreto else '' }}" {{ 'disabled' if not puede_actuar() }}>
+        {% else %}
+          <input type="text" id="{{ f.clave }}-{{ o.k }}" name="op_{{ o.k }}" value="{{ o.valor }}" {{ 'disabled' if not puede_actuar() }}>
+        {% endif %}
+        {% if o.ayuda %}<p class="hint">{{ o.ayuda }}</p>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% if puede_actuar() %}<div style="margin:10px 0 0 34px"><button class="btn btn-primary" type="submit">Guardar</button></div>{% endif %}
+  </form>
+  {% endfor %}
+</div>
+{% endfor %}
+{% if bloqueadas and puede_actuar() %}
+<div class="card"><h2>Direcciones bloqueadas</h2>
+  {% for b in bloqueadas %}
+  <form method="post" action="{{ url_for('quitar_bloqueo') }}" style="margin:6px 0">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="ip" value="{{ b.ip }}">
+    {{ b.ip }} — {{ b.fallos }} intentos, hasta {{ b.hasta }} <button class="btn" type="submit">Desbloquear</button>
+  </form>{% endfor %}
+</div>
+{% endif %}
+{% if not modo_experto() %}
+<p class="muted small">Hay más opciones (usuarios de la empresa, arranque por red, números finos...) en el modo experto.</p>
+{% endif %}
+{% endblock %}

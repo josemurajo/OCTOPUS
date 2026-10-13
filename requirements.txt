@@ -27,3 +27,7 @@ paramiko>=3.4
 
 # Modo consola con ventanas y raton (octopus.sh buscar-equipos); sin ella se usa el modo de preguntas
 textual>=0.80
+
+# Entrar con los usuarios de la empresa (Ajustes -> Funciones): Active Directory/LDAP y OIDC (Microsoft 365, Google...)
+ldap3>=2.9
+PyJWT[crypto]>=2.8

@@ -19,7 +19,7 @@
     <button class="btn btn-primary btn-big" type="submit">Hacer copia de todo ahora</button>
   </form>
   {% elif not total %}
-  <div class="actions"><a class="btn btn-primary btn-big" href="{{ url_for('buscar_equipos') }}">Buscar los equipos de la red</a>
+  <div class="actions">{% if funcion_activa('buscar_equipos') %}<a class="btn btn-primary btn-big" href="{{ url_for('buscar_equipos') }}">Buscar los equipos de la red</a>{% endif %}
     <a class="btn btn-big" href="{{ url_for('equipo_nuevo') }}">Añadir uno a mano</a></div>
   {% endif %}
 </div>

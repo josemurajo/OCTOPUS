@@ -67,7 +67,7 @@
       <span><strong>Al lado, sin tocar lo que hay ahora</strong> (lo más seguro si dudas): se guarda con «.restaurado-fecha» en el nombre.</span></label>
     <label style="font-weight:400; display:flex; gap:10px; margin-bottom:14px"><input type="radio" name="destino" value="original">
       <span><strong>En su sitio</strong>, sustituyendo la versión actual.</span></label>
-    {% if puede_actuar() %}<button class="btn btn-primary btn-big" type="submit">Recuperar</button>
+    {% if puede_recuperar() %}<button class="btn btn-primary btn-big" type="submit">Recuperar</button>
     {% else %}<p class="muted">Tu usuario no tiene permiso para recuperar; pídeselo a un administrador.</p>{% endif %}
     <a class="btn" href="{{ url_for('asistente_recuperar', equipo=s.id, q=q) }}" style="margin-left:6px">Volver</a>
   </form>

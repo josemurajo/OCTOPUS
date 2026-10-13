@@ -223,3 +223,17 @@ class ConfigManager:
         conn.close()
         
         return True, "Configuración actualizada"
+
+
+# Todas las funciones de Ajustes -> Funciones (lib/funciones.py) y sus opciones son ajustes conocidos
+def _anadir_funciones():
+    try:
+        import funciones
+    except ImportError:  # por si se usa este archivo suelto
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import funciones
+    for k, v in funciones.defectos().items():
+        ConfigManager.DEFAULT_CONFIG.setdefault(k, v)
+
+
+_anadir_funciones()

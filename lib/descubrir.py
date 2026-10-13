@@ -84,9 +84,9 @@ def _abierto(ip: str, puerto: int, espera: float = 0.6) -> bool:
         return False
 
 
-def _saludo_ssh(ip: str) -> str:
+def _saludo_ssh(ip: str, puerto: int | None = None) -> str:
     try:
-        with socket.create_connection((ip, _puerto_ssh()), timeout=1.5) as s:
+        with socket.create_connection((ip, puerto or _puerto_ssh()), timeout=1.5) as s:
             s.settimeout(1.5)
             return s.recv(200).decode("utf-8", "replace").strip()
     except OSError:
@@ -143,10 +143,13 @@ def _nombre_valido(n: str) -> str:
 
 def _examinar(ip: str) -> dict | None:
     ssh = _puerto_ssh()
-    abiertos = {p for p in PUERTOS if _abierto(ip, ssh if p == 22 else p)}   # 22 = "tiene SSH", sea en el puerto que sea
+    abiertos = {p for p in PUERTOS if p != 22 and _abierto(ip, p)}
+    ssh_en = next((x for x in dict.fromkeys((22, ssh)) if _abierto(ip, x)), None)
+    if ssh_en:
+        abiertos.add(22)                     # 22 = "tiene SSH", sea en el puerto normal o en el configurado
     if not abiertos:
         return None
-    saludo = _saludo_ssh(ip) if 22 in abiertos else ""
+    saludo = _saludo_ssh(ip, ssh_en) if ssh_en else ""
     so, texto_so = _sistema(abiertos, saludo)
     nombre = (_nombre_netbios(ip) if so == "windows" else "") or _nombre_dns(ip)
     return {"ip": ip, "nombre": _nombre_valido(nombre) or "equipo-" + ip.replace(".", "-"), "nombre_detectado": bool(nombre),

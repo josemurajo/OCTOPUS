@@ -232,6 +232,14 @@ echo "  Copias en:    $BOVEDA"
 echo "  Gestion:      sudo bash $R/octopus.sh (estado, logs, parar, arrancar, mantenimiento...)"
 echo "  Arranca solo al encender el Mac, aunque nadie inicie sesion."
 marca "---- instalacion terminada correctamente ----"
+if [ $SIN_PREGUNTAS = 0 ] && [ -t 0 ] && [ -t 1 ]; then
+    echo
+    read -r -p "¿Busco ahora los equipos de la red para protegerlos? [S/n] " RESP || RESP=n
+    case "${RESP:-s}" in
+        [sS]*|"") bash "$R/octopus.sh" buscar-equipos ;;
+        *) echo "Cuando quieras: botón «Buscar los equipos de la red» en el panel, o sudo bash $R/octopus.sh buscar-equipos" ;;
+    esac
+fi
 if [ $SIN_PREGUNTAS = 0 ] && [ -n "${SUDO_USER:-}" ]; then
     launchctl asuser "$(id -u "$SUDO_USER")" sudo -u "$SUDO_USER" open "https://$IP:$PUERTO" 2>/dev/null || true
 fi
