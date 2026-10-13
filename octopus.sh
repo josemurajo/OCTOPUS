@@ -51,6 +51,8 @@ recuperar-servidor)  # servidor nuevo a partir de la autocopia del antiguo (ver 
     docker exec -it octopus python /app/lib/recuperar_servidor.py "$REPO" || exit 1
     docker restart octopus >/dev/null && echo "OCTOPUS reiniciado con la configuracion recuperada. Entra en el panel con tu usuario de siempre." ;;
 actualizar)    bash "$RAIZ/instalar_servidor.sh" ;;
+actualizar-pedido)  # lo lanza el temporizador cada 5 min: hace la actualizacion pedida desde el panel (firmada)
+    bash "$RAIZ/actualizador.sh" ;;
 volver)        # vuelve a la version anterior a la ultima actualizacion
     docker image inspect octopus-servidor:anterior >/dev/null 2>&1 || { echo "No hay version anterior guardada"; exit 1; }
     sed -i.bak 's/^OCTOPUS_VERSION=.*/OCTOPUS_VERSION=anterior/' "$RAIZ/install/.env"
@@ -71,6 +73,7 @@ Uso: sudo bash octopus.sh <orden>     (en Mac sin sudo; en Windows: octopus.ps1)
   desplegar       instala el agente en los equipos Linux de ansible/equipos.ini (anade -k -K la primera vez)
   recuperar-servidor <almacen>   monta un servidor nuevo con la configuracion del que se perdio
   actualizar      instala la version de esta carpeta (conserva datos y copias)
+  actualizar-pedido  hace la actualizacion pedida desde el panel (normalmente la lanza sola un temporizador)
   volver          vuelve a la version anterior si la actualizacion da problemas
   parar | arrancar | reiniciar | consola
 EOF

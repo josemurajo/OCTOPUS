@@ -2184,7 +2184,56 @@ def ajustes():
     return render_template('ajustes.html', user=user, eventos=eventos, https=USE_HTTPS, cfg=cfg,
                            mant=_mant.leer_estado(), mant_nombres=_mant.NOMBRES,
                            kit_fecha=kit['timestamp'] if kit else None,
-                           ajustes_copias=_ajustes_copias())
+                           ajustes_copias=_ajustes_copias(), act=_av.leer_actualizacion(),
+                           act_estado=__import__('actualizar').estado(), version=_av.version_local())
+
+
+@app.route('/ajustes/actualizaciones/buscar', methods=['POST'])
+@login_required
+@role_required('supremo', 'admin')
+def buscar_actualizaciones():
+    r = _av.comprobar_actualizacion()
+    log_audit(session['user_id'], 'UPDATE_CHECK', r.get('detalle', ''), request.remote_addr)
+    if r.get('hay_nueva'):
+        flash(f'Hay una versión nueva: {r.get("remota")} (tienes la {r.get("local")}).', 'success')
+    else:
+        flash(f'Comprobado: {r.get("detalle")}.', 'success' if 'no se pudo' not in str(r.get('detalle')) else 'error')
+    return redirect(url_for('ajustes') + '#actualizaciones')
+
+
+@app.route('/ajustes/actualizaciones/actualizar', methods=['POST'])
+@login_required
+@role_required('supremo', 'admin')
+def actualizar_ahora():
+    """Pide al servidor que se actualice. Pide la contraseña otra vez; el equipo solo instala versiones firmadas."""
+    import actualizar as _act
+    volver = url_for('ajustes') + '#actualizaciones'
+    conn = get_db_connection()
+    user = conn.execute('SELECT * FROM users WHERE id = ?', (session['user_id'],)).fetchone()
+    conn.close()
+    if request.form.get('accion') == 'cancelar':
+        _act.cancelar()
+        log_audit(session['user_id'], 'UPDATE_CANCEL', '', request.remote_addr)
+        flash('Petición de actualización cancelada.', 'success')
+        return redirect(volver)
+    if not verify_password(request.form.get('password', ''), user['password_hash']):
+        log_audit(session['user_id'], 'UPDATE_DENIED', 'Contraseña incorrecta', request.remote_addr)
+        flash('La contraseña no es correcta.', 'error')
+        return redirect(volver)
+    act = _av.leer_actualizacion()
+    if not act.get('hay_nueva'):
+        flash('No hay ninguna versión nueva. Pulsa «Buscar actualizaciones» para comprobarlo otra vez.', 'error')
+        return redirect(volver)
+    if not _act.estado()['actualizador']:
+        flash('El actualizador de este servidor no está activado (o el servidor es Windows): actualiza a mano con '
+              '«sudo bash octopus.sh actualizar» (en Windows: octopus.ps1 actualizar).', 'error')
+        return redirect(volver)
+    _act.pedir(act.get('remota', ''), session.get('username', '?'))
+    log_audit(session['user_id'], 'UPDATE_REQUEST', f'a la versión {act.get("remota")}', request.remote_addr)
+    _ban.marcar('actualizacion', f'Actualización a {act.get("remota")} pedida por {session.get("username")}')
+    flash(f'Actualización a la versión {act.get("remota")} pedida. En unos minutos se descarga, se comprueba su firma y se '
+          f'instala; el panel se reiniciará solo. Si algo va mal, vuelve solo a la versión actual.', 'success')
+    return redirect(volver)
 
 
 @app.route('/ajustes/kit-recuperacion', methods=['POST'])

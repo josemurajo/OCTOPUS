@@ -184,7 +184,13 @@ sudo bash octopus.sh actualizar      # instala la versión de esta carpeta (cons
 sudo bash octopus.sh volver          # vuelve a la versión anterior si la actualización da problemas
 ```
 
-Para **actualizar**: copia la carpeta nueva de OCTOPUS al servidor y ejecuta `sudo bash instalar_servidor.sh`
+**Actualizar desde el panel (Ajustes → Actualizaciones):** OCTOPUS busca versión nueva cada 2 días (o con el botón
+«Buscar actualizaciones»). Con «Actualizar ahora» (pide tu contraseña) el servidor la descarga de GitHub, **comprueba que
+está firmada con la clave de publicación de OCTOPUS** y la instala sola; si no está firmada o algo no coincide, no instala
+nada. El panel no ejecuta nada en el equipo: solo deja la petición, y la recoge un temporizador del sistema
+(`octopus-actualizador.timer` en Linux, un LaunchAgent en Mac; en Windows de momento se actualiza a mano).
+
+Para **actualizar a mano**: copia la carpeta nueva de OCTOPUS al servidor y ejecuta `sudo bash instalar_servidor.sh`
 (o `octopus.sh actualizar`). Los equipos se actualizan solos. **Si la versión nueva no arranca bien, el instalador
 vuelve solo a la anterior** (y lo dice), así una actualización nunca deja las copias paradas.
 

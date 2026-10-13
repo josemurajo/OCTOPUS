@@ -146,9 +146,10 @@ CATALOGO: dict[str, dict] = {
     "OCT-ACT-01": {
         "nivel": "atencion", "titulo": "Hay una versión nueva de OCTOPUS ({detalle})",
         "por_que": "Las versiones nuevas traen arreglos y mejoras de seguridad.",
-        "pasos": ["Descarga la versión nueva en la carpeta de OCTOPUS del servidor (o «git pull» si la instalaste con git).",
-                  "Ejecuta en el servidor: sudo bash octopus.sh actualizar (en Windows: octopus.ps1 actualizar). "
-                  "Se conservan los datos y las copias.",
+        "pasos": ["Ve a Ajustes → Actualizaciones y pulsa «Actualizar ahora»: el servidor la descarga, comprueba que está "
+                  "firmada por OCTOPUS y la instala solo (si algo va mal, vuelve solo a la versión actual).",
+                  "Si ese botón dice que el actualizador no está activado (servidores Windows), en el servidor: "
+                  "sudo bash octopus.sh actualizar (en Windows: octopus.ps1 actualizar). Se conservan los datos y las copias.",
                   "Pulsa «Solucionar» para volver a comprobar si ya estás al día."],
         "accion": "comprobar_actualizacion", "boton": "Volver a comprobar"},
     "OCT-SUG-01": {

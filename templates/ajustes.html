@@ -109,6 +109,35 @@
   <p class="hint">Si pones contraseña, el kit se descarga como .zip cifrado (AES-256; se abre con 7-Zip o WinRAR).
     <strong>Si olvidas esa contraseña, el kit no sirve</strong>: apúntala aparte.</p>
 </div>
+<div class="card" id="actualizaciones">
+  <h2>Actualizaciones</h2>
+  <p class="small">Versión instalada: <strong>{{ version or '?' }}</strong>.
+    {% if act.fecha %}Última comprobación: {{ act.fecha | hace }}{% if act.hay_nueva %} — <strong style="color:var(--accent)">hay una versión nueva: {{ act.remota }}</strong>{% else %} — {{ act.detalle }}{% endif %}.{% endif %}
+    OCTOPUS lo comprueba solo cada 2 días.</p>
+  <form method="post" action="{{ url_for('buscar_actualizaciones') }}" style="margin-top:10px; display:inline">
+    <button class="btn" type="submit">Buscar actualizaciones</button></form>
+  {% if act_estado.pedida %}
+  <div class="notice atencion" style="margin-top:14px"><strong>Actualización a la {{ act_estado.pedida }} en marcha</strong>{{ act_estado.estado }}
+    <form method="post" action="{{ url_for('actualizar_ahora') }}" style="margin-top:8px"><input type="hidden" name="accion" value="cancelar">
+      <button class="btn btn-small" type="submit">Cancelar la petición</button></form></div>
+  {% elif act.hay_nueva %}
+  <form method="post" action="{{ url_for('actualizar_ahora') }}" style="display:flex; gap:10px; flex-wrap:wrap; align-items:end; margin-top:14px"
+        data-confirm="¿Actualizar OCTOPUS a la versión {{ act.remota }}? El panel se reiniciará solo en unos minutos.">
+    <div class="field" style="margin:0"><label for="actpw">Tu contraseña</label>
+      <input type="password" id="actpw" name="password" required autocomplete="current-password"></div>
+    <button class="btn btn-primary" type="submit">Actualizar ahora a la {{ act.remota }}</button>
+  </form>
+  {% if not act_estado.actualizador %}<p class="hint">El actualizador automático no está activado en este servidor (en Windows aún no existe):
+    se actualiza a mano con <span class="mono">sudo bash octopus.sh actualizar</span>.</p>{% endif %}
+  {% endif %}
+  {% if act_estado.resultado and act_estado.resultado.detalle %}
+  <p class="small" style="margin-top:12px">Última actualización ({{ act_estado.resultado.fecha | hace }}):
+    {% if act_estado.resultado.ok %}<span style="color:var(--ok)">✓</span>{% else %}<span style="color:var(--bad)">✗</span>{% endif %} {{ act_estado.resultado.detalle }}</p>
+  {% endif %}
+  <p class="hint" style="margin-top:10px">Seguro: el panel no ejecuta nada en el servidor, solo deja la petición. El servidor descarga la versión
+    de la dirección oficial y <strong>solo la instala si viene firmada por OCTOPUS</strong> (si alguien la manipulara, no se instala).
+    Pide tu contraseña, queda registrado, nunca instala una versión más antigua y, si la nueva no arranca, vuelve sola a la actual.</p>
+</div>
 <div class="card">
   <h2>Opciones avanzadas</h2>
   <p class="muted small">Para técnicos. Normalmente no hace falta tocar nada de esto.</p>

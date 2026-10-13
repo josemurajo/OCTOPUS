@@ -76,7 +76,10 @@ El laboratorio de pruebas con máquinas virtuales está en la carpeta `maquinas`
    del servidor en Mac, almacén con bloqueo por tiempo y sintaxis de todos los scripts). Si algo falla, no se publica.
 2. Antes de cambiar `VERSION`, se pasa la batería del laboratorio (`maquinas/EJECUTAR_PRUEBAS.bat`): tiene que salir
    «TODO CORRECTO».
-3. Al actualizar un servidor, si la versión nueva no arranca, el instalador vuelve solo a la anterior.
+3. Para que los servidores puedan actualizarse solos, la versión se **firma**: `bash herramientas/crear_manifiesto.sh`
+   (lista de archivos con su huella) y, en el PC de quien publica, `bash herramientas/firmar_version.sh` (con su clave
+   privada, que nunca sale de su PC). Sin firma válida ningún servidor instala la versión.
+4. Al actualizar un servidor, si la versión nueva no arranca, el instalador vuelve solo a la anterior.
 
 ## Versión
 

@@ -164,6 +164,31 @@ elif command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status:
         && bien "cortafuegos (ufw): abiertos $PUERTO y $P_A" || aviso "No se pudieron abrir los puertos en ufw"
 fi
 
+# --------------------------------------------------------------------------- actualizador seguro (a distancia)
+# Cada 5 minutos mira si desde el panel se ha pedido actualizar; solo instala versiones FIRMADAS (ver actualizador.sh).
+if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ] && [ "${OCTOPUS_SIN_ACTUALIZADOR:-0}" != 1 ]; then
+    cat > /etc/systemd/system/octopus-actualizador.service <<UNIT
+[Unit]
+Description=OCTOPUS - actualizacion pedida desde el panel (solo versiones firmadas)
+After=docker.service
+[Service]
+Type=oneshot
+ExecStart=/bin/bash $RAIZ/octopus.sh actualizar-pedido
+UNIT
+    cat > /etc/systemd/system/octopus-actualizador.timer <<UNIT
+[Unit]
+Description=OCTOPUS - comprobar cada 5 minutos si se ha pedido actualizar
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+[Install]
+WantedBy=timers.target
+UNIT
+    systemctl daemon-reload && systemctl enable --now octopus-actualizador.timer >/dev/null 2>&1 \
+        && bien "actualizador seguro activado (Ajustes -> Actualizaciones en el panel)" \
+        || aviso "No se pudo activar el actualizador a distancia (se puede actualizar a mano con octopus.sh actualizar)"
+fi
+
 CRED="$RAIZ/CREDENCIALES_INICIALES.txt"
 if docker exec octopus test -f /data/panel/CREDENCIALES_INICIALES.txt; then
     docker exec octopus cat /data/panel/CREDENCIALES_INICIALES.txt > "$CRED"; chmod 600 "$CRED"

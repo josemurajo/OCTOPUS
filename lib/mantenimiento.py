@@ -557,10 +557,23 @@ def main(argv: list[str]) -> int:
         log(f"  {'OK ' if resultados[t]['ok'] else 'MAL'} {resultados[t]['detalle']}")
         _b.marcar("mantenimiento", f"{NOMBRES[t]}: {resultados[t]['detalle']} ({resultados[t]['segundos']} s)",
                   codigo=resultados[t].get("codigo"), nivel="ok" if resultados[t]["ok"] else "error")
-    if cmd == "todo":
+    # versiones nuevas: cada OCTOPUS_ACTUALIZACIONES_DIAS dias (2 por defecto); tambien con el boton del panel
+    try:
+        dias_act = float(env.get("OCTOPUS_ACTUALIZACIONES_DIAS", "2"))
+    except ValueError:
+        dias_act = 2
+    previa = _av.leer_actualizacion().get("fecha")
+    toca_act = True
+    if previa:
+        try:
+            toca_act = (datetime.now().astimezone() - datetime.fromisoformat(previa)).total_seconds() > dias_act * 86400 - 3600
+        except ValueError:
+            toca_act = True
+    if cmd == "todo" and toca_act:
         act = _av.comprobar_actualizacion()
         _b.marcar("mantenimiento", f"Actualizaciones: {act.get('detalle')}",
                   codigo="OCT-ACT-01" if act.get("hay_nueva") else None)
+    if cmd == "todo":
         try:
             import sugerencias
             r = sugerencias.reenviar_pendientes(env)

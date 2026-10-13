@@ -151,6 +151,25 @@ if /usr/libexec/ApplicationFirewall/socketfilterfw --getglobalstate 2>/dev/null 
     aviso "Ajustes del Sistema -> Red -> Cortafuegos -> Opciones."
 fi
 
+# --------------------------------------------------------------------------- actualizador seguro (a distancia)
+if [ "${OCTOPUS_SIN_ACTUALIZADOR:-0}" != 1 ]; then
+    PLA="$HOME/Library/LaunchAgents/com.octopus.actualizador.plist"
+    mkdir -p "$HOME/Library/LaunchAgents"
+    cat > "$PLA" <<PL
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.octopus.actualizador</string>
+  <key>ProgramArguments</key><array><string>/bin/bash</string><string>$RAIZ/octopus.sh</string><string>actualizar-pedido</string></array>
+  <key>EnvironmentVariables</key><dict><key>PATH</key><string>$(brew --prefix)/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
+  <key>StartInterval</key><integer>300</integer>
+</dict></plist>
+PL
+    launchctl unload "$PLA" >/dev/null 2>&1 || true
+    launchctl load -w "$PLA" >/dev/null 2>&1 && bien "actualizador seguro activado (Ajustes -> Actualizaciones en el panel)" \
+        || aviso "No se pudo activar el actualizador a distancia (se puede actualizar a mano con octopus.sh actualizar)"
+fi
+
 CRED="$RAIZ/CREDENCIALES_INICIALES.txt"
 if docker exec octopus test -f /data/panel/CREDENCIALES_INICIALES.txt 2>/dev/null; then
     docker exec octopus cat /data/panel/CREDENCIALES_INICIALES.txt > "$CRED"; chmod 600 "$CRED"
