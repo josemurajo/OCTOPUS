@@ -79,16 +79,22 @@ function Parar {
         $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; Start-Sleep -Seconds 2
     }
 }
+# los certificados son propios de OCTOPUS: para mirar si responde no se valida el certificado
+# (en Windows PowerShell 5.1 hace falta esta clase: un scriptblock como validador no funciona en otros hilos)
+Add-Type @"
+using System.Net; using System.Security.Cryptography.X509Certificates;
+public class OctopusSinValidar : ICertificatePolicy {
+  public bool CheckValidationResult(ServicePoint s, X509Certificate c, WebRequest r, int p) { return true; } }
+"@ -ErrorAction SilentlyContinue
 function Salud {
-    $puerto = (Get-Content (Join-Path $Raiz "install\.env") -ErrorAction SilentlyContinue | Where-Object { $_ -match '^ADMIN_PORT=' } | ForEach-Object { ($_ -split '=', 2)[1] }) | Select-Object -First 1
+    $puerto = (Get-Content (Join-Path $Raiz "install\.env") -ErrorAction SilentlyContinue | Where-Object { $_ -match '^ADMIN_PORT=' } | ForEach-Object { ($_ -split '=', 2)[1].Trim() }) | Select-Object -First 1
     if (-not $puerto) { $puerto = "8080" }
+    $ant = [Net.ServicePointManager]::CertificatePolicy
     try {
-        $ant = [Net.ServicePointManager]::ServerCertificateValidationCallback
-        [Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
-        $r = Invoke-WebRequest "https://127.0.0.1:$puerto/healthz" -UseBasicParsing -TimeoutSec 5
-        [Net.ServicePointManager]::ServerCertificateValidationCallback = $ant
-        return $r.Content
-    } catch { return "" }
+        [Net.ServicePointManager]::CertificatePolicy = New-Object OctopusSinValidar
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        return (Invoke-WebRequest "https://127.0.0.1:$puerto/healthz" -UseBasicParsing -TimeoutSec 5).Content
+    } catch { return "" } finally { [Net.ServicePointManager]::CertificatePolicy = $ant }
 }
 function Esperar { for ($i = 0; $i -lt 60; $i++) { if (Salud) { return $true }; Start-Sleep -Seconds 2 }; return $false }
 

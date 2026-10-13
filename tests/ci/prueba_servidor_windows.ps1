@@ -5,7 +5,7 @@
 $ErrorActionPreference = "Continue"
 $ProgressPreference = "SilentlyContinue"
 $Repo = (Get-Location).Path
-$R = "C:\ProgramData\OCTOPUS-Servidor"
+$R = "C:\ProgramData\OCTOPUS-Servidor"   # ojo: en PowerShell $r y $R son la misma variable
 $script:Fallos = @()
 function Resultado($ok, $nombre, $detalle = "") {
     if ($ok) { Write-Host "RESULT|PASS|$nombre|$detalle" -ForegroundColor Green }
@@ -13,7 +13,11 @@ function Resultado($ok, $nombre, $detalle = "") {
 }
 function Salud { try { return (Invoke-WebRequest "https://127.0.0.1:8080/healthz" -SkipCertificateCheck -TimeoutSec 5).Content } catch { return "" } }
 function Esperar($seg) { $fin = (Get-Date).AddSeconds($seg); while ((Get-Date) -lt $fin) { if (Salud) { return $true }; Start-Sleep -Seconds 3 }; return $false }
-function Instalar { & powershell -NoProfile -ExecutionPolicy Bypass -File "$Repo\instalar_servidor_windows.ps1" -SinPreguntas -IP 127.0.0.1 -Registro "$env:RUNNER_TEMP\instalacion.log"; return $LASTEXITCODE }
+function Instalar {
+    # lo que escribe el instalador va a la pantalla (si no, se mezclaria con el codigo que se devuelve)
+    & powershell -NoProfile -ExecutionPolicy Bypass -File "$Repo\instalar_servidor_windows.ps1" -SinPreguntas -IP 127.0.0.1 -Registro "$env:RUNNER_TEMP\instalacion.log" | Out-Host
+    return $LASTEXITCODE
+}
 function Entorno {
     $env:OCTOPUS_NATIVO = "1"; $env:OCTOPUS_DATA = "$R\datos"; $env:OCTOPUS_BOVEDA_DIR = "$R\boveda"; $env:OCTOPUS_BIN = "$R\bin"
     $env:RESTIC_CACHE_DIR = "$R\datos\.cache\restic"; $env:PYTHONUTF8 = "1"; $env:PATH = "$R\bin;$env:PATH"
@@ -46,6 +50,7 @@ Resultado ($caido -and (Esperar 240)) "si se para de golpe, vuelve a arrancar so
 
 # 3. gestion
 $e = (& powershell -NoProfile -ExecutionPolicy Bypass -File "$R\octopus.ps1" estado | Out-String)
+Write-Host $e
 Resultado ($e -match "Panel: \{") "octopus.ps1 estado" (($e -split "`n" | Select-Object -First 3) -join " / ")
 & powershell -NoProfile -ExecutionPolicy Bypass -File "$R\octopus.ps1" reiniciar | Out-Null
 Resultado (Esperar 120) "octopus.ps1 reiniciar"
@@ -79,13 +84,13 @@ function Pedir($archivo, $version) {
     New-Item -ItemType Directory -Force -Path "$R\datos\actualizacion" | Out-Null
     Remove-Item "$R\datos\actualizacion\resultado.json" -ErrorAction SilentlyContinue
     Set-Content "$R\datos\actualizacion\pedida" $version
-    & powershell -NoProfile -ExecutionPolicy Bypass -File "$R\actualizador.ps1"
+    & powershell -NoProfile -ExecutionPolicy Bypass -File "$R\actualizador.ps1" | Out-Host
     return (Get-Content "$R\datos\actualizacion\resultado.json" -Raw -ErrorAction SilentlyContinue | ConvertFrom-Json)
 }
-$r = Pedir "$env:RUNNER_TEMP\mala.tar.gz" "9.9.10"
-Resultado ($r -and -not $r.ok -and ((Get-Content "$R\VERSION" -Raw).Trim() -ne "9.9.10")) "version manipulada: NO se instala" $r.detalle
-$r = Pedir "$env:RUNNER_TEMP\buena.tar.gz" "9.9.9"
-Resultado ($r -and $r.ok -and ((Get-Content "$R\VERSION" -Raw).Trim() -eq "9.9.9") -and (Salud)) "version firmada: se actualiza sola y sigue funcionando" $r.detalle
+$res = Pedir "$env:RUNNER_TEMP\mala.tar.gz" "9.9.10"
+Resultado ($res -and -not $res.ok -and ((Get-Content "$R\VERSION" -Raw).Trim() -ne "9.9.10")) "version manipulada: NO se instala" $res.detalle
+$res = Pedir "$env:RUNNER_TEMP\buena.tar.gz" "9.9.9"
+Resultado ($res -and $res.ok -and ((Get-Content "$R\VERSION" -Raw).Trim() -eq "9.9.9") -and (Salud)) "version firmada: se actualiza sola y sigue funcionando" $res.detalle
 Resultado ((Equipos) -ge 1) "tras actualizar a distancia se conservan los equipos"
 
 Write-Host ""
