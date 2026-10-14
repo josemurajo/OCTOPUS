@@ -34,9 +34,6 @@ import re
 import sqlite3
 import hashlib
 import secrets
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
 from markupsafe import escape as html_escape
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, abort
@@ -437,6 +434,12 @@ def init_db():
             cursor.execute(f'ALTER TABLE {table} ADD COLUMN {col} {ddl}')
     import sugerencias as _sug_db
     _sug_db.crear_tabla(conn)
+
+    # Índices para que las búsquedas no se hagan lentas al crecer: equipos por nombre, registro por tipo de acción
+    # (el recuento de accesos nuevos, el informe...) y por fecha.
+    cursor.execute('CREATE INDEX IF NOT EXISTS systems_hostname ON systems (hostname)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS audit_action ON audit_logs (action)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS audit_timestamp ON audit_logs (timestamp)')
 
     conn.commit()
     conn.close()

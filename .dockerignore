@@ -18,3 +18,11 @@ CREDENCIALES*.txt
 CREDENTIALS.txt
 install/.env
 install/data
+# No hacen falta dentro de la imagen del servidor (solo para desarrollo y pruebas): ahorra tamaño.
+# OJO: NO excluir los .md de legal/ ni SECURITY/MARCA/TERCEROS: el panel los enseña en «Legal y privacidad».
+tests
+.github
+maquinas
+MAPA_DEL_CODIGO.md
+PENDIENTES.md
+PRODUCCION.md

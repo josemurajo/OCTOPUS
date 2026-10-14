@@ -7,7 +7,7 @@ import asyncio, os, sqlite3, sys, tempfile, time
 from pathlib import Path
 P = str(Path(__file__).resolve().parents[2])
 sys.path.insert(0, P + "/lib")
-import consola, descubrir, alta_grupo, instalacion_remota
+import consola, descubrir, alta_grupo
 from textual.widgets import SelectionList, Input, Button, DataTable, Static
 
 d = tempfile.mkdtemp(); db = os.path.join(d, "t.db")

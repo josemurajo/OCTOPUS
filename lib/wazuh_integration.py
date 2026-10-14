@@ -9,7 +9,6 @@ Consume la API de Wazuh para obtener alertas de seguridad en tiempo real
 import requests
 import json
 from datetime import datetime, timedelta
-from typing import List, Dict, Optional
 
 class WazuhIntegration:
     """Integración con Wazuh SIEM"""

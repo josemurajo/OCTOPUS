@@ -95,7 +95,6 @@ _copias_lock = threading.Lock()
 
 def _restic_servidor():
     """restic en el propio servidor contra el almacen: se lee directamente del disco si se puede."""
-    import shutil
     import subprocess
     env = dict(os.environ)
     repo_disco = os.path.join(os.environ.get("OCTOPUS_BOVEDA_DIR", ""), "octopus-backups")

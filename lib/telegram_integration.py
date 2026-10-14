@@ -9,7 +9,6 @@ Envía alertas por Telegram usando Bot API
 import requests
 import json
 from datetime import datetime
-from typing import List, Optional
 
 class TelegramIntegration:
     """Integración con Telegram Bot API"""
