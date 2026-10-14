@@ -1,4 +1,6 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 José Murillo Rajo · OCTOPUS Zero-Touch (ver LICENSE y NOTICE)
 # OCTOPUS Zero-Touch - Instalador del agente para macOS (11 Big Sur o posterior, Intel y Apple Silicon)
 #
 # En el zip que da el panel se llama INSTALAR.command: doble clic (o clic derecho -> Abrir la primera vez).

@@ -1,4 +1,6 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 José Murillo Rajo · OCTOPUS Zero-Touch (ver LICENSE y NOTICE)
 # OCTOPUS Zero-Touch - Instalador del agente para Linux (Debian/Ubuntu, RHEL/Rocky/Alma/Fedora)
 # Uso:  sudo bash instalar_linux.sh            (instalar o actualizar)
 #       sudo bash instalar_linux.sh --quitar   (desinstalar; las copias del servidor NO se borran)

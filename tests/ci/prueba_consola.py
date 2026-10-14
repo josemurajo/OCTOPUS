@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 José Murillo Rajo · OCTOPUS Zero-Touch (ver LICENSE y NOTICE)
 """OCTOPUS - (pruebas de GitHub) modo consola «buscar-equipos»: recorre las ventanas como un usuario (con Textual pilot),
 con la busqueda y la instalacion simuladas: redes, grupos, contrasenas por grupo, resumen final y registro."""
 import asyncio, os, sqlite3, sys, tempfile, time

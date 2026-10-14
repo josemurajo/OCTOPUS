@@ -70,28 +70,50 @@
       <dt>Aviso sin copia</dt><dd>si pasa más de {% if horas_sin_copia < 48 %}{{ horas_sin_copia | int }} horas{% else %}{{ (horas_sin_copia / 24) | int }} días{% endif %}</dd>
     </dl>
   </div>
-  {% if funcion_activa('monitorizacion') %}
   <div class="card">
-    <h2>Monitorizacion</h2>
-    {% if monitor_activa %}
-    <p class="muted small" style="margin-bottom:10px">Uso del procesador, memoria, discos, red, temperatura, batería, procesos y salud de los discos, en directo.</p>
+    <h2>Monitorización</h2>
+    {% if not funcion_activa('monitorizacion') %}
+    <p class="muted small">Está apagada en este servidor (viene así de serie).
+      <a href="{{ url_for('monitorizacion') }}">Encenderla</a></p>
+    {% elif monitor_estado == 'activa' %}
+    <p class="small" style="margin-bottom:10px"><span class="chip ok">Activa</span> Uso del procesador, memoria, discos, red,
+      temperatura, batería y salud de los discos, en directo.</p>
     <a class="btn btn-primary" href="{{ url_for('monitorizacion_equipo', system_id=s.id) }}">Ver en directo</a>
     {% if puede_actuar() %}
-    <form method="post" action="{{ url_for('monitorizacion_activar') }}" style="margin-top:10px" data-confirm="¿Dejar de monitorizar {{ s.hostname }}?">
+    <form method="post" action="{{ url_for('monitorizacion_activar') }}" style="margin-top:10px">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="system_id" value="{{ s.id }}">
-      <input type="hidden" name="activar" value="0"><input type="hidden" name="volver" value="{{ url_for('equipo', system_id=s.id) }}">
-      <button class="btn btn-small" type="submit">Quitar la monitorización</button></form>{% endif %}
+      <input type="hidden" name="accion" value="pausar"><input type="hidden" name="volver" value="{{ url_for('equipo', system_id=s.id) }}">
+      <button class="btn btn-small" type="submit">Desactivar (pausa)</button></form>{% endif %}
+    {% elif monitor_estado == 'pausada' %}
+    <p class="small" style="margin-bottom:10px"><span class="chip atencion">En pausa</span> No recoge datos; el historial se guarda.</p>
+    {% if puede_actuar() %}
+    <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center">
+    <form method="post" action="{{ url_for('monitorizacion_activar') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="system_id" value="{{ s.id }}">
+      <input type="hidden" name="accion" value="activar"><button class="btn btn-primary" type="submit">Activar</button></form>
+    <form method="post" action="{{ url_for('monitorizacion_activar') }}" style="display:flex; gap:6px; align-items:center"
+          data-confirm="Se borrará todo el historial de monitorización de {{ s.hostname }}. ¿Desinstalar?">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="system_id" value="{{ s.id }}">
+      <input type="hidden" name="accion" value="desinstalar"><input type="hidden" name="volver" value="{{ url_for('equipo', system_id=s.id) }}">
+      <input type="hidden" name="volver_error" value="{{ url_for('equipo', system_id=s.id) }}">
+      <input name="confirmar" required placeholder="escribe {{ s.hostname }}" aria-label="Escribe el nombre del equipo para confirmar" style="max-width:190px">
+      <button class="btn btn-danger" type="submit">Desinstalar</button></form>
+    </div>
+    <p class="hint" style="margin-top:6px">Para desinstalar, escribe el nombre del equipo: es el seguro para no borrar el historial sin querer.</p>
+    {% endif %}
     {% else %}
-    <p class="muted small" style="margin-bottom:10px">Ver en directo cómo está este equipo: uso, temperatura, discos, batería y procesos.
-      No instala nada más: lo hace el agente que ya tiene.</p>
+    <p class="muted small" style="margin-bottom:10px"><span class="chip gris">Sin instalar</span> Ver en directo cómo está este
+      equipo: uso, temperatura, discos y batería. Al activarla, el agente que ya tiene empieza a medir.</p>
     {% if puede_actuar() %}
     <form method="post" action="{{ url_for('monitorizacion_activar') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="system_id" value="{{ s.id }}">
-      <input type="hidden" name="activar" value="1"><button class="btn btn-primary" type="submit">Activar monitorizacion</button></form>
-    <p class="hint" style="margin-top:8px">Si lo usa un trabajador, hay que informarle antes (lo pide la ley de protección de datos).</p>
+      <input type="hidden" name="accion" value="activar"><input type="hidden" name="volver_error" value="{{ url_for('equipo', system_id=s.id) }}">
+      <label class="small" style="display:flex; gap:8px; align-items:flex-start; margin-bottom:10px"><input type="checkbox" name="informado" required>
+        <span>He informado a quien usa este equipo, o no lo usa nadie (lo pide la ley de protección de datos).
+        <a href="{{ url_for('legal_doc', doc='trabajadores') }}" target="_blank">Nota para el trabajador</a></span></label>
+      <button class="btn btn-primary" type="submit">Activar (instalar)</button></form>
     {% endif %}{% endif %}
   </div>
-  {% endif %}
 </div>
 
 <div class="card">

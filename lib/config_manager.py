@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 José Murillo Rajo · OCTOPUS Zero-Touch (ver LICENSE y NOTICE)
 """
 ZeroTouch - Gestor de Configuración Personalizable
 Permite personalización de tiempos, políticas y reglas del sistema
@@ -213,12 +215,14 @@ class ConfigManager:
                 conn.close()
                 return False, f"Valor inválido para {key}"
         
+        # UPSERT: si la fila no existe (por ejemplo un ajuste nuevo aun sin sembrar), se crea; si existe, se actualiza.
         conn.execute('''
-            UPDATE config 
-            SET value = ?, type = ?, updated_at = ?, updated_by = ?
-            WHERE key = ?
-        ''', (json.dumps(value), self._get_value_type(value), datetime.now(), user_id, key))
-        
+            INSERT INTO config (key, value, type, updated_at, updated_by)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(key) DO UPDATE
+            SET value = excluded.value, type = excluded.type, updated_at = excluded.updated_at, updated_by = excluded.updated_by
+        ''', (key, json.dumps(value), self._get_value_type(value), datetime.now(), user_id))
+
         conn.commit()
         conn.close()
         

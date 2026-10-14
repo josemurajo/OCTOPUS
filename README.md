@@ -1,5 +1,7 @@
 # OCTOPUS Zero-Touch
 
+*Creado por **José Murillo Rajo**. Software libre y gratuito (AGPL-3.0).*
+
 Copias de seguridad automáticas y cifradas para los equipos de una empresa, con respuesta automática
 a ataques (ransomware) y un panel web pensado para personas que no son técnicas.
 
@@ -90,3 +92,19 @@ recuperar», «Enviar sugerencia o problema», quién recibe cada aviso, registr
 versión nueva. La versión 2.1 añadió: prueba de recuperación automática, copias sospechosas marcadas,
 aviso sin copia configurable por equipo, aviso al terminar una recuperación, kit cifrado opcional,
 límite de velocidad de las copias e informe mensual.
+
+## Licencia
+
+OCTOPUS Zero-Touch es **software libre y gratuito**, con licencia **GNU AGPL-3.0 o posterior** ([LICENSE](LICENSE)):
+se puede usar, copiar, modificar y repartir, también en empresas. La única condición importante es que quien
+reparta el programa, o lo ofrezca a otros a través de la red con cambios, publique también su código con la misma
+licencia.
+
+Se entrega **«tal cual», sin garantía de ningún tipo** (secciones 15 y 16 de la licencia). Ningún sistema de copias
+garantiza recuperar todo en cualquier caso: guarda el kit de recuperación fuera del servidor y revisa los avisos.
+
+- Componentes de terceros y sus licencias: [TERCEROS.md](TERCEROS.md)
+- Avisar de un fallo de seguridad: [SECURITY.md](SECURITY.md)
+- Colaborar: [CONTRIBUTING.md](CONTRIBUTING.md)
+- El nombre y el logotipo: [MARCA.md](MARCA.md)
+- Protección de datos para quien lo instala: [legal/](legal/)

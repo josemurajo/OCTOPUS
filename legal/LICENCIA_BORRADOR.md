@@ -1,3 +1,6 @@
+> **NO SE APLICA.** OCTOPUS se publica como software libre y gratuito con licencia **AGPL-3.0** (archivo `LICENSE`).
+> Este borrador de licencia comercial se guarda solo por si algún día se vende una versión o un servicio aparte.
+
 # Licencia de uso de OCTOPUS — BORRADOR
 
 > **Borrador para revisar con un asesor antes de vender.** No es asesoramiento legal. Los datos entre [corchetes]

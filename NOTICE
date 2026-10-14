@@ -1,0 +1,19 @@
+OCTOPUS Zero-Touch
+Copyright (C) 2026 José Murillo Rajo <https://github.com/josemurajo/OCTOPUS>
+
+Este programa es software libre: puedes redistribuirlo y/o modificarlo bajo los términos de la Licencia Pública
+General Affero de GNU (GNU AGPL) publicada por la Free Software Foundation, versión 3 o (a tu elección) cualquier
+versión posterior. Se distribuye SIN NINGUNA GARANTÍA. Ver el archivo LICENSE.
+
+Términos adicionales (sección 7 de la licencia)
+------------------------------------------------
+Según la sección 7.b de la GNU AGPL-3.0, quien reparta este programa o una versión modificada debe CONSERVAR la
+atribución de autoría:
+
+    «OCTOPUS Zero-Touch — creado por José Murillo Rajo»
+
+en los avisos legales que muestra el programa (el pie del panel web y la página «Legal y privacidad»), en este
+archivo NOTICE y en las cabeceras de los archivos de código. Una versión modificada debe indicar además que ha sido
+modificada y por quién (sección 5.a), y no puede dar a entender que es la versión original (ver MARCA.md, sección 7.e).
+
+Componentes de terceros: ver TERCEROS.md.

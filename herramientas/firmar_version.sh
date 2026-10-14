@@ -1,4 +1,6 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 José Murillo Rajo · OCTOPUS Zero-Touch (ver LICENSE y NOTICE)
 # OCTOPUS - Firma la versión (el archivo MANIFIESTO) para que los servidores puedan actualizarse solos a distancia.
 # Lo ejecuta SOLO quien publica OCTOPUS (José), en su PC, desde la carpeta del proyecto:
 #   bash herramientas/firmar_version.sh            (en Windows: botón derecho en la carpeta -> "Git Bash Here")

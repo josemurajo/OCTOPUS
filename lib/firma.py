@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 José Murillo Rajo · OCTOPUS Zero-Touch (ver LICENSE y NOTICE)
 """
 OCTOPUS - Comprobar que una version descargada es la oficial (lo usa el actualizador cuando no hay ssh-keygen,
 por ejemplo en Windows).

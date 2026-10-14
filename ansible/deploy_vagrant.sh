@@ -1,4 +1,6 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 José Murillo Rajo · OCTOPUS Zero-Touch (ver LICENSE y NOTICE)
 # OCTOPUS - Despliegue de agentes en las VMs Linux del LABORATORIO Vagrant.
 # Se ejecuta dentro del servidor:  docker exec octopus bash /app/ansible/deploy_vagrant.sh [cliente1 cliente2 ...]
 #

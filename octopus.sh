@@ -1,4 +1,6 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 José Murillo Rajo · OCTOPUS Zero-Touch (ver LICENSE y NOTICE)
 # OCTOPUS Zero-Touch - gestion del servidor (Linux y macOS). En Windows: octopus.ps1
 #   sudo bash octopus.sh <orden>      (en Mac: sudo bash /usr/local/octopus-servidor/octopus.sh <orden>)
 set -uo pipefail
@@ -30,6 +32,7 @@ if [ -x "$RAIZ/python/bin/python3" ] && [ "$(uname -s)" = Darwin ]; then
     credenciales)  cat "$RAIZ/data/CREDENCIALES_INICIALES.txt" 2>/dev/null || echo "Ya no hay credenciales iniciales (se borran al cambiar la contrasena)" ;;
     kit)           py lib/mantenimiento.py kit ;;
     acceso-emergencia) py lib/seguridad.py emergencia ;;
+    monitorizacion) py lib/monitor.py "${2:-estado}" ${3:+"$3"} ${4:+"$4"} ;;
     quitar-2fa)    [ -n "${2:-}" ] || { echo "Uso: sudo bash octopus.sh quitar-2fa <usuario>   (pide el codigo de recuperacion del kit)"; exit 2; }
                    py lib/dosfa.py quitar "$2" ;;
     buscar-equipos) py lib/consola.py ${2:+"$2"} ;;
@@ -71,7 +74,7 @@ if [ -x "$RAIZ/python/bin/python3" ] && [ "$(uname -s)" = Darwin ]; then
         else echo "OCTOPUS se ha quitado. Se quedan las copias en $OCTOPUS_BOVEDA_DIR y la configuracion en $RAIZ/data y $RAIZ/.env"; fi ;;
     *) cat <<AYUDA
 Uso: sudo bash $RAIZ/octopus.sh <orden>
-  estado | logs [n] | credenciales | buscar-equipos | kit | mantenimiento | ajustes | acceso-emergencia | quitar-2fa <usuario>
+  estado | logs [n] | credenciales | buscar-equipos | kit | mantenimiento | ajustes | acceso-emergencia | quitar-2fa <usuario> | monitorizacion
   recuperar-servidor <almacen> | actualizar <carpeta version nueva> | volver
   parar | arrancar | reiniciar | desinstalar
 AYUDA
@@ -90,6 +93,9 @@ credenciales)  docker exec octopus cat /data/panel/CREDENCIALES_INICIALES.txt 2>
 kit)           docker exec octopus python /app/lib/mantenimiento.py kit ;;
 acceso-emergencia)  # si te has quedado fuera del panel (bloqueado, o «solo desde la red de la oficina»)
     docker exec octopus python /app/lib/seguridad.py emergencia ;;
+monitorizacion)  # estado | activar|pausar|desinstalar <equipo|todos>  (tambien se hace desde el panel)
+    if [ -t 0 ]; then docker exec -it octopus python /app/lib/monitor.py "${2:-estado}" ${3:+"$3"} ${4:+"$4"}
+    else docker exec -i octopus python /app/lib/monitor.py "${2:-estado}" ${3:+"$3"} ${4:+"$4"}; fi ;;
 quitar-2fa)  # si se pierde el movil y los codigos de emergencia: pide el codigo de recuperacion del kit
     [ -n "${2:-}" ] || { echo "Uso: sudo bash octopus.sh quitar-2fa <usuario>"; exit 2; }
     docker exec -it octopus python /app/lib/dosfa.py quitar "$2" ;;
@@ -153,6 +159,7 @@ Uso: sudo bash octopus.sh <orden>     (en Windows: octopus.ps1)
   buscar-equipos  busca los equipos de la red y los protege, con ventanas y raton (--sencillo: solo preguntas)
   quitar-2fa <usuario>  si se pierde el movil y los codigos de emergencia (pide el codigo del kit de recuperacion)
   acceso-emergencia  si te has quedado fuera del panel: quita bloqueos, "solo red de la oficina" y doble aprobacion
+  monitorizacion estado | activar|pausar|desinstalar <equipo|todos>   (lo mismo que en el panel)
   kit             kit de recuperacion (claves de las copias) - guardalo fuera del servidor
   mantenimiento   limpieza, verificacion y copia del servidor ahora (normalmente cada noche)
   ajustes         cambia los ajustes del servidor (almacen externo, avisos de disco...) y reinicia

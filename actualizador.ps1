@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Jose Murillo Rajo - OCTOPUS Zero-Touch (ver LICENSE y NOTICE)
 # OCTOPUS - Actualizador seguro del servidor nativo de Windows. Lo lanza solo la tarea "OCTOPUS Actualizador"
 # cada 5 minutos (como SYSTEM). Hace lo mismo que actualizador.sh en Linux y Mac:
 #   - El panel NUNCA ejecuta nada en el equipo: solo deja una peticion (datos\actualizacion\pedida). Esto la recoge.

@@ -1,4 +1,6 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 José Murillo Rajo · OCTOPUS Zero-Touch (ver LICENSE y NOTICE)
 # Prueba del ALMACEN EXTERNO CON BLOQUEO POR TIEMPO (Object Lock de S3), con MinIO (compatible con S3,
 # Backblaze B2, Wasabi...). Lo ejecutan las pruebas de GitHub (Linux con Docker y la herramienta "aws").
 #   1. MinIO con un bucket con bloqueo: cada version de cada archivo queda protegida 1 dia

@@ -1,4 +1,6 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 José Murillo Rajo · OCTOPUS Zero-Touch (ver LICENSE y NOTICE)
 # OCTOPUS - doble clic para instalar (o actualizar) el servidor OCTOPUS en este Mac. Sin Docker ni Homebrew.
 # El Mac pide tu contrasena una vez; lo demas lo hace solo.
 cd "$(dirname "$0")" || exit 1

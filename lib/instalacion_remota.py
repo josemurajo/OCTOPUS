@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 José Murillo Rajo · OCTOPUS Zero-Touch (ver LICENSE y NOTICE)
 """
 OCTOPUS Zero-Touch - Instalacion a distancia desde el panel (Linux y Mac, por SSH).
 

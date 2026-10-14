@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}{{ titulo or 'Legal y privacidad' }}{% endblock %}
+{% block content %}
+<style>
+.legal { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 24px; align-items: start; }
+.legal nav.docs { position: sticky; top: 16px; }
+.legal nav.docs a { display: block; padding: 7px 10px; border-radius: 6px; color: var(--text); text-decoration: none; font-size: 14px; }
+.legal nav.docs a:hover { background: var(--bg); }
+.legal nav.docs a.act { background: var(--accent); color: #fff; }
+.legal nav.docs .grupo { font-size: 12px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); margin: 14px 10px 4px; }
+.texto-legal { line-height: 1.6; max-width: 820px; }
+.texto-legal h2 { margin-top: 26px; } .texto-legal h3 { margin-top: 20px; }
+.texto-legal blockquote { margin: 12px 0; padding: 10px 14px; border-left: 4px solid var(--warn); background: var(--warn-soft); border-radius: 0 6px 6px 0; }
+.texto-legal .tabla-legal { overflow-x: auto; margin: 12px 0; }
+.texto-legal table { border-collapse: collapse; width: 100%; font-size: 14px; }
+.texto-legal th, .texto-legal td { border: 1px solid var(--line); padding: 6px 9px; text-align: left; vertical-align: top; }
+.texto-legal th { background: var(--bg); }
+.texto-legal pre { white-space: pre-wrap; background: var(--bg); padding: 10px; border-radius: 6px; font-size: 13px; }
+pre.licencia { font-size: 13px; line-height: 1.5; }
+.resumen { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; }
+.resumen .card { margin: 0; }
+@media (max-width: 800px) { .legal { grid-template-columns: 1fr; } .legal nav.docs { position: static; } }
+@media print { .no-imprimir, nav, header, footer { display: none !important; } .legal { display: block; } .card { box-shadow: none; } }
+</style>
+<div class="legal">
+  <nav class="docs no-imprimir" aria-label="Documentos">
+    <a href="{{ url_for('legal') }}" class="{{ '' if doc else 'act' }}">Resumen</a>
+    <div class="grupo">Para todos</div>
+    {% for k, t, para in docs if para == 'todos' %}<a href="{{ url_for('legal_doc', doc=k) }}" class="{{ 'act' if k == doc else '' }}">{{ t }}</a>{% endfor %}
+    <div class="grupo">Para la empresa que lo instala</div>
+    {% for k, t, para in docs if para == 'empresa' %}<a href="{{ url_for('legal_doc', doc=k) }}" class="{{ 'act' if k == doc else '' }}">{{ t }}</a>{% endfor %}
+    <div class="grupo">Código</div>
+    <a href="{{ fuente }}" target="_blank" rel="noopener noreferrer">Código fuente ↗</a>
+  </nav>
+  <div>
+  {% if doc %}
+    <p class="small no-imprimir"><a href="javascript:window.print()">Imprimir</a> · <a href="{{ url_for('legal_doc', doc=doc, descargar=1) }}">Descargar</a></p>
+    <div class="card texto-legal">{{ cuerpo|safe }}</div>
+  {% else %}
+    <h1>Legal y privacidad</h1>
+    <p class="small muted">{{ autoria }}</p>
+    <p class="lead">OCTOPUS es software libre y gratuito. Aquí están sus condiciones, cómo trata los datos y las plantillas
+      que necesita la empresa que lo instala.</p>
+    <div class="resumen">
+      <div class="card"><h2 style="margin-top:0">Licencia libre</h2><p>GNU <strong>AGPL-3.0</strong>: se puede usar, copiar y modificar
+        gratis, también en empresas. Quien lo reparta o lo ofrezca por la red con cambios, publica también su código.</p>
+        <p><a href="{{ url_for('legal_doc', doc='licencia') }}">Leer la licencia</a> · <a href="{{ fuente }}" target="_blank" rel="noopener noreferrer">Código fuente</a></p></div>
+      <div class="card"><h2 style="margin-top:0">Sin garantía</h2><p>Se entrega «tal cual». Ningún sistema de copias garantiza
+        recuperarlo todo siempre: guarda el kit de recuperación fuera del servidor y revisa los avisos.</p></div>
+      <div class="card"><h2 style="margin-top:0">Tus datos se quedan aquí</h2><p>Copias, ajustes y monitorización están solo en
+        este servidor. Los autores de OCTOPUS no reciben nada. <a href="{{ url_for('legal_doc', doc='privacidad') }}">Más detalles</a></p></div>
+      <div class="card"><h2 style="margin-top:0">Si monitorizas equipos</h2><p>Informa antes a quien los usa y úsalo solo para
+        mantenerlos. <a href="{{ url_for('legal_doc', doc='trabajadores') }}">Nota para los trabajadores</a>, ya ajustada a lo que tienes configurado.</p></div>
+    </div>
+    <p class="small muted" style="margin-top:18px">Esta información es orientativa y no es asesoramiento legal. Para un caso
+      concreto, consulta con un asesor de protección de datos.</p>
+  {% endif %}
+  </div>
+</div>
+{% endblock %}

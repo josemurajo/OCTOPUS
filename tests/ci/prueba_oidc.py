@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 José Murillo Rajo · OCTOPUS Zero-Touch (ver LICENSE y NOTICE)
 """OCTOPUS - (pruebas de GitHub) entrar con OIDC contra un proveedor simulado: firma, emisor, destinatario, nonce,
 estado, PKCE, grupos -> papel, y que un token falso o caducado no entra."""
 import base64

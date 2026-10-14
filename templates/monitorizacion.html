@@ -26,9 +26,24 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="activar" value="1">
     <select name="system_id" aria-label="Equipo" required style="max-width:240px">
       <option value="">Elige un equipo…</option>{% for e in sin %}<option value="{{ e.id }}">{{ e.hostname }}</option>{% endfor %}</select>
-    <button class="btn btn-primary" type="submit">Instalar en un equipo</button>
+    <label class="small" style="display:flex; gap:6px; align-items:center" title="Lo pide la ley de protección de datos">
+      <input type="checkbox" name="informado" required> He informado a quien lo usa
+      (<a href="{{ url_for('legal_doc', doc='trabajadores') }}" target="_blank">nota</a>)</label>
+    <button class="btn btn-primary" type="submit">Activar en un equipo</button>
   </form>{% endif %}
 </div>
+
+{% if apagada %}
+<div class="card"><h2 style="margin-top:0">La monitorización está apagada</h2>
+  <p>Viene apagada de serie: ningún equipo recoge datos. Al encenderla no pasa nada todavía: después eliges en qué
+    equipos activarla, uno a uno.</p>
+  {% if puede_actuar() %}
+  <form method="post" action="{{ url_for('monitorizacion_funcion') }}" style="margin-top:10px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="encender" value="1">
+    <button class="btn btn-primary" type="submit">Encender la monitorización</button></form>
+  {% else %}<p class="muted small">Solo un administrador puede encenderla.</p>{% endif %}
+</div>
+{% endif %}
 
 {% if avisos %}
 <div class="card"><h2>Avisos</h2>
@@ -49,10 +64,40 @@
   </a>
   {% endfor %}
 </div>
-{% else %}
+{% elif not apagada %}
 <div class="card"><p>Todavía no hay ningún equipo con la monitorización activada.</p>
   <p class="muted small" style="margin-top:6px">Elige uno arriba y pulsa «Instalar en un equipo» (o desde la ficha del equipo). No hace falta
     instalar nada más: lo hace el agente que ya tiene. Solo se recogen datos de los equipos donde la actives.</p></div>
+{% endif %}
+
+{% if pausados %}
+<div class="card"><h2>En pausa</h2>
+  <p class="muted small">No recogen datos; su historial se guarda. Puedes activarlos otra vez o desinstalar la
+    monitorización (borra su historial).</p>
+  {% for e in pausados %}
+  <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:8px 0; border-top:1px solid var(--line)">
+    <strong style="min-width:160px">{{ e.hostname }}</strong>
+    {% if puede_actuar() %}
+    <form method="post" action="{{ url_for('monitorizacion_activar') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="system_id" value="{{ e.id }}">
+      <input type="hidden" name="accion" value="activar"><button class="btn btn-small btn-primary" type="submit">Activar</button></form>
+    <form method="post" action="{{ url_for('monitorizacion_activar') }}" style="display:flex; gap:6px; align-items:center"
+          data-confirm="Se borrará todo el historial de monitorización de {{ e.hostname }}. ¿Desinstalar?">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="system_id" value="{{ e.id }}">
+      <input type="hidden" name="accion" value="desinstalar">
+      <input name="confirmar" required placeholder="escribe {{ e.hostname }}" aria-label="Escribe el nombre del equipo para confirmar" style="max-width:190px">
+      <button class="btn btn-small btn-danger" type="submit">Desinstalar</button></form>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if not apagada and puede_actuar() %}
+<form method="post" action="{{ url_for('monitorizacion_funcion') }}" style="margin-top:14px"
+      data-confirm="Ningún equipo recogerá datos hasta que la vuelvas a encender. ¿Apagar la monitorización?">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="encender" value="0">
+  <button class="btn btn-small" type="submit">Apagar la monitorización entera</button></form>
 {% endif %}
 {% if puede_actuar() %}
 <p class="small muted" style="margin-top:14px">ℹ️ Si el equipo lo usa un trabajador, la ley obliga a informarle antes de monitorizarlo,

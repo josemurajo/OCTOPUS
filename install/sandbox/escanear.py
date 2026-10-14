@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 José Murillo Rajo · OCTOPUS Zero-Touch (ver LICENSE y NOTICE)
 """Analisis estatico de las muestras: hash, tipo real, entropia y senales de sospecha. Salida JSON."""
 import hashlib, json, math, os, subprocess, sys
 

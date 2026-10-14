@@ -1,4 +1,6 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 José Murillo Rajo · OCTOPUS Zero-Touch (ver LICENSE y NOTICE)
 # OCTOPUS - (solo pruebas) crea una «version publicada» firmada con una clave de PRUEBA, como la que descargaria el
 # actualizador, para probar la actualizacion a distancia sin tocar GitHub ni la clave real de publicacion.
 #   bash tests/ci/version_firmada.sh <salida.tar.gz> <version> <carpeta_clave> [manipular]

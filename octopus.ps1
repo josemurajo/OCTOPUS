@@ -1,6 +1,8 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Jose Murillo Rajo - OCTOPUS Zero-Touch (ver LICENSE y NOTICE)
 # OCTOPUS Zero-Touch - gestion del servidor en Windows (lo mismo que octopus.sh en Linux y Mac)
 #   powershell -ExecutionPolicy Bypass -File "C:\ProgramData\OCTOPUS-Servidor\octopus.ps1" <orden>
-param([string]$Orden = "ayuda", [string]$Arg = "")
+param([string]$Orden = "ayuda", [string]$Arg = "", [string]$Arg2 = "")
 $ErrorActionPreference = "Continue"
 $Raiz = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Tarea = "OCTOPUS Servidor"
@@ -15,6 +17,7 @@ Uso: powershell -ExecutionPolicy Bypass -File octopus.ps1 <orden>
   buscar-equipos  busca los equipos de la red y los protege, con ventanas y raton (sin usar el panel)
   quitar-2fa <usuario>  si se pierde el movil y los codigos de emergencia (pide el codigo del kit de recuperacion)
   acceso-emergencia  si te has quedado fuera del panel: quita bloqueos, "solo red de la oficina" y doble aprobacion
+  monitorizacion estado | activar|pausar|desinstalar <equipo|todos>   (lo mismo que en el panel)
   kit             kit de recuperacion (claves de las copias) - guardalo fuera del servidor
   mantenimiento   limpieza, verificacion y copia del servidor ahora (normalmente cada noche)
   ajustes         cambia los ajustes del servidor (almacen externo...) en el Bloc de notas y reinicia
@@ -92,6 +95,11 @@ switch ($Orden) {
     "credenciales"  { Get-Content "$Raiz\data\CREDENCIALES_INICIALES.txt" -ErrorAction SilentlyContinue }
     "kit"           { $null = Py "lib\mantenimiento.py" "kit" }
     "acceso-emergencia" { $null = Py "lib\seguridad.py" "emergencia" }
+    "monitorizacion" {
+        # sin "| Out-Host": tiene que poder preguntar en la consola
+        $a = @("lib\monitor.py", $(if ($Arg) { $Arg } else { "estado" })); if ($Arg2) { $a += $Arg2 }
+        Entorno; Push-Location $Raiz; & "$Raiz\python\python.exe" @a; $rc = $LASTEXITCODE; Pop-Location; exit $rc
+    }
     "quitar-2fa" {
         if (-not $Arg) { Write-Host "Uso: octopus.ps1 quitar-2fa <usuario>   (pide el codigo de recuperacion del kit)"; exit 2 }
         # sin "| Out-Host": tiene que poder preguntar el codigo en la consola

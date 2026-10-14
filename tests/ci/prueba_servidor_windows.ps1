@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Jose Murillo Rajo - OCTOPUS Zero-Touch (ver LICENSE y NOTICE)
 # OCTOPUS - (pruebas de GitHub) instala el servidor NATIVO de Windows como lo haria un usuario y lo prueba entero:
 # arranca, se vuelve a levantar solo si se cae, gestion con octopus.ps1, copia y restauracion de un agente real,
 # reinstalar sin perder nada y actualizacion a distancia firmada (y que una manipulada NO se instala).

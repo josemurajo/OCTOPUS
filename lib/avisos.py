@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 José Murillo Rajo · OCTOPUS Zero-Touch (ver LICENSE y NOTICE)
 """
 OCTOPUS - Catalogo unico de avisos: cada problema tiene un CODIGO, que pasa, por que importa, los pasos
 exactos para solucionarlo y, cuando se puede, una accion automatica (boton "Solucionar" del panel).

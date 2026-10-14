@@ -1,4 +1,6 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 José Murillo Rajo · OCTOPUS Zero-Touch (ver LICENSE y NOTICE)
 # OCTOPUS Zero-Touch - Instalador del SERVIDOR para Linux (maquina recien instalada, sin nada)
 #   Ubuntu 20.04+, Debian 11+, Rocky/Alma/RHEL 8+, Fedora, CentOS Stream
 #

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 José Murillo Rajo · OCTOPUS Zero-Touch (ver LICENSE y NOTICE)
 """
 OCTOPUS - (pruebas) instalar OCTOPUS a distancia en un equipo, con el mismo codigo que el boton «Buscar equipos en la red»
 (alta_grupo.alta + alta_grupo.instalar) y comprobar que el equipo queda conectado y responde.

@@ -196,7 +196,7 @@ pre.box { background: #0f172a; color: #e2e8f0; padding: 14px; border-radius: 10p
   {% endwith %}
   {% block content %}{% endblock %}
 </main>
-<footer class="footer">OCTOPUS · Copias de seguridad automáticas y cifradas{% if session.get('user_id') %} · <a href="{{ url_for('sugerencia') }}">Enviar sugerencia o problema</a>{% endif %}</footer>
+<footer class="footer">OCTOPUS Zero-Touch · creado por {{ autor_octopus }} · software libre (AGPL-3.0) · <a href="{{ url_for('legal') }}">Legal y privacidad</a>{% if session.get('user_id') %} · <a href="{{ url_for('sugerencia') }}">Enviar sugerencia o problema</a>{% endif %}</footer>
 <script>
 // Anade el token CSRF a todos los formularios POST (capa de seguridad) y pide confirmacion donde haga falta
 (function () {

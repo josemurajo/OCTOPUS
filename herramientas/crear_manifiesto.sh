@@ -1,4 +1,6 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 José Murillo Rajo · OCTOPUS Zero-Touch (ver LICENSE y NOTICE)
 # OCTOPUS - Crea MANIFIESTO: la huella SHA-256 de cada archivo de la versión (lo que luego se firma).
 # Se ejecuta en la copia del repositorio que se va a publicar (usa la lista de archivos de git si la hay).
 set -euo pipefail

@@ -1,7 +1,29 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 José Murillo Rajo · OCTOPUS Zero-Touch (ver LICENSE y NOTICE)
 """
-ZeroTouch - Panel de Administración Web
-Interfaz web para gestión de sistemas, configuración y monitorización
+OCTOPUS - Panel web de administración (el cerebro: todo lo que se ve y se hace desde el navegador).
+
+Es una aplicación Flask. Cada página web y cada acción del panel es una función con @app.route(...) aquí dentro.
+Este es el archivo más grande; está dividido en secciones que empiezan por un comentario con «====».
+
+QUÉ TOCAR PARA CAMBIAR CADA COSA (mapa rápido):
+  - Una página o un botón del panel ....... busca su @app.route('/loquesea') en este archivo.
+  - El aspecto (colores, tipos, cabecera) .. templates/base.html (lo comparten todas las páginas).
+  - El texto de una pantalla ............... su archivo en templates/ (p. ej. equipo.html, monitorizacion.html).
+  - Encender/apagar o ajustar funciones .... lib/funciones.py (la lista) + la página /ajustes/funciones de aquí.
+  - Entrar, contraseñas, sesión ............ función login() y _iniciar_sesion()/_abrir_sesion() más abajo.
+  - Doble autenticación (2FA) .............. lib/dosfa.py (la lógica) + rutas /login/codigo y /cuenta/2fa de aquí.
+  - Usuarios de la empresa (LDAP/OIDC...) .. lib/identidad.py + login_empresa()/login_oidc() de aquí.
+  - Bloqueo de atacantes, aprobaciones ..... lib/seguridad.py + _seg_fallo() y las rutas /aprobaciones de aquí.
+  - Monitorización de equipos .............. lib/monitor.py + rutas /monitorizacion* de aquí.
+  - Avisos (qué pasa y qué hacer) .......... lib/avisos.py (el catálogo con código y pasos).
+  - Lo que hacen los equipos (copias...) ... lib/ordenes.py (cola) y las rutas /api/agente/* de aquí.
+  - Textos legales de la web ............... lib/legal.py + los .md de legal/ + ruta /legal de aquí.
+
+REGLAS IMPORTANTES AL AÑADIR UNA RUTA:
+  - Si NO lleva @login_required, añádela a PUBLIC_ENDPOINTS (si no, pedirá entrar).
+  - Si cambia datos, el formulario tiene que enviar csrf_token (ver cualquier plantilla) o será rechazado.
 """
 
 import os
@@ -16,6 +38,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
+from markupsafe import escape as html_escape
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, abort
 from functools import wraps
 import subprocess
@@ -721,6 +744,52 @@ def cuenta_2fa():
 def ayuda_2fa():
     """Guía sencilla, paso a paso (se puede abrir sin haber entrado y se puede imprimir)."""
     return render_template('ayuda_2fa.html')
+
+
+# ------------------------------------------------------------------ legal y privacidad (público: también sin entrar)
+import legal as _legal
+
+URL_CODIGO_FUENTE = os.environ.get('OCTOPUS_CODIGO_FUENTE', 'https://github.com/josemurajo/OCTOPUS')
+app.jinja_env.globals['autor_octopus'] = _legal.AUTOR      # atribución obligatoria (NOTICE, AGPL-3.0 sección 7.b)
+
+
+def _legal_valores():
+    """Lo que la nota para los trabajadores dice que se recoge, según cómo está configurado ahora."""
+    datos = ['- Estado técnico del equipo: uso del procesador, memoria, discos, red, temperatura, ventiladores y batería.',
+             '- Inventario del equipo: sistema operativo, modelo, discos y su salud, y si las protecciones del sistema '
+             'están activas (antivirus, cortafuegos, cifrado del disco).',
+             '- Las **copias de seguridad** de las carpetas de trabajo, cifradas antes de salir del equipo.']
+    try:
+        if _fun.opcion('monitorizacion', 'procesos') != 'no':
+            datos.append('- Los **programas abiertos** y cuánto gastan (solo el nombre del programa, no lo que haces en él).')
+        if _fun.opcion('monitorizacion', 'usuarios') == 'si':
+            datos.append('- El **nombre de usuario** con la sesión iniciada en el equipo.')
+        dias = _fun.opcion('monitorizacion', 'dias')
+    except Exception:
+        dias = 90
+    return {'lista_datos': '\n'.join(datos), 'dias': dias}
+
+
+@app.route('/legal')
+def legal():
+    """Licencia, componentes, privacidad y plantillas para la empresa."""
+    docs = [(k, v[1], v[2]) for k, v in _legal.DOCUMENTOS.items()]
+    return render_template('legal.html', docs=docs, doc=None, fuente=URL_CODIGO_FUENTE, autoria=_legal.autoria())
+
+
+@app.route('/legal/<doc>')
+def legal_doc(doc):
+    t = _legal.texto(doc, _legal_valores() if doc == 'trabajadores' else None)
+    if t is None:
+        abort(404)
+    if request.args.get('descargar'):
+        nombre = os.path.basename(_legal.DOCUMENTOS[doc][0])
+        return (t, 200, {'Content-Type': 'text/plain; charset=utf-8',
+                         'Content-Disposition': f'attachment; filename="{nombre if "." in nombre else nombre + ".txt"}"'})
+    cuerpo = ('<pre class="licencia">' + str(html_escape(t)) + '</pre>') if doc in ('licencia', 'autoria') else _legal.a_html(t)
+    docs = [(k, v[1], v[2]) for k, v in _legal.DOCUMENTOS.items()]
+    return render_template('legal.html', docs=docs, doc=doc, titulo=_legal.DOCUMENTOS[doc][1], cuerpo=cuerpo,
+                           fuente=URL_CODIGO_FUENTE)
 
 
 @app.route('/login/empresa')
@@ -1689,7 +1758,7 @@ def equipo(system_id):
     est = agentes.estado_equipo(row, force=request.args.get('refrescar') == '1')
     import mantenimiento as _mant
     copias = _inc.marcar_copias(row['id'], est['copias'])
-    return render_template('equipo.html', monitor_activa=_mon.activa(system_id), s=row, est=est, copias=copias, trabajos=agentes.trabajos_de(row['id'], 5),
+    return render_template('equipo.html', monitor_activa=_mon.activa(system_id), monitor_estado=_mon.estado(system_id), s=row, est=est, copias=copias, trabajos=agentes.trabajos_de(row['id'], 5),
                            prueba=_mant.leer_pruebas().get(row['hostname'].lower()),
                            horas_sin_copia=agentes.horas_sin_copia(row),
                            horas_propias=agentes.notas_equipo(row).get('horas_sin_copia'),
@@ -2491,31 +2560,71 @@ def _monitorizables():
 @login_required
 def monitorizacion():
     if not _fun.activa('monitorizacion'):
-        flash('La monitorización está apagada en Ajustes → Funciones.', 'error')
-        return redirect(url_for('inicio'))
-    act = set(_mon.activos())
+        return render_template('monitorizacion.html', apagada=True, equipos=[], sin=[], pausados=[], avisos=[])
+    est = _mon.estados()
     equipos = _monitorizables()
-    return render_template('monitorizacion.html', equipos=[e for e in equipos if e['id'] in act],
-                           sin=[e for e in equipos if e['id'] not in act], avisos=_mon.avisos())
+    return render_template('monitorizacion.html', apagada=False,
+                           equipos=[e for e in equipos if est.get(e['id']) == 'activa'],
+                           pausados=[e for e in equipos if est.get(e['id']) == 'pausada'],
+                           sin=[e for e in equipos if e['id'] not in est], avisos=_mon.avisos())
 
 
 @app.route('/monitorizacion/activar', methods=['POST'])
 @login_required
 @role_required('admin', 'supremo')
 def monitorizacion_activar():
+    """Activar (instala y empieza), Desactivar (pausa: deja de recoger, guarda el historial) o Desinstalar (borra todo)."""
     sid = request.form.get('system_id', type=int)
-    si = request.form.get('activar') == '1'
+    accion = request.form.get('accion') or {'1': 'activar', '0': 'pausar'}.get(request.form.get('activar', ''), '')
     row = _get_system(sid) if sid else None
-    if not row:
+    destino_error = request.form.get('volver_error', '') or request.form.get('volver', '')
+    destino_error = destino_error if destino_error.startswith('/') and not destino_error.startswith('//') else url_for('monitorizacion')
+    if not row or accion not in ('activar', 'pausar', 'desinstalar'):
         flash('Elige un equipo.', 'error')
         return redirect(url_for('monitorizacion'))
-    _mon.activar(sid, si, session.get('username', ''))
-    log_audit(session['user_id'], 'MONITOR_ON' if si else 'MONITOR_OFF', row['hostname'], request.remote_addr)
-    flash(f'Monitorización {"activada" if si else "quitada"} en {row["hostname"]}.'
-          + (' Los primeros datos llegan en menos de un minuto.' if si else ' Ya no se recogen datos de ese equipo.'), 'success')
+    antes = _mon.estado(sid)
+    quien = session.get('username', '')
+    if accion == 'activar':
+        if antes == 'desinstalada' and request.form.get('informado') != 'on':
+            flash('Marca la casilla «He informado a quien usa este equipo» (o que nadie lo usa). Lo pide la ley de '
+                  'protección de datos: tienes la nota para el trabajador en «Legal y privacidad».', 'error')
+            return redirect(destino_error)
+        _mon.activar(sid, True, quien)
+        log_audit(session['user_id'], 'MONITOR_ON', row['hostname'] + (
+            ' (instalada; confirma que ha informado a quien lo usa)' if antes == 'desinstalada' else ' (reanudada)'),
+            request.remote_addr)
+        flash(f'Monitorización {"instalada y activada" if antes == "desinstalada" else "activada otra vez"} en '
+              f'{row["hostname"]}. Los primeros datos llegan en menos de un minuto.', 'success')
+    elif accion == 'pausar':
+        _mon.activar(sid, False, quien)
+        log_audit(session['user_id'], 'MONITOR_PAUSA', row['hostname'], request.remote_addr)
+        flash(f'Monitorización en pausa en {row["hostname"]}: ya no se recogen datos. El historial se guarda; '
+              f'puedes activarla otra vez o desinstalarla.', 'success')
+    else:
+        if (request.form.get('confirmar') or '').strip().lower() != (row['hostname'] or '').lower():
+            flash(f'Para desinstalar escribe el nombre del equipo ({row["hostname"]}) en la casilla. Así no se hace sin querer.', 'error')
+            return redirect(destino_error)
+        _mon.desinstalar(sid)
+        log_audit(session['user_id'], 'MONITOR_DESINSTALADA', f'{row["hostname"]}: quitada y borrado su historial',
+                  request.remote_addr)
+        flash(f'Monitorización desinstalada de {row["hostname"]} y borrado todo su historial.', 'success')
     destino = request.form.get('volver', '')
     return redirect(destino if destino.startswith('/') and not destino.startswith('//') else
-                    url_for('monitorizacion_equipo', system_id=sid) if si else url_for('monitorizacion'))
+                    url_for('monitorizacion_equipo', system_id=sid) if accion == 'activar' else url_for('monitorizacion'))
+
+
+@app.route('/monitorizacion/funcion', methods=['POST'])
+@login_required
+@role_required('admin', 'supremo')
+def monitorizacion_funcion():
+    """Encender o apagar la monitorización entera (lo mismo que en Ajustes → Funciones)."""
+    si = request.form.get('encender') == '1'
+    if not _guardar_protegido('monitorizacion', si, session['user_id']):
+        return redirect(url_for('monitorizacion'))
+    log_audit(session['user_id'], 'FUNCION_ON' if si else 'FUNCION_OFF', 'monitorizacion', request.remote_addr)
+    flash('Monitorización encendida: ahora actívala en los equipos que quieras.' if si else
+          'Monitorización apagada: ningún equipo recoge datos (el historial se guarda).', 'success')
+    return redirect(url_for('monitorizacion') if si else url_for('inicio'))
 
 
 @app.route('/monitorizacion/<int:system_id>')

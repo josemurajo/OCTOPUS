@@ -218,7 +218,7 @@ table.procs .mini > i { display: block; height: 100%; width: 0; background: var(
     txt('m-estado', edad == null ? 'sin datos todavía' : vivo ? 'en directo' : 'último dato hace ' + dur(edad));
     $('mon').classList.toggle('sin-datos', edad != null && edad > 180);
     txt('m-cab', [inv.sistema || (d.so ? d.so : ''), d.uptime_s != null ? 'encendido hace ' + dur(d.uptime_s) : '',
-                  (d.usuarios || []).length ? 'usando: ' + d.usuarios.join(', ') : 'nadie con sesión iniciada'].filter(Boolean).join(' · '));
+                  d.usuarios_ocultos ? '' : (d.usuarios || []).length ? 'usando: ' + d.usuarios.join(', ') : 'nadie con sesión iniciada'].filter(Boolean).join(' · '));
     // avisos
     const av = $('m-avisos'); const html = (r.avisos || []).map(a => `<div class="notice ${a.nivel === 'problema' ? 'problema' : 'atencion'}"><strong>${esc(a.titulo)}</strong>${esc(a.por_que)} ${esc(a.pasos.slice(0, 2).join(' '))}</div>`).join('');
     if (av.dataset.h !== html) { av.innerHTML = html; av.dataset.h = html; }
@@ -327,6 +327,8 @@ table.procs .mini > i { display: block; height: 100%; width: 0; background: var(
       const h = f.map(x => `<dt>${x[0]}</dt><dd>${esc(String(x[1]))}</dd>`).join(''); const e = $('inv'); if (e.dataset.h !== h) { e.innerHTML = h; e.dataset.h = h; }
     }
     if (d.procesos) { procesos(d.procesos); txt('pr-n', d.n_procesos || d.procesos.length); }
+    else if (d.procesos_ocultos && !$('pr-body').dataset.oculto) { $('pr-body').dataset.oculto = 1;
+      $('pr-body').innerHTML = '<tr><td colspan="4" class="muted small">No se guardan los programas abiertos (Ajustes → Funciones → Monitorización).</td></tr>'; }
   }
   function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]); }
 

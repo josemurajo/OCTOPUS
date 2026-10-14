@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 José Murillo Rajo · OCTOPUS Zero-Touch (ver LICENSE y NOTICE)
+# Marca de autoría en base64 (se lee con `base64 -d`):
+#   T0NUT1BVUyBaZXJvLVRvdWNoIC0gY3JlYWRvIHBvciBKb3PDqSBNdXJpbGxvIFJham8gKGh0dHBzOi8vZ2l0aHViLmNvbS9q
+#   b3NlbXVyYWpvL09DVE9QVVMpLCAyMDI2LiBTb2Z0d2FyZSBsaWJyZSBBR1BMLTMuMC1vci1sYXRlcjogZXN0YSBhdHJpYnVj
+#   acOzbiBkZWJlIGNvbnNlcnZhcnNlIChMSUNFTlNFLCBzZWNjacOzbiA3LmI7IHZlciBOT1RJQ0UpLg==
 """
 OCTOPUS - Monitorizacion del equipo (va junto al agente; solo Python, sin instalar nada mas).
 

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 José Murillo Rajo · OCTOPUS Zero-Touch (ver LICENSE y NOTICE)
 # El limite de peticiones protege el login sin estorbar: recargar el login no cuenta, enviar muchas veces si,
 # y un administrador que mira la monitorizacion en directo (cientos de peticiones por hora) nunca se queda fuera.
 import os, re, sys, tempfile
@@ -10,6 +12,9 @@ import admin_panel as a  # noqa: E402
 
 assert a.Limiter is not None, "flask-limiter no esta instalado: el limite de peticiones estaria apagado"
 a.app.config["TESTING"] = False
+# Esta prueba es del LIMITE DE PETICIONES (una capa). El bloqueo de atacantes por IP es OTRA capa (su propia
+# prueba es prueba_seguridad). Aqui se apaga para no mezclar las dos: si no, los intentos fallidos bloquearian la IP.
+a.config_manager.set_config("bloqueo_atacantes", False, None)
 fallos = []
 
 

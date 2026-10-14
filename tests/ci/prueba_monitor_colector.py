@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 José Murillo Rajo · OCTOPUS Zero-Touch (ver LICENSE y NOTICE)
 """OCTOPUS - (pruebas de GitHub) el recolector de la monitorizacion en este sistema (Linux, Windows o Mac):
 que saca procesador, memoria, discos, red, procesos, tiempo encendido, inventario y salud de discos con datos que tengan
 sentido. Imprime lo que encuentra para poder revisarlo en el registro de GitHub."""

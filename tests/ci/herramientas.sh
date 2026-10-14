@@ -1,4 +1,6 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 José Murillo Rajo · OCTOPUS Zero-Touch (ver LICENSE y NOTICE)
 # Descarga restic y rest-server para el sistema donde corre (Linux, macOS o Windows con Git Bash).
 #   bash tests/ci/herramientas.sh <carpeta>
 set -euo pipefail

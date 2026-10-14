@@ -1,4 +1,6 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 José Murillo Rajo · OCTOPUS Zero-Touch (ver LICENSE y NOTICE)
 # OCTOPUS Zero-Touch - Despliegue de agentes Linux con Ansible (muchos equipos a la vez).
 # Se ejecuta DENTRO del contenedor del servidor. Desde el anfitrion:
 #   sudo bash octopus.sh desplegar -k -K     la primera vez (pide la contrasena SSH y la de sudo)

@@ -155,6 +155,8 @@ jobs:
         run: python tests/ci/prueba_oidc.py
       - name: Limite de peticiones (protege el login sin cortar la monitorizacion en directo)
         run: python tests/ci/prueba_limite.py
+      - name: Licencias de terceros compatibles con la AGPL-3.0 (y TERCEROS.md al dia)
+        run: python herramientas/terceros.py --revisar
 
   servidor-windows-nativo:
     name: Servidor en Windows (nativo, sin WSL2 ni Docker)

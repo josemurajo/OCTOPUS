@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 José Murillo Rajo · OCTOPUS Zero-Touch (ver LICENSE y NOTICE)
 """
 OCTOPUS - Lista de todas las funciones que se pueden encender, apagar y ajustar (Ajustes -> Funciones).
 
@@ -96,7 +98,7 @@ FUNCIONES: list[dict] = [
      "nombre": "Avisar si alguien entra desde un sitio nuevo",
      "explica": "Si alguien entra al panel desde un navegador o una dirección que no se había usado antes, llega un aviso "
                 "(correo y Telegram) para que sepas si has sido tú."},
-    {"clave": "bloqueo_atacantes", "grupo": "acceso", "nivel": "basico", "defecto": True, "en_pruebas": True,
+    {"clave": "bloqueo_atacantes", "grupo": "acceso", "nivel": "basico", "defecto": True,
      "nombre": "Bloquear a quien prueba contraseñas",
      "explica": "Una dirección que falla muchas veces la contraseña (o prueba páginas que no existen) se bloquea un rato. "
                 "Las direcciones de confianza nunca se bloquean.",
@@ -104,19 +106,19 @@ FUNCIONES: list[dict] = [
                   ("minutos", "Minutos de bloqueo", "int", 30, "experto", "", {"min": 1, "max": 1440}),
                   ("confianza", "Direcciones de confianza (nunca se bloquean)", "redes", "", "experto",
                    "Por ejemplo 192.168.1.0/24, 10.0.0.5", {})]},
-    {"clave": "panel_solo_redes", "grupo": "acceso", "nivel": "experto", "defecto": False, "en_pruebas": True,
+    {"clave": "panel_solo_redes", "grupo": "acceso", "nivel": "experto", "defecto": False,
      "nombre": "Panel solo desde la red de la oficina (o VPN)",
      "explica": "Desde cualquier otra dirección el panel no responde. Los equipos siguen haciendo sus copias igual. "
                 "La red desde la que estás ahora se añade sola, para que no te quedes fuera.",
      "opciones": [("redes", "Redes permitidas", "redes", "", "experto", "Por ejemplo 192.168.1.0/24, 10.8.0.0/24", {})]},
-    {"clave": "doble_aprobacion", "grupo": "acceso", "nivel": "experto", "defecto": False, "en_pruebas": True,
+    {"clave": "doble_aprobacion", "grupo": "acceso", "nivel": "experto", "defecto": False,
      "nombre": "Doble aprobación para lo peligroso",
      "explica": "Borrar un equipo, cambiar cuánto tiempo se guardan las copias o apagar los avisos necesita que lo "
                 "apruebe otro administrador. Necesita al menos dos administradores.",
      "opciones": [("horas", "Horas para aprobar antes de caducar", "int", 24, "experto", "", {"min": 1, "max": 168})]},
 
     # ------------------------------------------------------------------------------------------- identidad
-    {"clave": "ldap", "grupo": "identidad", "nivel": "experto", "defecto": False, "en_pruebas": True,
+    {"clave": "ldap", "grupo": "identidad", "nivel": "experto", "defecto": False,
      "nombre": "Active Directory / LDAP",
      "explica": "Entrar con el usuario y la contraseña del dominio de Windows. El usuario local de OCTOPUS sigue "
                 "funcionando siempre como entrada de emergencia.",
@@ -128,7 +130,7 @@ FUNCIONES: list[dict] = [
                   ("grupo_admin", "Grupo de administradores", "texto", "OCTOPUS-Admin", "experto", "", {}),
                   ("grupo_recuperar", "Grupo que solo recupera archivos", "texto", "OCTOPUS-Recuperar", "experto", "", {}),
                   ("grupo_lectura", "Grupo de solo lectura", "texto", "OCTOPUS-Lectura", "experto", "", {})]},
-    {"clave": "oidc", "grupo": "identidad", "nivel": "experto", "defecto": False, "en_pruebas": True,
+    {"clave": "oidc", "grupo": "identidad", "nivel": "experto", "defecto": False,
      "nombre": "Entrar con Microsoft 365, Google, Authentik o Keycloak (OIDC)",
      "explica": "Botón «Entrar con...» en la pantalla de acceso. El usuario local sigue funcionando siempre.",
      "opciones": [("nombre_boton", "Texto del botón", "texto", "Entrar con la cuenta de la empresa", "experto", "", {}),
@@ -140,7 +142,7 @@ FUNCIONES: list[dict] = [
                   ("grupo_admin", "Grupo de administradores", "texto", "OCTOPUS-Admin", "experto", "", {}),
                   ("grupo_recuperar", "Grupo que solo recupera archivos", "texto", "OCTOPUS-Recuperar", "experto", "", {}),
                   ("grupo_lectura", "Grupo de solo lectura", "texto", "OCTOPUS-Lectura", "experto", "", {})]},
-    {"clave": "radius", "grupo": "identidad", "nivel": "experto", "defecto": False, "en_pruebas": True,
+    {"clave": "radius", "grupo": "identidad", "nivel": "experto", "defecto": False,
      "nombre": "RADIUS (FreeRADIUS, NPS de Windows...)",
      "explica": "Comprobar usuario y contraseña contra un servidor RADIUS. El usuario local sigue funcionando siempre.",
      "opciones": [("servidor", "Servidor RADIUS (IP o nombre)", "texto", "", "experto", "", {}),
@@ -154,10 +156,16 @@ FUNCIONES: list[dict] = [
     {"clave": "buscar_equipos", "grupo": "equipos", "nivel": "basico", "defecto": True,
      "nombre": "Buscar equipos en la red",
      "explica": "Botón para encontrar los equipos de la red y protegerlos en grupo."},
-    {"clave": "monitorizacion", "grupo": "equipos", "nivel": "basico", "defecto": True,
+    {"clave": "monitorizacion", "grupo": "equipos", "nivel": "basico", "defecto": False,
      "nombre": "Monitorización de equipos",
      "explica": "Ver en directo el uso de cada equipo (procesador, memoria, discos, red, temperatura, batería, procesos) y la "
-                "salud de sus discos, con historial y avisos. Solo en los equipos donde se active (Monitorización → Activar)."},
+                "salud de sus discos, con historial y avisos. Solo en los equipos donde se active (Monitorización → Activar). "
+                "Si el equipo lo usa un trabajador, hay que informarle antes (ver «Legal y privacidad»).",
+     "opciones": [("procesos", "Ver los programas abiertos", "eleccion", "si", "basico", "",
+                   {"valores": [("si", "Sí (ayuda a ver qué está gastando el equipo)"), ("no", "No, nunca se guardan")]}),
+                  ("usuarios", "Ver quién tiene la sesión iniciada", "eleccion", "no", "basico", "",
+                   {"valores": [("no", "No, nunca se guarda (recomendado)"), ("si", "Sí")]}),
+                  ("dias", "Días que se guarda el historial", "int", 90, "experto", "", {"min": 7, "max": 365})]},
     {"clave": "usb_rescate", "grupo": "equipos", "nivel": "basico", "defecto": False, "en_pruebas": True,
      "nombre": "USB de rescate",
      "explica": "Crear un pendrive que arranca un equipo que ya no enciende Windows o Linux y lo deja como estaba, "

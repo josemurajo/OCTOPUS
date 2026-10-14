@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Jose Murillo Rajo - OCTOPUS Zero-Touch (ver LICENSE y NOTICE)
 # OCTOPUS Zero-Touch - Instalador del SERVIDOR para Windows 10 / 11 / Server 2019-2025 (NATIVO: sin WSL2 ni Docker)
 #
 #   Doble clic en INSTALAR_SERVIDOR_WINDOWS.bat. Windows pide permiso de administrador una vez y ya esta.

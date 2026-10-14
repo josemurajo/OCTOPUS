@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 José Murillo Rajo · OCTOPUS Zero-Touch (ver LICENSE y NOTICE)
 """
 ZeroTouch - Integración con Wazuh SIEM
 Consume la API de Wazuh para obtener alertas de seguridad en tiempo real

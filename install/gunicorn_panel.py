@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 José Murillo Rajo · OCTOPUS Zero-Touch (ver LICENSE y NOTICE)
 # OCTOPUS Zero-Touch - configuracion de gunicorn para el panel web (servidor de produccion).
 # La usa el servicio octopus-panel:  gunicorn -c install/gunicorn_panel.py admin_panel:app
 # Lee el .env del proyecto: ADMIN_BIND, ADMIN_PORT, PANEL_HTTPS, PANEL_TLS_CERT, PANEL_TLS_KEY.

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Jose Murillo Rajo - OCTOPUS Zero-Touch (ver LICENSE y NOTICE)
 # OCTOPUS Zero-Touch - Instalador del agente para Windows 10/11 y Windows Server 2016+
 # Lo lanza INSTALAR.bat (como administrador). Compatible con Windows PowerShell 5.1.
 #
