@@ -1,0 +1,227 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+#
+# OCTOPUS Zero-Touch v2 - Laboratorio de pruebas (Vagrant + VirtualBox 7.x)
+#
+# Esta carpeta (maquinas) va junto a la carpeta "proyecto": el cerebro instala el proyecto tal cual,
+# como se haria en un servidor de produccion recien instalado (Ubuntu 24.04 sin nada).
+# Las maquinas se llaman ZT2-* para no chocar con el laboratorio de la v1. Usan las mismas IPs:
+# NO tengas encendidos los dos laboratorios a la vez (apaga uno con "vagrant halt").
+#
+#   vagrant up cerebro cliente1 cliente2      -> entorno minimo (unos 5 GB de RAM)
+#   vagrant up debian12 rocky9                -> mas distros Linux (1 GB cada una)
+#   vagrant up win2022                        -> Windows Server 2022 (4 GB, descarga grande)
+#   vagrant up router                         -> router entre redes (opcional)
+#
+# Lo normal es NO usar vagrant directamente sino:  .\ejecutar_todo.ps1
+#
+# Redes:  192.168.10.0/24 (principal)   192.168.20.0/24 (segura)
+#   cerebro   192.168.10.10 / 192.168.20.10   Ubuntu 24.04  (servidor OCTOPUS en un contenedor)
+#   cliente1  192.168.10.20                   Ubuntu 20.04
+#   cliente2  192.168.20.20                   Rocky Linux 9
+#   rocky9    192.168.10.50                   Rocky Linux 9
+#   debian12  192.168.10.60                   Debian 12
+#   win2022   192.168.10.40                   Windows Server 2022
+#   router    192.168.10.254 / 192.168.20.254 (la .1 la usa VirtualBox para el adaptador del host)
+#
+# macOS no se puede virtualizar en VirtualBox sobre Windows (licencia de Apple).
+
+OCTOPUS_PROJECT = ENV['OCTOPUS_PROJECT'] || File.expand_path("../proyecto", __dir__)
+HAS_PROJECT = File.directory?(OCTOPUS_PROJECT)
+
+# Copia el proyecto desde la carpeta compartida a un disco local de la VM.
+# (Docker, SQLite y los permisos de Linux no funcionan bien directamente sobre vboxsf)
+SYNC_PROJECT = <<-SHELL
+  set -e
+  command -v rsync >/dev/null 2>&1 || { apt-get update -qq >/dev/null 2>&1; apt-get install -y -qq rsync >/dev/null 2>&1 || dnf install -y -q rsync >/dev/null 2>&1; } || true
+  command -v rsync >/dev/null 2>&1 || { echo 'ERROR: no se pudo instalar rsync'; exit 1; }
+  mkdir -p /opt/zerotouch
+  if [ -d /vagrant_octopus ]; then
+    rsync -a --delete \
+      --exclude '.env' --exclude '.env.bak' --exclude '.venv/' --exclude 'data/' --exclude 'logs/' \
+      --exclude 'install/data/' --exclude 'CREDENCIALES_INICIALES.txt' --exclude 'CREDENTIALS.txt' \
+      --exclude 'ansible/config.json' --exclude 'ansible/inventario_vagrant.ini' --exclude '__pycache__/' \
+      --exclude 'install/.env' --exclude 'ansible/wg/' --exclude 'ansible/equipos.ini' \
+      /vagrant_octopus/ /opt/zerotouch/
+    find /opt/zerotouch -type f \\( -name '*.sh' -o -name '*.py' -o -name '*.yml' -o -name '*.ini' -o -name 'Dockerfile' -o -name '.dockerignore' -o -name '*.yar' \\) -exec sed -i 's/\\r$//' {} +
+    chmod +x /opt/zerotouch/*.sh /opt/zerotouch/install/*.sh /opt/zerotouch/ansible/*.sh /opt/zerotouch/agentes/linux/*.sh 2>/dev/null || true
+    echo "Proyecto sincronizado en /opt/zerotouch"
+  else
+    echo "AVISO: carpeta del proyecto no montada en /vagrant_octopus"
+  fi
+SHELL
+
+# Prepara un cliente Linux de pruebas: SSH con contrasena, python3 y datos de ejemplo
+PREPARE_CLIENT = <<-SHELL
+  set -e
+  if command -v apt-get >/dev/null 2>&1; then
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -qq
+    apt-get install -y -qq python3 openssh-server curl bzip2 inotify-tools net-tools >/dev/null
+  else
+    dnf install -y -q python3 openssh-server curl bzip2 net-tools tar >/dev/null
+    setenforce 0 2>/dev/null || true
+    sed -i 's/^SELINUX=enforcing/SELINUX=permissive/' /etc/selinux/config 2>/dev/null || true
+  fi
+  # SSH con contrasena (lo usa Ansible desde el cerebro). El drop-in 00- gana a cualquier otro.
+  mkdir -p /etc/ssh/sshd_config.d
+  echo "PasswordAuthentication yes" > /etc/ssh/sshd_config.d/00-octopus.conf
+  sed -i 's/^#\\?PasswordAuthentication .*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+  grep -q '^Include /etc/ssh/sshd_config.d' /etc/ssh/sshd_config || sed -i '1i Include /etc/ssh/sshd_config.d/*.conf' /etc/ssh/sshd_config
+  systemctl restart sshd 2>/dev/null || systemctl restart ssh
+  echo "vagrant:vagrant123" | chpasswd
+  # Datos de prueba
+  mkdir -p /home/vagrant/testfiles/critico /home/vagrant/datos /home/vagrant/database /etc/miapp
+  [ -f /home/vagrant/testfiles/critico/config.txt ] || echo "config original" > /home/vagrant/testfiles/critico/config.txt
+  [ -f /home/vagrant/datos/important.txt ]          || echo "datos importantes" > /home/vagrant/datos/important.txt
+  [ -f /home/vagrant/database/clientes.db ]         || echo "id,nombre\\n1,ACME" > /home/vagrant/database/clientes.db
+  [ -f /etc/miapp/app.conf ]                         || echo "puerto=8080" > /etc/miapp/app.conf
+  chown -R vagrant:vagrant /home/vagrant/testfiles /home/vagrant/datos /home/vagrant/database
+  echo "Cliente $(hostname) preparado"
+SHELL
+
+# Ajustes de VirtualBox comunes (evitan el arranque colgado de las cajas Ubuntu en Windows)
+def vbox_common(vb, name, memory, cpus)
+  vb.name   = name
+  vb.memory = memory
+  vb.cpus   = cpus
+  vb.gui    = false
+  vb.customize ["modifyvm", :id, "--ioapic", "on"]
+  vb.customize ["modifyvm", :id, "--uart1", "off"]
+  vb.customize ["modifyvm", :id, "--cableconnected1", "on"]
+  vb.customize ["modifyvm", :id, "--natdnshostresolver1", "on"]
+  vb.customize ["modifyvm", :id, "--audio-driver", "none"]
+end
+
+Vagrant.configure("2") do |config|
+  config.vm.synced_folder ".", "/vagrant", disabled: true
+  config.vm.boot_timeout = 900
+  config.vm.graceful_halt_timeout = 120
+  # Las cajas bento/ubuntu ya traen Guest Additions: no intentar actualizarlas
+  config.vbguest.auto_update = false if Vagrant.has_plugin?("vagrant-vbguest")
+
+  # =========================================================
+  # CEREBRO - Ubuntu 24.04 limpio: instalar_servidor.sh instala Docker y OCTOPUS (igual que en produccion)
+  # =========================================================
+  config.vm.define "cerebro", primary: true do |c|
+    c.vm.box = "bento/ubuntu-24.04"
+    c.vm.hostname = "cerebro"
+    c.vm.network "private_network", ip: "192.168.10.10"
+    c.vm.network "private_network", ip: "192.168.20.10"
+    # El panel se abre en https://192.168.10.10:8080. Ya no se reenvia el 8080 al PC: si ese puerto estaba
+    # ocupado, Vagrant lo movia a otro sin avisar y "localhost:8080" llevaba a otro sitio.
+    c.vm.synced_folder OCTOPUS_PROJECT, "/vagrant_octopus" if HAS_PROJECT
+    # Carpeta del laboratorio: aqui el cerebro deja la config de agentes para Windows y los informes
+    c.vm.synced_folder ".", "/vagrant_host"
+
+    c.vm.provider "virtualbox" do |vb|
+      vbox_common(vb, "ZT2-Cerebro", 3072, 2)
+    end
+
+    c.vm.provision "sync", type: "shell", run: "always", inline: SYNC_PROJECT
+    c.vm.provision "install", type: "shell", inline: <<-SHELL
+      set -e
+      # cliente2 (red segura) llega al servidor por 192.168.20.10: tiene que ir tambien en el certificado
+      export OCTOPUS_IP=192.168.10.10 OCTOPUS_NOMBRES_EXTRA=192.168.20.10 OCTOPUS_RUNTIME_DIR=/vagrant_host/.runtime
+      bash /opt/zerotouch/instalar_servidor.sh
+      cp /opt/zerotouch/CREDENCIALES_INICIALES.txt /vagrant_host/.runtime/ 2>/dev/null || true
+    SHELL
+  end
+
+  # =========================================================
+  # CLIENTES LINUX
+  # =========================================================
+  config.vm.define "cliente1", autostart: false do |c|
+    c.vm.box = "ubuntu/focal64"
+    c.vm.hostname = "cliente1"
+    c.vm.network "private_network", ip: "192.168.10.20"
+    c.vm.provider("virtualbox") { |vb| vbox_common(vb, "ZT2-Cliente1", 1024, 1) }
+    c.vm.provision "prepare", type: "shell", inline: PREPARE_CLIENT
+  end
+
+  config.vm.define "cliente2", autostart: false do |c|
+    c.vm.box = "bento/rockylinux-9"
+    c.vm.hostname = "cliente2"
+    c.vm.network "private_network", ip: "192.168.20.20"
+    c.vm.provider("virtualbox") { |vb| vbox_common(vb, "ZT2-Cliente2", 1024, 1) }
+    c.vm.provision "prepare", type: "shell", inline: PREPARE_CLIENT
+  end
+
+  config.vm.define "rocky9", autostart: false do |c|
+    c.vm.box = "bento/rockylinux-9"
+    c.vm.hostname = "rocky9"
+    c.vm.network "private_network", ip: "192.168.10.50"
+    c.vm.provider("virtualbox") { |vb| vbox_common(vb, "ZT2-Rocky9", 1024, 1) }
+    c.vm.provision "prepare", type: "shell", inline: PREPARE_CLIENT
+  end
+
+  config.vm.define "debian12", autostart: false do |c|
+    c.vm.box = "bento/debian-12"
+    c.vm.hostname = "debian12"
+    c.vm.network "private_network", ip: "192.168.10.60"
+    c.vm.provider("virtualbox") { |vb| vbox_common(vb, "ZT2-Debian12", 1024, 1) }
+    c.vm.provision "prepare", type: "shell", inline: PREPARE_CLIENT
+  end
+
+  # =========================================================
+  # WINDOWS SERVER 2022 - agente OCTOPUS en Windows
+  # =========================================================
+  config.vm.define "win2022", autostart: false do |w|
+    w.vm.box = "gusztavvargadr/windows-server-2022-standard"
+    w.vm.hostname = "win2022"
+    w.vm.guest = :windows
+    w.vm.communicator = "winrm"
+    w.winrm.username = "vagrant"
+    w.winrm.password = "vagrant"
+    w.winrm.timeout = 1800
+    w.winrm.retry_limit = 30
+    w.vm.network "private_network", ip: "192.168.10.40"
+    w.vm.synced_folder OCTOPUS_PROJECT, "C:/OCTOPUS" if HAS_PROJECT
+    w.vm.synced_folder ".", "C:/vagrant_host"
+    w.vm.provider "virtualbox" do |vb|
+      vbox_common(vb, "ZT2-Win2022", 4096, 2)
+      vb.customize ["modifyvm", :id, "--vram", "64"]
+    end
+    w.vm.provision "agent", type: "shell", privileged: true,
+      path: "scripts/instalar_agente_windows.ps1"
+  end
+
+  # =========================================================
+  # WINDOWS 11 - prueba del SERVIDOR OCTOPUS NATIVO en Windows (sin WSL2 ni Docker: no necesita virtualizacion anidada)
+  # Se lanza con PROBAR_SERVIDOR_WINDOWS.bat, que apaga antes las demas maquinas.
+  # =========================================================
+  config.vm.define "win11srv", autostart: false do |w|
+    w.vm.box = "gusztavvargadr/windows-11"
+    w.vm.hostname = "win11srv"
+    w.vm.guest = :windows
+    w.vm.communicator = "winrm"
+    w.winrm.username = "vagrant"
+    w.winrm.password = "vagrant"
+    w.winrm.timeout = 1800
+    w.winrm.retry_limit = 30
+    w.vm.boot_timeout = 1800
+    w.vm.network "private_network", ip: "192.168.10.70"
+    w.vm.synced_folder OCTOPUS_PROJECT, "C:/OCTOPUS" if HAS_PROJECT
+    w.vm.synced_folder ".", "C:/vagrant_host"
+    w.vm.provider "virtualbox" do |vb|
+      vbox_common(vb, "ZT2-Win11-Servidor", 4096, 2)
+      vb.customize ["modifyvm", :id, "--vram", "64"]
+    end
+  end
+
+  # =========================================================
+  # ROUTER (opcional) - enruta entre 192.168.10.0/24 y 192.168.20.0/24
+  # =========================================================
+  config.vm.define "router", autostart: false do |r|
+    r.vm.box = "ubuntu/focal64"
+    r.vm.hostname = "router"
+    r.vm.network "private_network", ip: "192.168.10.254"
+    r.vm.network "private_network", ip: "192.168.20.254"
+    r.vm.provider("virtualbox") { |vb| vbox_common(vb, "ZT2-Router", 512, 1) }
+    r.vm.provision "shell", inline: <<-SHELL
+      sysctl -w net.ipv4.ip_forward=1
+      echo "net.ipv4.ip_forward=1" > /etc/sysctl.d/99-router.conf
+      echo "Router listo - 192.168.10.254 / 192.168.20.254"
+    SHELL
+  end
+end

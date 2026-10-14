@@ -71,7 +71,7 @@ Después, en el panel: **Equipos → Añadir equipo**.
 | `install/sandbox/` | Sala de análisis de incidentes (contenedor aislado sin red) |
 | `tests/ci/` | Pruebas automáticas en equipos reales de GitHub (Linux, Windows y Mac) |
 
-El laboratorio de pruebas con máquinas virtuales está en la carpeta `maquinas` (al lado de esta).
+El laboratorio de pruebas con máquinas virtuales está en la carpeta [`maquinas/`](maquinas/) (tiene su propio README).
 
 ## Antes de publicar una versión (para que una actualización nunca rompa las copias)
 
