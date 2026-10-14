@@ -94,6 +94,9 @@ if Limiter is not None:
         key_func=get_remote_address,
         app=app,
         default_limits=["2000 per day", "300 per hour"],
+        # Solo para quien NO ha entrado: un administrador con la monitorizacion en directo pide datos cada
+        # pocos segundos (mas de 300 por hora) y en una oficina todos salen por la misma IP.
+        default_limits_exempt_when=lambda: 'user_id' in session or request.path.startswith('/static/'),
         storage_uri="memory://"
     )
 else:
@@ -104,6 +107,9 @@ else:
             return lambda f: f
 
         def exempt(self, f):
+            return f
+
+        def request_filter(self, f):
             return f
     limiter = _NoLimiter()
 
@@ -162,6 +168,12 @@ def _seg_confianza():
     return _f.opcion('bloqueo_atacantes', 'confianza') if _f.activa('bloqueo_atacantes') else ''
 
 
+@limiter.request_filter
+def _limite_no_aplica():
+    """El limite de peticiones no se aplica al propio servidor ni a las direcciones de confianza."""
+    return _seg.nunca_bloquear(request.remote_addr or '', _seg_confianza())
+
+
 def _seg_fallo(motivo):
     """Un intento sospechoso desde esta dirección (contraseña mal, página que no existe...)."""
     import funciones as _f
@@ -200,6 +212,12 @@ def _no_existe(e):
     if not request.path.startswith(_SIN_FILTRO_RED + ('/static/', '/favicon')):
         _seg_fallo(f'página que no existe: {request.path[:80]}')
     return ('No existe esa página.', 404, {'Content-Type': 'text/plain; charset=utf-8'})
+
+
+@app.errorhandler(429)
+def _demasiados(e):
+    return ('Demasiados intentos seguidos desde esta dirección. Espera un minuto y vuelve a intentarlo.', 429,
+            {'Content-Type': 'text/plain; charset=utf-8', 'Retry-After': '60'})
 
 
 def _aviso_acceso(user):
@@ -466,7 +484,7 @@ def role_required(*roles):
 
 # Rutas de autenticación
 @app.route('/login', methods=['GET', 'POST'])
-@limiter.limit("5 per minute")  # Protección contra fuerza bruta
+@limiter.limit("10 per minute", methods=["POST"])  # fuerza bruta (ver la pagina o recargarla no cuenta)
 def login():
     """Página de login"""
     if 'user_id' in session and request.method == 'GET':
@@ -752,7 +770,7 @@ def logout():
     return redirect(url_for('login'))
 
 @app.route('/recover', methods=['GET', 'POST'])
-@limiter.limit("5 per hour")
+@limiter.limit("5 per hour", methods=["POST"])
 def recover_password():
     """Recuperacion de contrasena por correo (mismo mensaje exista o no el correo: no revela usuarios)"""
     if request.method == 'POST':

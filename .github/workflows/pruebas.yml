@@ -153,6 +153,8 @@ jobs:
           python -c "import sys; sys.path.insert(0, 'lib'); import admin_panel as a; e = a.app.jinja_env; n = [e.get_template(t) for t in e.list_templates() if t.endswith('.html')]; print(len(n), 'pantallas OK')"
       - name: Entrar con OIDC (proveedor simulado)
         run: python tests/ci/prueba_oidc.py
+      - name: Limite de peticiones (protege el login sin cortar la monitorizacion en directo)
+        run: python tests/ci/prueba_limite.py
 
   servidor-windows-nativo:
     name: Servidor en Windows (nativo, sin WSL2 ni Docker)

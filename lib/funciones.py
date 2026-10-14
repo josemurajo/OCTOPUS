@@ -86,7 +86,9 @@ FUNCIONES: list[dict] = [
     {"clave": "dosfa", "grupo": "acceso", "nivel": "basico", "defecto": True,
      "nombre": "Doble autenticación con el móvil",
      "explica": "Además de la contraseña, un código de 6 cifras de una app del móvil (Google o Microsoft Authenticator). "
-                "Aunque alguien sepa la contraseña, sin tu móvil no entra. Cada navegador se puede recordar 30 días.",
+                "Aunque alguien sepa la contraseña, sin tu móvil no entra. Cada navegador se puede recordar 30 días. "
+                "Si la apagas, deja de ser obligatoria, pero quien ya la tenga activada la sigue usando "
+                "(cada uno la puede quitar en «Tu cuenta → Doble autenticación»).",
      "opciones": [("quien", "Quién la tiene que usar", "eleccion", "admins", "basico", "",
                    {"valores": [("admins", "Los administradores (recomendado)"), ("todos", "Todos los usuarios"),
                                 ("opcional", "Nadie obligado: cada uno decide")]})]},
