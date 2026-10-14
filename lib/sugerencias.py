@@ -30,7 +30,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR / "lib"))
 
 # URL publica del buzon de OCTOPUS (no es secreta). Se rellena cuando el buzon este publicado (ver soporte/buzon).
-BUZON_POR_DEFECTO = ""
+BUZON_POR_DEFECTO = "https://still-heart-dd81octopus-buzon.josemurajo.workers.dev"
 
 GRAVEDADES = {"sugerencia": "Sugerencia o idea", "duda": "Duda", "problema": "Algo no funciona",
               "urgente": "Urgente: no puedo trabajar o no puedo recuperar algo"}
