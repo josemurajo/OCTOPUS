@@ -60,6 +60,9 @@ Instala Docker si no está, arranca OCTOPUS y muestra la dirección del panel y 
 También en **Windows** (doble clic en `INSTALAR_SERVIDOR_WINDOWS.bat`) y **Mac** (doble clic en `INSTALAR_SERVIDOR_MAC.command`),
 sin WSL2, sin Docker y sin Homebrew: el sistema pide la contraseña de administrador una vez y lo demás lo hace solo:
 ver [PRODUCCION.md](PRODUCCION.md).
+¿Tienes un **NAS Synology o QNAP, Unraid, Portainer o Proxmox**? Se instala pegando un archivo, sin compilar
+nada: ver [INSTALAR_EN_NAS.md](INSTALAR_EN_NAS.md).
+
 Después, en el panel: **Equipos → Añadir equipo**.
 
 - **Linux y Mac**: "Desde aquí" — se pone la IP, el usuario y la contraseña del equipo y el servidor

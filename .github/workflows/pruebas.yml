@@ -228,3 +228,18 @@ jobs:
         run: python -m pip install -r requirements.txt
       - name: Copia externa, ataque y recuperacion
         run: bash tests/ci/prueba_bloqueo.sh
+
+  paquetes:
+    name: Paquetes fáciles (NAS, Unraid, Proxmox) con la imagen real
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Revisar los scripts y la plantilla de Unraid
+        run: |
+          shellcheck -S warning install/proxmox/octopus-lxc.sh tests/ci/prueba_proxmox.sh tests/ci/prueba_nas.sh
+          python3 -c "import xml.etree.ElementTree as E; E.parse('install/unraid/octopus.xml'); print('plantilla Unraid OK')"
+      - name: Instalador de Proxmox (Proxmox simulado)
+        run: bash tests/ci/prueba_proxmox.sh
+      - name: Paquete NAS con la imagen construida de verdad
+        run: bash tests/ci/prueba_nas.sh

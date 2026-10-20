@@ -18,6 +18,8 @@ que haya (copias, etc.) y responde. El servidor **nunca entra** en los equipos: 
 | `legal/` | Textos legales (licencia, privacidad, plantillas para la empresa) — se ven en el panel en «Legal y privacidad» |
 | `herramientas/` | Firmar una versión, crear el manifiesto |
 | `install/` | docker-compose y la sala de análisis de incidentes |
+| `install/nas/`, `install/unraid/`, `install/proxmox/` | paquetes fáciles: compose para NAS/Portainer, plantilla de Unraid, contenedor LXC de Proxmox en un paso (guía: `INSTALAR_EN_NAS.md`) |
+| `.github/workflows/imagen.yml` | publica la imagen lista `ghcr.io/josemurajo/octopus` (amd64 + arm64) cuando pasan las pruebas |
 | `maquinas/` (al lado) | El laboratorio de pruebas con máquinas virtuales |
 
 ## Los archivos de `lib/` (el cerebro)

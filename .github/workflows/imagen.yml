@@ -1,0 +1,87 @@
+# OCTOPUS Zero-Touch - publica la imagen lista del servidor en GitHub (ghcr.io/josemurajo/octopus)
+#
+# Es lo que usan los paquetes fáciles (NAS Synology/QNAP, Unraid, Portainer, Proxmox): se descargan la
+# imagen ya hecha en vez de compilarla. Gratis para proyectos públicos.
+#
+#   - Cuando las "Pruebas OCTOPUS" pasan en main  -> etiqueta  latest  (y la del commit)
+#   - Al publicar una versión con etiqueta v2.3.0  -> etiquetas 2.3.0, 2.3 y stable
+#   - A mano desde la pestaña Actions ("Run workflow")
+# Para ordenadores normales (amd64) y para NAS con procesador ARM de 64 bits (arm64).
+name: Imagen del servidor
+
+on:
+  workflow_run:
+    workflows: ["Pruebas OCTOPUS"]
+    types: [completed]
+    branches: [main]
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: imagen-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publicar:
+    name: Construir y publicar
+    # tras las pruebas, solo si han ido bien
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Entrar en el registro de GitHub
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Etiquetas
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/octopus
+          tags: |
+            type=raw,value=latest,enable=${{ github.event_name == 'workflow_run' || github.event_name == 'workflow_dispatch' }}
+            type=sha,format=short,prefix=,enable=${{ github.event_name != 'push' }}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=stable,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+          labels: |
+            org.opencontainers.image.title=OCTOPUS Zero-Touch
+            org.opencontainers.image.description=Copias de seguridad automáticas y cifradas para pequeñas empresas
+            org.opencontainers.image.licenses=AGPL-3.0-or-later
+            org.opencontainers.image.authors=José Murillo Rajo
+
+      - name: Construir y publicar (amd64 + arm64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Resumen
+        run: |
+          {
+            echo "### Imagen publicada"
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+            echo "Si es la primera vez: en GitHub > tu perfil > Packages > octopus > Package settings > Change visibility > **Public**."
+          } >> "$GITHUB_STEP_SUMMARY"

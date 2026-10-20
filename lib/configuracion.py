@@ -312,7 +312,7 @@ def credenciales_iniciales(primera_vez: bool) -> None:
     env = leer_env()
     host = env.get("OCTOPUS_PUBLIC_HOST") or env.get("OCTOPUS_IP") or "IP-del-servidor"
     _escribir(BASE_DIR / "data" / "CREDENCIALES_INICIALES.txt",
-              f"OCTOPUS - acceso inicial\n\nPanel: https://{host}:{env.get('ADMIN_PORT', '8080')}\nUsuario: admin\n"
+              f"OCTOPUS - acceso inicial\n\nPanel: https://{host}:{env.get('OCTOPUS_PUERTO_PANEL') or env.get('ADMIN_PORT', '8080')}\nUsuario: admin\n"
               f"Contrasena (de un solo uso): {env['ADMIN_PASSWORD']}\n\n"
               "El panel te pedira cambiarla al entrar. Descarga despues el KIT DE RECUPERACION (Ajustes).\n")
 

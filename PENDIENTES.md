@@ -98,7 +98,19 @@ Si no se instala, ese equipo no se monitoriza.
 - **Un PC físico** (aunque sea viejo) para probar el USB de rescate y la imagen de disco.
 - Nada de esto cuesta dinero. Cuando tengas cada cosa, me avisas y hacemos la prueba real.
 
+- 🔴 **José, 1 minuto (gratis), cuando termine la primera publicación de la imagen**: GitHub → tu perfil →
+  *Packages* → **octopus** → *Package settings* → *Change visibility* → **Public**. Sin esto, los NAS no pueden
+  descargar la imagen. (Lo verás en la pestaña Actions: «Imagen del servidor»).
+
 ### Ya hecho (no hay que rehacerlo)
+- ✅ **Paquetes fáciles de instalar** (20/10): NAS Synology/QNAP, Portainer, CasaOS, TrueNAS SCALE (pegar
+  `install/nas/docker-compose.yml`), plantilla de **Unraid**, y **Proxmox** en un solo comando (crea el LXC y lo
+  deja funcionando). Guía `INSTALAR_EN_NAS.md`. La imagen se publica sola en GitHub (gratis) cuando pasan las
+  pruebas. La primera contraseña sale en el Registro del contenedor y se borra al cambiarla. Probado: paquete NAS
+  con la imagen real en GitHub (`tests/ci/prueba_nas.sh`) y Proxmox simulado (`tests/ci/prueba_proxmox.sh`).
+  Arreglado de paso: en una instalación nueva con doble autenticación obligatoria, el primer acceso se quedaba
+  dando vueltas entre «cambia la contraseña» y «activa el móvil». Pendiente: imagen ISO «todo en uno» (necesita
+  probar arrancando un PC o una VM real).
 - ✅ Copias de **máquinas virtuales** (Hyper-V, KVM/libvirt, Proxmox), completas y en caliente.
 - ✅ Copias de **bases de datos** (SQL Server, MySQL/MariaDB, PostgreSQL): volcado consciente, recuperar como base
   nueva y descargar. (Las dos vienen «en pruebas» hasta probarlas en un equipo real).

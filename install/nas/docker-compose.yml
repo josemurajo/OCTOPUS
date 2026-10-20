@@ -1,0 +1,39 @@
+# OCTOPUS Zero-Touch - servidor listo para NAS y paneles de contenedores
+#   Synology (Container Manager), QNAP (Container Station), Unraid, Portainer, CasaOS, TrueNAS SCALE...
+#
+# Guía paso a paso con dibujos: INSTALAR_EN_NAS.md (en la carpeta principal de OCTOPUS).
+#
+# LO ÚNICO QUE TIENES QUE CAMBIAR: la línea OCTOPUS_IP (pon la IP de tu NAS, por ejemplo 192.168.1.20).
+# Todo lo demás ya viene bien. No hace falta compilar nada: se descarga la imagen ya hecha.
+#
+# La primera contraseña sale en el "Registro" (log) del contenedor. Se usa una vez y el panel pide cambiarla.
+name: octopus
+
+services:
+  octopus:
+    image: ghcr.io/josemurajo/octopus:latest
+    container_name: octopus
+    restart: unless-stopped
+    environment:
+      # >>> CAMBIA ESTO: la IP (o el nombre) con la que tus ordenadores llegan al NAS <<<
+      - OCTOPUS_IP=192.168.1.20
+      # Los dos puertos de abajo. Si cambias un número de la IZQUIERDA en "ports", pon el mismo aquí.
+      - OCTOPUS_PUERTO_PANEL=8443
+      - OCTOPUS_PUERTO_ALMACEN=8444
+      - TZ=Europe/Madrid
+      - MANTENIMIENTO_HORA=03:30
+      # Enseña la primera contraseña en el Registro del contenedor (deja de salir cuando entras).
+      - OCTOPUS_MOSTRAR_ACCESO=1
+    ports:
+      - "8443:8080"   # panel web: https://IP-del-NAS:8443
+      - "8444:8000"   # almacén de copias (lo usan los equipos; cifrado)
+    volumes:
+      - ./datos:/data       # ajustes, claves y base de datos del panel (pequeño)
+      - ./copias:/boveda    # las copias de seguridad (aquí va el espacio grande)
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"

@@ -165,6 +165,26 @@ def terminar(*_):
     _parar.set()
 
 
+def mostrar_acceso_en_registro(cred: Path) -> None:
+    """En un NAS (Synology, QNAP, Unraid, Portainer...) no hay terminal a mano: la forma facil de ver la
+    contrasena inicial es el "Registro" del contenedor en la propia web del NAS. Solo se hace si el archivo
+    de instalacion lo pide (OCTOPUS_MOSTRAR_ACCESO=1) y mientras nadie haya entrado aun: es de un solo uso
+    y el panel obliga a cambiarla nada mas entrar (entonces borra el archivo y deja de salir)."""
+    if os.environ.get("OCTOPUS_MOSTRAR_ACCESO", "").strip().lower() not in ("1", "si", "sí", "true", "yes"):
+        return
+    try:
+        texto = cred.read_text(encoding="utf-8").strip()
+    except OSError:
+        return
+    raya = "=" * 64
+    log(raya)
+    log("PRIMER ACCESO A OCTOPUS (sale aqui solo hasta que entres la primera vez)")
+    for linea in texto.splitlines():
+        if linea.strip():
+            log("   " + linea.strip())
+    log(raya)
+
+
 def main() -> int:
     signal.signal(signal.SIGTERM, terminar)
     signal.signal(signal.SIGINT, terminar)
@@ -184,6 +204,7 @@ def main() -> int:
     if cred.is_file():
         log(f"Acceso inicial: ver {cred}" + ("" if os.environ.get("OCTOPUS_NATIVO")
                                                else " (docker exec octopus cat /data/panel/CREDENCIALES_INICIALES.txt)"))
+        mostrar_acceso_en_registro(cred)
     espera: dict[str, float] = {}
     flag = DATA / "reiniciar_servicios"   # lo pone el panel tras renovar el certificado (boton Solucionar)
     while not _parar.wait(2):

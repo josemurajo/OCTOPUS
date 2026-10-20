@@ -295,7 +295,10 @@ def security_checks():
         # Contrasena inicial: obligar a cambiarla antes de usar el panel
         if session.get('must_change') and request.endpoint not in ('cambiar_password', 'logout', 'static'):
             return redirect(url_for('cambiar_password'))
-        if session.get('falta_2fa') and request.endpoint not in ('cuenta_2fa', 'ayuda_2fa', 'logout', 'static'):
+        # Primero la contrasena y despues el movil: si se exigieran las dos a la vez, cada pantalla mandaria a la
+        # otra y el navegador se quedaria dando vueltas (pasaba en una instalacion recien hecha)
+        if session.get('falta_2fa') and not session.get('must_change') \
+                and request.endpoint not in ('cuenta_2fa', 'ayuda_2fa', 'logout', 'static'):
             return redirect(url_for('cuenta_2fa'))
 
 
@@ -2688,6 +2691,13 @@ def cambiar_password():
         conn.commit()
         session['gen'] = conn.execute('SELECT sesion_gen FROM users WHERE id = ?', (user['id'],)).fetchone()[0]
         conn.close()
+        if user['must_change_password'] and user['username'] == 'admin':
+            # la contrasena inicial ya no vale: se borra el papel donde estaba apuntada (y deja de salir en el
+            # registro del contenedor en los NAS, ver servidor.mostrar_acceso_en_registro)
+            try:
+                os.remove(os.path.join(BASE_DIR, 'data', 'CREDENCIALES_INICIALES.txt'))
+            except OSError:
+                pass
         session['must_change'] = False
         log_audit(user['id'], 'PASSWORD_CHANGE', 'Contraseña cambiada', request.remote_addr)
         flash('Contraseña cambiada. Guárdala en un sitio seguro.', 'success')
