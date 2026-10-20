@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import urllib.error
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -94,6 +95,15 @@ srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
 port = srv.server_address[1]
 threading.Thread(target=srv.serve_forever, daemon=True).start()
 BASE = f"http://127.0.0.1:{port}"
+import urllib.request as _u, time as _t
+for _ in range(50):
+    try:
+        _u.urlopen(BASE + "/espera", timeout=1)
+        break
+    except urllib.error.HTTPError:
+        break        # responde (404): ya está listo
+    except OSError:
+        _t.sleep(0.1)
 os.environ.update(OCTOPUS_GRAPH_BASE=BASE, OCTOPUS_MS_LOGIN=BASE, OCTOPUS_GOOGLE_BASE=BASE,
                   OCTOPUS_GOOGLE_TOKEN=f"{BASE}/token", OCTOPUS_DATA=str(T / "data"),
                   OCTOPUS_BOVEDA_DIR=str(T / "boveda"),

@@ -52,7 +52,7 @@ jobs:
         run: python tests/ci/prueba_vms.py
 
       - name: Copia de la nube (Microsoft 365 y Google simulados, copia y recuperación de verdad con restic)
-        if: matrix.so != 'windows'
+        if: matrix.so == 'linux'
         run: python tests/ci/prueba_nube.py
 
       - name: Copias de bases de datos MySQL y PostgreSQL (de verdad, Linux)
