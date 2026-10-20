@@ -13,6 +13,8 @@ DIR="$(mktemp -d)"
 FALLOS=0
 ok()  { echo "PASS $*"; }
 mal() { echo "FAIL $*"; FALLOS=$((FALLOS+1)); }
+# lo que crea el contenedor es de root y con permisos 700: mirarlo con sudo si hace falta
+existe() { [ -e "$1" ] || sudo -n test -e "$1" 2>/dev/null; }
 limpiar() { [ -n "${OCTOPUS_DEJAR:-}" ] && return; (cd "$DIR" && docker compose down >/dev/null 2>&1); sudo rm -rf "$DIR" 2>/dev/null || rm -rf "$DIR"; }
 trap limpiar EXIT
 
@@ -35,7 +37,7 @@ sleep 2
 CLAVE="$(docker logs $NOMBRE 2>&1 | grep -i 'contrasena' | grep -o ': [^ ]*$' | tail -1 | cut -c3-)"
 docker logs $NOMBRE 2>&1 | grep -q "PRIMER ACCESO" && [ -n "$CLAVE" ] && ok "la primera contraseña sale en el Registro" \
     || { mal "contraseña en el Registro"; docker logs --tail 40 $NOMBRE; }
-[ -f "$DIR/datos/panel/CREDENCIALES_INICIALES.txt" ] && ok "los datos están en la carpeta ./datos" || mal "carpeta ./datos"
+existe "$DIR/datos/panel/CREDENCIALES_INICIALES.txt" && ok "los datos están en la carpeta ./datos" || mal "carpeta ./datos"
 [ -d "$DIR/copias" ] && [ -n "$(ls -A "$DIR/copias" 2>/dev/null || sudo ls -A "$DIR/copias")" ] && ok "el almacén está en la carpeta ./copias" || mal "carpeta ./copias"
 
 python3 - "$CLAVE" <<'EOF'
@@ -56,7 +58,7 @@ sys.exit(0 if ok1 and ok2 else 1)
 EOF
 [ $? -eq 0 ] || FALLOS=$((FALLOS+1))
 
-[ ! -f "$DIR/datos/panel/CREDENCIALES_INICIALES.txt" ] && ok "al cambiarla se borra el archivo con la contraseña inicial" || mal "archivo no borrado"
+existe "$DIR/datos/panel" && ! existe "$DIR/datos/panel/CREDENCIALES_INICIALES.txt" && ok "al cambiarla se borra el archivo con la contraseña inicial" || mal "archivo no borrado"
 (cd "$DIR" && docker compose down >/dev/null 2>&1 && docker compose up -d >/dev/null 2>&1)
 for _ in $(seq 1 60); do curl -fsk -m 3 https://127.0.0.1:8443/healthz >/dev/null 2>&1 && break; sleep 2; done
 sleep 3
