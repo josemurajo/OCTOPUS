@@ -3059,6 +3059,143 @@ def informe():
     return render_template('informe.html', d=_informe.datos(mes), meses=meses, nombre_mes=_informe.nombre_mes)
 
 
+# ------------------------------------------------------------------ copia de la nube (Microsoft 365 / Google)
+import copia_nube as _nube
+_NUBE_JOBS = {}      # un único trabajo de servidor en marcha (clave 'nube')
+
+
+def _nube_config():
+    """La configuración de la nube (con las credenciales descifradas). {} si no hay nada."""
+    cif = config_manager.get_config('nube_cifrada')
+    if not cif:
+        return {}
+    try:
+        return json.loads(_dosfa.descifrar(DB_FILE, cif))
+    except Exception:
+        return {}
+
+
+def _nube_guardar(cfg):
+    config_manager.set_config('nube_cifrada', _dosfa.cifrar(DB_FILE, json.dumps(cfg)) if cfg else '', session['user_id'])
+
+
+@app.route('/ajustes/nube')
+@login_required
+@role_required('admin', 'supremo')
+def ajustes_nube():
+    ok = _fun.activa('copia_nube')
+    cfg = _nube_config()
+    import mantenimiento as _mant
+    copias = _nube.copias(_mant.leer_env()) if ok and cfg else []
+    estado = _NUBE_JOBS.get('nube')
+    return render_template('nube.html', ok=ok, tiene_ms=bool(cfg.get('microsoft')), tiene_google=bool(cfg.get('google')),
+                           ms=cfg.get('microsoft', {}), google_usuarios=', '.join((cfg.get('google') or {}).get('usuarios', [])),
+                           activa=bool(config_manager.get_config('nube_activa')),
+                           dias=config_manager.get_config('nube_dias') or 1, copias=copias, estado=estado)
+
+
+def _nube_lanzar(solo=None):
+    import mantenimiento as _mant
+    env = _mant.leer_env()
+    cfg = _nube_config()
+    _NUBE_JOBS['nube'] = {'estado': 'en_curso', 'mensaje': 'Copiando la nube...', 'inicio': datetime.now(timezone.utc)}
+
+    def _run():
+        try:
+            r = _nube.copiar(env, cfg, solo)
+            _NUBE_JOBS['nube'] = {'estado': 'ok' if r.get('status') in ('success', 'parcial') else 'error',
+                                  'mensaje': '; '.join(r.get('pasos', [])[-4:]) or r.get('message', ''),
+                                  'fin': datetime.now(timezone.utc), 'aviso': r.get('aviso')}
+            _ban.marcar('copias', f"Copia de la nube: {r.get('status')}",
+                        nivel='ok' if r.get('status') != 'error' else 'error')
+        except Exception as exc:
+            _NUBE_JOBS['nube'] = {'estado': 'error', 'mensaje': str(exc), 'fin': datetime.now(timezone.utc)}
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
+@app.route('/ajustes/nube', methods=['POST'])
+@login_required
+@role_required('admin', 'supremo')
+def ajustes_nube_accion():
+    if not _fun.activa('copia_nube'):
+        flash('Enciende antes «Copia de Microsoft 365 y Google» en Ajustes → Funciones.', 'error')
+        return redirect(url_for('ajustes_nube'))
+    accion = request.form.get('accion')
+    cfg = _nube_config()
+    if accion == 'microsoft':
+        tenant = (request.form.get('tenant') or '').strip()
+        cid = (request.form.get('client_id') or '').strip()
+        secreto = request.form.get('client_secret') or ''
+        if request.form.get('borrar'):
+            cfg.pop('microsoft', None)
+            _nube_guardar(cfg)
+            flash('Conexión con Microsoft 365 borrada.', 'success')
+        elif tenant and cid:
+            ms = cfg.get('microsoft', {})
+            ms.update(tenant=tenant, client_id=cid)
+            if secreto:
+                ms['client_secret'] = secreto
+            if not ms.get('client_secret'):
+                flash('Falta el «secreto» de la aplicación.', 'error')
+                return redirect(url_for('ajustes_nube'))
+            cfg['microsoft'] = ms
+            _nube_guardar(cfg)
+            flash('Microsoft 365 conectado (cifrado). Pulsa «Copiar ahora» para la primera copia.', 'success')
+        else:
+            flash('Faltan datos de Microsoft 365.', 'error')
+    elif accion == 'google':
+        usuarios = [u.strip() for u in (request.form.get('usuarios') or '').replace('\n', ',').split(',') if u.strip()]
+        sa = request.form.get('cuenta_servicio') or ''
+        if request.form.get('borrar'):
+            cfg.pop('google', None)
+            _nube_guardar(cfg)
+            flash('Conexión con Google borrada.', 'success')
+        else:
+            g = cfg.get('google', {})
+            if sa.strip():
+                try:
+                    json.loads(sa)
+                except ValueError:
+                    flash('El archivo de la cuenta de servicio no es un JSON válido.', 'error')
+                    return redirect(url_for('ajustes_nube'))
+                g['cuenta_servicio'] = sa
+            if usuarios:
+                g['usuarios'] = usuarios
+            if not g.get('cuenta_servicio') or not g.get('usuarios'):
+                flash('Pega el archivo de la cuenta de servicio y escribe al menos un usuario.', 'error')
+                return redirect(url_for('ajustes_nube'))
+            cfg['google'] = g
+            _nube_guardar(cfg)
+            flash('Google conectado (cifrado). Pulsa «Copiar ahora» para la primera copia.', 'success')
+    elif accion == 'programa':
+        config_manager.set_config('nube_activa', request.form.get('activa') == 'on', session['user_id'])
+        config_manager.set_config('nube_dias', 7 if request.form.get('dias') == '7' else 1, session['user_id'])
+        flash('Guardado.', 'success')
+    elif accion == 'ahora':
+        if not cfg:
+            flash('Conecta antes Microsoft 365 o Google.', 'error')
+        elif _NUBE_JOBS.get('nube', {}).get('estado') == 'en_curso':
+            flash('Ya hay una copia de la nube en marcha.', 'info')
+        else:
+            _nube_lanzar()
+            log_audit(session['user_id'], 'NUBE_BACKUP_START', 'copia de la nube', request.remote_addr)
+            flash('Copia de la nube en marcha. Recarga la página en un rato para ver cómo va.', 'success')
+    elif accion == 'restaurar':
+        snap = request.form.get('snapshot', '')
+        import re as _re_n
+        if not _re_n.fullmatch(r'[0-9a-fA-F]{6,64}', snap):
+            flash('Copia no válida.', 'error')
+        else:
+            import mantenimiento as _mant
+            r = _nube.restaurar(_mant.leer_env(), snap)
+            log_audit(session['user_id'], 'NUBE_RESTORE', f'copia={snap}', request.remote_addr)
+            flash((f'Recuperado en el servidor: {r.get("carpeta")} ({r.get("archivos")} archivos). '
+                   + r.get('instrucciones', '')) if r.get('status') == 'success'
+                  else 'No se pudo recuperar: ' + r.get('message', ''), 'success' if r.get('status') == 'success' else 'error')
+    return redirect(url_for('ajustes_nube'))
+
+
 @app.route('/ajustes/copias', methods=['POST'])
 @login_required
 @role_required('admin', 'supremo')

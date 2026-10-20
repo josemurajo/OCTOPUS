@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}Copia de la nube{% endblock %}
+{% block content %}
+{# Copia de Microsoft 365 y Google con asistente paso a paso (lib/admin_panel.py: ajustes_nube) #}
+<p class="small"><a href="{{ url_for('ajustes') }}">← Ajustes</a></p>
+<h1>Copia de Microsoft 365 y Google</h1>
+<p class="lead">Mucha gente cree que Microsoft y Google ya guardan copia de su correo y sus archivos. <strong>No es
+  así.</strong> Esto copia el correo y los archivos a tu servidor, por si se borran, los cifra un virus o alguien se va.</p>
+
+{% if not ok %}
+<div class="notice atencion"><strong>Apagada</strong> Esta función está en pruebas. Para usarla, enciéndela en
+  <a href="{{ url_for('ajustes_funciones') }}">Ajustes → Funciones</a> (modo experto) → «Copia de Microsoft 365 y Google».</div>
+{% else %}
+
+{% if estado %}
+<div class="notice {{ 'ok' if estado.estado in ('ok','en_curso') else 'problema' }}">
+  <strong>{{ 'En curso' if estado.estado == 'en_curso' else 'Terminado' if estado.estado == 'ok' else 'No ha salido bien' }}</strong>
+  {{ estado.mensaje }}{% if estado.aviso %} · {{ estado.aviso }}{% endif %}
+  {% if estado.estado == 'en_curso' %} (recarga la página en un rato){% endif %}</div>
+{% endif %}
+
+<!-- Microsoft 365 -->
+<div class="card">
+  <h2 style="margin-top:0">Microsoft 365 {% if tiene_ms %}<span class="chip ok">Conectado</span>{% endif %}</h2>
+  <details {{ 'open' if not tiene_ms }}>
+    <summary style="cursor:pointer; color:var(--accent)">Cómo conectarlo (una sola vez, gratis) ▾</summary>
+    <ol style="line-height:1.7">
+      <li>Entra en <strong>entra.microsoft.com</strong> con la cuenta de administrador de la empresa.</li>
+      <li>Ve a <strong>Identidad → Aplicaciones → Registros de aplicaciones → Nuevo registro</strong>. Ponle de nombre
+        «OCTOPUS Copias» y pulsa Registrar.</li>
+      <li>Copia el <strong>«Id. de aplicación (cliente)»</strong> y el <strong>«Id. de directorio (inquilino)»</strong>
+        que aparecen: son dos de las tres casillas de abajo.</li>
+      <li>En <strong>Certificados y secretos → Nuevo secreto de cliente</strong>, créalo y copia su <strong>Valor</strong>
+        (solo se ve una vez): es la tercera casilla.</li>
+      <li>En <strong>Permisos de API → Agregar permiso → Microsoft Graph → Permisos de aplicación</strong>, añade
+        <code>Mail.Read</code>, <code>Files.Read.All</code> y <code>User.Read.All</code>, y pulsa
+        <strong>«Conceder consentimiento de administrador»</strong>.</li>
+    </ol>
+    <p class="hint">¿No tienes una empresa de Microsoft 365 para probar? Date de alta gratis en el «Microsoft 365
+      Developer Program»: te da una de pruebas con 25 usuarios, sin pagar.</p>
+  </details>
+  <form method="post" action="{{ url_for('ajustes_nube_accion') }}" style="margin-top:10px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="accion" value="microsoft">
+    <div style="display:flex; gap:10px; flex-wrap:wrap">
+      <input name="tenant" placeholder="Id. de inquilino (tenant)" value="{{ ms.tenant or '' }}" style="min-width:280px">
+      <input name="client_id" placeholder="Id. de aplicación (cliente)" value="{{ ms.client_id or '' }}" style="min-width:280px">
+      <input name="client_secret" type="password" autocomplete="new-password"
+             placeholder="{{ 'secreto (ya guardado)' if tiene_ms else 'Valor del secreto' }}" style="min-width:260px">
+    </div>
+    <div style="display:flex; gap:10px; margin-top:10px">
+      <button class="btn btn-primary" type="submit">{{ 'Actualizar' if tiene_ms else 'Conectar Microsoft 365' }}</button>
+      {% if tiene_ms %}<button class="btn btn-small" type="submit" name="borrar" value="1"
+        data-confirm="¿Quitar la conexión con Microsoft 365?">Quitar</button>{% endif %}
+    </div>
+  </form>
+</div>
+
+<!-- Google Workspace -->
+<div class="card">
+  <h2 style="margin-top:0">Google Workspace {% if tiene_google %}<span class="chip ok">Conectado</span>{% endif %}</h2>
+  <details {{ 'open' if not tiene_google }}>
+    <summary style="cursor:pointer; color:var(--accent)">Cómo conectarlo (una sola vez, gratis) ▾</summary>
+    <ol style="line-height:1.7">
+      <li>En <strong>console.cloud.google.com</strong>, crea un proyecto y una <strong>cuenta de servicio</strong>.</li>
+      <li>En esa cuenta de servicio, crea una <strong>clave JSON</strong> y descárgala.</li>
+      <li>Activa la <strong>delegación para todo el dominio</strong> en la cuenta de servicio.</li>
+      <li>En <strong>admin.google.com → Seguridad → Control de API → Delegación</strong>, autoriza el «Id. de cliente»
+        de la cuenta de servicio con estos permisos (solo lectura):
+        <code>gmail.readonly</code> y <code>drive.readonly</code>.</li>
+      <li>Pega aquí el contenido del archivo JSON y los correos a copiar.</li>
+    </ol>
+  </details>
+  <form method="post" action="{{ url_for('ajustes_nube_accion') }}" style="margin-top:10px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="accion" value="google">
+    <label class="small">Usuarios a copiar (correos separados por comas)</label>
+    <input name="usuarios" placeholder="ana@empresa.com, jefe@empresa.com" value="{{ google_usuarios }}" style="width:100%; max-width:600px">
+    <label class="small" style="display:block; margin-top:8px">Archivo JSON de la cuenta de servicio
+      {% if tiene_google %}(ya guardado; pégalo solo si cambia){% endif %}</label>
+    <textarea name="cuenta_servicio" rows="4" placeholder='{ "type": "service_account", ... }'
+              style="width:100%; max-width:600px; font-family:monospace"></textarea>
+    <div style="display:flex; gap:10px; margin-top:10px">
+      <button class="btn btn-primary" type="submit">{{ 'Actualizar' if tiene_google else 'Conectar Google' }}</button>
+      {% if tiene_google %}<button class="btn btn-small" type="submit" name="borrar" value="1"
+        data-confirm="¿Quitar la conexión con Google?">Quitar</button>{% endif %}
+    </div>
+  </form>
+</div>
+
+{% if tiene_ms or tiene_google %}
+<div class="card">
+  <h2 style="margin-top:0">Cuándo se copia</h2>
+  <form method="post" action="{{ url_for('ajustes_nube_accion') }}" style="display:flex; gap:12px; flex-wrap:wrap; align-items:center">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="accion" value="programa">
+    <label style="display:flex; gap:8px; align-items:center; font-weight:400">
+      <input type="checkbox" name="activa" {{ 'checked' if activa }} style="width:auto"> Copiar la nube automáticamente</label>
+    <select name="dias" style="max-width:220px">
+      <option value="1" {{ 'selected' if (dias or 1) == 1 }}>Cada día</option>
+      <option value="7" {{ 'selected' if dias == 7 }}>Cada semana</option>
+    </select>
+    <button class="btn btn-primary" type="submit">Guardar</button>
+  </form>
+  <form method="post" action="{{ url_for('ajustes_nube_accion') }}" style="margin-top:12px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn" type="submit" name="accion" value="ahora">Copiar ahora</button>
+    <span class="hint"> La primera vez puede tardar bastante (baja todo); después solo lo nuevo.</span>
+  </form>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Copias hechas</h2>
+  {% if copias %}
+  <table>
+    <thead><tr><th>Fecha</th><th></th></tr></thead>
+    <tbody>
+    {% for c in copias %}
+      <tr>
+        <td>{{ c.time | fecha }}</td>
+        <td><form method="post" action="{{ url_for('ajustes_nube_accion') }}"
+              data-confirm="Se recuperará esta copia de la nube en una carpeta del servidor. ¿Seguir?">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="accion" value="restaurar"><input type="hidden" name="snapshot" value="{{ c.id }}">
+          <button class="btn btn-small" type="submit">Recuperar en el servidor</button></form></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="hint" style="margin-top:10px">Al recuperar, los correos quedan como archivos <code>.eml</code> (los abre
+    Outlook o Thunderbird) y los archivos tal cual, en una carpeta del servidor.</p>
+  {% else %}
+  <p class="muted">Todavía no hay copias de la nube.</p>
+  {% endif %}
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}

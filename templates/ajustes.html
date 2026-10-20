@@ -190,6 +190,7 @@
   <h2>Opciones avanzadas</h2>
   <p class="muted small">Para técnicos. Normalmente no hace falta tocar nada de esto.</p>
   <ul class="lista-opciones">
+    <li><a href="{{ url_for('ajustes_nube') }}"><strong>Copia de la nube (Microsoft 365 / Google)</strong></a><p class="hint">Copia el correo y los archivos de Microsoft 365 y Google.</p></li>
     <li><a href="{{ url_for('config_wazuh') }}"><strong>Wazuh (SIEM)</strong></a><p class="hint">Conexión con Wazuh, si lo usas.</p></li>
     <li><a href="{{ url_for('deploy') }}"><strong>Red y puertos</strong></a><p class="hint">Direcciones y puertos del servidor.</p></li>
     <li><a href="{{ url_for('audit') }}"><strong>Registro de actividad</strong></a><p class="hint">Quién ha hecho qué y cuándo (firmado: si alguien lo toca, se nota).</p></li>

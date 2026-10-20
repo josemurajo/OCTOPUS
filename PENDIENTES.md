@@ -88,6 +88,25 @@ Si no se instala, ese equipo no se monitoriza.
       (herramientas tipo RMM): avisos cuando la CPU, la memoria o el disco pasan de un límite, si el equipo está
       encendido, estado de servicios, inventario (hardware, programas, versión del sistema), antivirus y actualizaciones.
 
+## 0. Lo que necesito de ti para terminar y probar (TODO GRATIS, nada de pago)
+- **Microsoft 365 de prueba**: una cuenta gratuita del «Microsoft 365 Developer Program» (tenant de pruebas con
+  25 licencias, gratis y renovable). Hace falta para probar de verdad la copia de 365. Yo la dejo montada con una
+  simulación; la prueba real la haremos con esa cuenta.
+- **Google de prueba**: una cuenta normal de Google (gratis) para probar la copia de Gmail/Drive.
+- **Un hipervisor de verdad** cuando puedas (Hyper-V en un Windows, o Proxmox/KVM): para quitarle el «en pruebas» a
+  las copias de máquinas virtuales. Proxmox se instala gratis.
+- **Un PC físico** (aunque sea viejo) para probar el USB de rescate y la imagen de disco.
+- Nada de esto cuesta dinero. Cuando tengas cada cosa, me avisas y hacemos la prueba real.
+
+### Ya hecho (no hay que rehacerlo)
+- ✅ Copias de **máquinas virtuales** (Hyper-V, KVM/libvirt, Proxmox), completas y en caliente.
+- ✅ Copias de **bases de datos** (SQL Server, MySQL/MariaDB, PostgreSQL): volcado consciente, recuperar como base
+  nueva y descargar. (Las dos vienen «en pruebas» hasta probarlas en un equipo real).
+- ✅ Copia de la **nube (Microsoft 365 y Google)**: correo (.eml) y archivos (OneDrive/Drive) al almacén del
+  servidor, incremental, con asistente paso a paso en Ajustes → Copia de la nube, credenciales cifradas, recuperación.
+  Motor probado de punta a punta con API simulada (`tests/ci/prueba_nube.py`). Viene «en pruebas»: la prueba real
+  necesita tu Microsoft 365 Developer (gratis) y una cuenta de Google (ver punto 0).
+
 ## 2b. Prueba de seguridad (14/10) — HECHA, en el servidor de pruebas
 1. **Como atacante, desde fuera:** ninguna de las 85 páginas responde sin entrar. Formularios sin token, claves de
    equipo falsas, leer archivos del sistema por la dirección, HTTP sin cifrar y almacén sin contraseña: todo

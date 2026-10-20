@@ -78,6 +78,11 @@ FUNCIONES: list[dict] = [
                 "online...) copia cada base de datos con su propio motor, así la copia siempre sirve. Cada día, cada 4 "
                 "horas o cada hora; se recupera como una base de datos nueva, sin tocar la original. Se activa equipo por "
                 "equipo (ficha del equipo → Bases de datos)."},
+    {"clave": "copia_nube", "grupo": "copias", "nivel": "basico", "defecto": False, "en_pruebas": True,
+     "nombre": "Copia de Microsoft 365 y Google",
+     "explica": "Copia el correo y los archivos de Microsoft 365 (Exchange y OneDrive) y de Google Workspace (Gmail y "
+                "Drive) al almacén del servidor. Se conecta una vez con un asistente (Ajustes → Copia de la nube). "
+                "Mucha gente cree que Microsoft y Google ya guardan copia, y no es así."},
     {"clave": "copias_vm", "grupo": "copias", "nivel": "basico", "defecto": False, "en_pruebas": True,
      "nombre": "Copias de máquinas virtuales",
      "explica": "En los equipos con máquinas virtuales (Hyper-V, KVM/libvirt o Proxmox) copia cada máquina ENTERA, "

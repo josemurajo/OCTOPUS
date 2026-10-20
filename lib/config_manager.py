@@ -31,6 +31,11 @@ class ConfigManager:
     DEFAULT_CONFIG = {
         # Backup configuration
         "backup_retention": BackupRetention.DAILY_30.value,
+
+        # Copia de la nube (Microsoft 365 / Google Workspace); las credenciales van cifradas
+        "nube_cifrada": "",
+        "nube_activa": False,
+        "nube_dias": 1,
         
         # Wazuh SIEM Integration
         "wazuh_enabled": False,

@@ -157,6 +157,10 @@ def retencion(env: dict) -> dict:
         pass
     ok = r.returncode == 0
     if ok:
+        try:
+            borradas += retencion_nube(repo, pwd, p)
+        except Exception:
+            pass
         # copias completas del equipo (opcionales, ocupan mucho): solo las 2 ultimas y una al mes durante 3 meses
         rc = run([restic_bin(), "forget", "--prune", "--tag", "completa", "--group-by", "host",
                   "--keep-last", "2", "--keep-monthly", "3", "--json"], env=restic_env(repo, pwd))
@@ -534,7 +538,7 @@ def avisar(env: dict, texto: str) -> None:
 
 NOMBRES = {"retencion": "Limpieza de copias antiguas", "verificar": "Comprobacion del almacen",
            "autocopia": "Copia del propio servidor", "vigilar": "Vigilancia",
-           "probar": "Prueba de recuperacion", "informe": "Informe mensual"}
+           "probar": "Prueba de recuperacion", "copia_nube": "Copia de la nube (365/Google)", "informe": "Informe mensual"}
 
 # Que hacer cuando falla cada tarea (va en el aviso por correo/Telegram y en el panel)
 QUE_HACER = {
@@ -545,6 +549,49 @@ QUE_HACER = {
     "probar": "Una copia no se ha podido recuperar bien. Haz una copia nueva de ese equipo y vuelve a probar "
               "desde su ficha en el panel ('Probar recuperacion ahora').",
 }
+
+
+def copia_nube(env: dict) -> dict:
+    """Copia de Microsoft 365 / Google al almacen, si esta activada y toca (segun la programacion del panel)."""
+    try:
+        import config_manager, dosfa, copia_nube as _cn, funciones
+    except ImportError:
+        return {"ok": True, "detalle": "copia de la nube no disponible"}
+    db = str(db_path(env))
+    cm = config_manager.ConfigManager(db); funciones.usar(cm)
+    if not funciones.activa("copia_nube") or not cm.get_config("nube_activa"):
+        return {"ok": True, "detalle": "copia de la nube desactivada"}
+    cif = cm.get_config("nube_cifrada")
+    if not cif:
+        return {"ok": True, "detalle": "copia de la nube sin configurar"}
+    # cada cuanto
+    marca = Path(os.environ.get("OCTOPUS_DATA", "/data")) / "nube" / "ultima.txt"
+    try:
+        dias = float(cm.get_config("nube_dias") or 1)
+        ultima = datetime.fromisoformat(marca.read_text().strip())
+        from datetime import timezone as _tz
+        if (datetime.now(_tz.utc) - ultima).total_seconds() < dias * 86400 - 3600:
+            return {"ok": True, "detalle": "copia de la nube: todavia no toca"}
+    except (OSError, ValueError):
+        pass
+    try:
+        cfg = json.loads(dosfa.descifrar(db, cif))
+    except Exception as exc:
+        return {"ok": False, "detalle": f"no se pudieron leer las credenciales de la nube: {exc}"}
+    r = _cn.copiar(env, cfg)
+    return {"ok": r.get("status") in ("success", "parcial"),
+            "detalle": "; ".join(r.get("pasos", [])[-3:]) or r.get("message", "")}
+
+
+def retencion_nube(repo, pwd, p):
+    rn = run([restic_bin(), "forget", "--prune", "--tag", "nube", "--host", "octopus-nube",
+              "--keep-last", "3", "--keep-daily", str(p["daily"]), "--keep-weekly", str(p["weekly"]),
+              "--keep-monthly", str(p["monthly"]), "--json"], env=restic_env(repo, pwd))
+    try:
+        return sum(len(g.get("remove") or []) for g in json.loads((rn.stdout or "").strip().splitlines()[0]
+                                                                   if rn.stdout.strip() else "[]"))
+    except (ValueError, IndexError, AttributeError):
+        return 0
 
 
 def main(argv: list[str]) -> int:
@@ -558,7 +605,7 @@ def main(argv: list[str]) -> int:
         print(json.dumps(r, ensure_ascii=False))
         return 0 if r["ok"] else 1
     tareas = {"retencion": retencion, "verificar": verificar, "autocopia": autocopia, "vigilar": vigilar,
-              "probar": prueba_recuperacion}
+              "probar": prueba_recuperacion, "copia_nube": copia_nube}
     elegidas = list(tareas) if cmd == "todo" else [cmd]
     if any(t not in tareas for t in elegidas):
         print(__doc__)
