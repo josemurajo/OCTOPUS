@@ -79,6 +79,16 @@ class Agente:
     def copia_completa(self):
         return self._req("POST", "/webhook/copia-completa", timeout=12 * 3600)
 
+    def bd(self):
+        return self._req("GET", "/bd", timeout=90)
+
+    def copia_bd(self, solo=None):
+        return self._req("POST", "/webhook/copia-bd", {"solo": list(solo or [])}, timeout=12 * 3600)
+
+    def restaurar_bd(self, snapshot, motor, nombre, instancia):
+        return self._req("POST", "/webhook/restaurar-bd", {"snapshot": snapshot, "motor": motor, "nombre": nombre,
+                                                           "instancia": instancia}, timeout=12 * 3600)
+
     def vms(self):
         return self._req("GET", "/vms", timeout=90)
 
@@ -238,9 +248,13 @@ def _lanzar(system, tipo, mensaje, llamada, al_terminar, on_done=None):
     return job_id
 
 
-def lanzar_copia(system, on_done=None, completa=False, vms=False):
-    """Lanza la copia (la normal, la completa del equipo o la de sus máquinas virtuales) en segundo plano."""
+def lanzar_copia(system, on_done=None, completa=False, vms=False, bd=False):
+    """Lanza la copia (la normal, la completa, la de sus máquinas virtuales o la de sus bases de datos) en segundo plano."""
     ag = Agente(ip_de(system))
+    if bd:
+        return _lanzar(system, "copia_bd", "Copia de las bases de datos en curso...", ag.copia_bd,
+                       lambda r: "Bases de datos copiadas: " + ", ".join(b.get("nombre", "?") for b in r.get("bases", [])),
+                       on_done)
     if vms:
         return _lanzar(system, "copia_vms", "Copia de las máquinas virtuales en curso (puede tardar horas)...",
                        ag.copia_vms, lambda r: "Máquinas virtuales copiadas: " + ", ".join(
@@ -249,6 +263,39 @@ def lanzar_copia(system, on_done=None, completa=False, vms=False):
         return _lanzar(system, "copia", "Copia completa del equipo en curso (puede tardar horas)...",
                        ag.copia_completa, lambda r: "Copia completa terminada", on_done)
     return _lanzar(system, "copia", "Copia en curso...", ag.backup, lambda r: "Copia terminada", on_done)
+
+
+def lanzar_restauracion_bd(system, snapshot, motor, nombre, instancia, on_done=None):
+    """Recupera una base de datos como base NUEVA en el equipo (la original no se toca)."""
+    return _lanzar(system, "recuperacion_bd", f"Recuperando la base de datos {nombre}...",
+                   lambda: Agente(ip_de(system)).restaurar_bd(snapshot, motor, nombre, instancia),
+                   lambda r: r.get("instrucciones") or f"{nombre} recuperada como {r.get('base_nueva')}", on_done)
+
+
+def copia_bd_en_servidor(system, snapshot):
+    """Datos de una copia de base de datos de este equipo leída en el servidor (para descargarla): (ruta, nombre)."""
+    restic, env, subprocess = _restic_servidor()
+    r = subprocess.run([restic, "snapshots", "--json", "--no-lock", "--tag", "bd"], env=env, capture_output=True,
+                       text=True, timeout=300)
+    try:
+        snaps = json.loads(r.stdout or "[]") or []
+    except ValueError:
+        snaps = []
+    s = next((x for x in snaps if (x.get("short_id") == snapshot or x.get("id", "").startswith(snapshot))
+              and (x.get("hostname") or "").lower() == system["hostname"].lower()), None)
+    if not s or not s.get("paths"):
+        return None, None
+    ruta = s["paths"][0]
+    if len(ruta) > 1 and ruta[1] == ":":                       # Windows (C:\...) -> como lo guarda restic (/C/...)
+        ruta = "/" + ruta[0] + ruta[2:].replace("\\", "/")
+    return ruta, ruta.replace("\\", "/").rsplit("/", 1)[-1]
+
+
+def volcar_bd_en_servidor(snapshot, ruta):
+    """Proceso que va soltando el archivo de la copia (para mandarlo al navegador sin cargarlo entero en memoria)."""
+    restic, env, subprocess = _restic_servidor()
+    return subprocess.Popen([restic, "dump", "--no-lock", snapshot, ruta], env=env, stdout=subprocess.PIPE,
+                            stderr=subprocess.DEVNULL)
 
 
 def lanzar_restauracion_vm(system, snapshot, nombre, hipervisor, on_done=None):

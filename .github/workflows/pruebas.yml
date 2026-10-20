@@ -51,6 +51,16 @@ jobs:
         if: matrix.so != 'windows'
         run: python tests/ci/prueba_vms.py
 
+      - name: Copias de bases de datos MySQL y PostgreSQL (de verdad, Linux)
+        if: matrix.so == 'linux'
+        run: |
+          sudo systemctl start mysql.service postgresql.service
+          sudo -E env "PATH=$PATH" PRUEBA_MYSQL_USUARIO=root PRUEBA_MYSQL_CLAVE=root python tests/ci/prueba_bd.py
+
+      - name: Copias de bases de datos SQL Server (LocalDB, Windows)
+        if: matrix.so == 'windows'
+        run: python tests/ci/prueba_bd_sqlserver.py
+
       - name: OpenSSL 3 (Mac)
         if: matrix.so == 'macos'
         run: echo "$(brew --prefix openssl@3)/bin" >> "$GITHUB_PATH"

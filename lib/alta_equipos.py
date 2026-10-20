@@ -82,6 +82,7 @@ def paquete(nombre: str, so: str, rutas: list[str], token: str) -> bytes:
         z.writestr("zerotouch_agent.py", agente)
         z.writestr("octopus_monitor.py", (BASE_DIR / "agentes" / "octopus_monitor.py").read_bytes())
         z.writestr("octopus_vms.py", (BASE_DIR / "agentes" / "octopus_vms.py").read_bytes())
+        z.writestr("octopus_bd.py", (BASE_DIR / "agentes" / "octopus_bd.py").read_bytes())
         z.writestr("config.json", json.dumps(cfg, indent=2, ensure_ascii=False))
         if so == "windows":
             for f in ("INSTALAR.bat", "instalar_windows.ps1", "DESINSTALAR.bat"):

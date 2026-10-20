@@ -36,7 +36,7 @@ import hashlib
 import secrets
 from datetime import datetime, timedelta
 from markupsafe import escape as html_escape
-from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, abort
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, abort, Response
 from functools import wraps
 import subprocess
 import time
@@ -1844,6 +1844,144 @@ def equipo_ajustes(system_id):
     return redirect(url_for('equipo', system_id=system_id))
 
 
+# ------------------------------------------------------------------ copias de las bases de datos de un equipo
+import re as _re_vm
+_MOTORES_BD = {'sqlserver': 'SQL Server', 'mysql': 'MySQL / MariaDB', 'postgresql': 'PostgreSQL'}
+_FRECUENCIAS_BD = [(24, 'Cada día (con la copia diaria)'), (4, 'Cada 4 horas'),
+                   (1, 'Cada hora (recomendado si se trabaja todo el día con el programa)')]
+
+
+def _clave_bd(b):
+    return f"{b.get('motor')}:{b.get('instancia', 'local')}:{b.get('nombre')}"
+
+
+@app.route('/equipos/<int:system_id>/bd')
+@login_required
+def equipo_bd(system_id):
+    """Las bases de datos de un equipo: cuáles copiar, cada cuánto, permisos, copias hechas, recuperar y descargar."""
+    row = _get_system(system_id)
+    if not row:
+        return redirect(url_for('equipos'))
+    ok, motivo = _fun.para_equipo('copias_bd', row['os_family'] or '')
+    datos, error = {}, ''
+    if ok:
+        if agentes.estado_equipo(row).get('online'):
+            r = agentes.Agente(agentes.ip_de(row)).bd()
+            if r.get('status') == 'success':
+                datos = r
+            else:
+                error = r.get('message') or 'El equipo no ha contestado.'
+        else:
+            error = 'El equipo está apagado o desconectado: enciéndelo para ver sus bases de datos.'
+    conf = agentes.notas_equipo(row).get('bd') or {}
+    grupos = {}
+    for c in datos.get('copias', []):
+        grupos.setdefault((c['motor'], c['instancia'], c['nombre']), []).append(c)
+    return render_template('bd.html', s=row, ok=ok, motivo=motivo, error=error, motores=datos.get('motores', []),
+                           grupos=grupos, conf=conf, con_clave=sorted(_bd_credenciales(conf)),
+                           trabajos=agentes.trabajos_de(row['id'], 5), MOTORES=_MOTORES_BD,
+                           FRECUENCIAS=_FRECUENCIAS_BD, clave_bd=_clave_bd)
+
+
+@app.route('/equipos/<int:system_id>/bd', methods=['POST'])
+@login_required
+def equipo_bd_accion(system_id):
+    row = _get_system(system_id)
+    if not row or not puede_actuar():
+        return redirect(url_for('equipos'))
+    ok, motivo = _fun.para_equipo('copias_bd', row['os_family'] or '')
+    volver = redirect(url_for('equipo_bd', system_id=system_id))
+    if not ok:
+        flash(motivo, 'error')
+        return volver
+    accion = request.form.get('accion')
+    notas = agentes.notas_equipo(row)
+    conf = dict(notas.get('bd') or {})
+
+    def guardar(texto_log):
+        notas['bd'] = conf
+        with get_db_connection() as c:
+            c.execute('UPDATE systems SET notes = ? WHERE id = ?', (json.dumps(notas), system_id))
+        agentes.invalidar(system_id)
+        log_audit(session['user_id'], 'SYSTEM_SETTINGS', f'{row["hostname"]}: {texto_log}', request.remote_addr)
+
+    if accion == 'guardar':
+        horas = request.form.get('horas', type=int)
+        conf.update(activa=request.form.get('activa') == 'on', horas=horas if horas in (1, 4, 24) else 24,
+                    excluir=sorted(set(request.form.getlist('todas')) - set(request.form.getlist('incluir'))))
+        guardar(f"copias_bd activa={conf['activa']} horas={conf['horas']} fuera={conf['excluir']}")
+        texto = {24: 'cada día', 4: 'cada 4 horas', 1: 'cada hora'}[conf['horas']]
+        flash(f'Copias de bases de datos activadas: {texto}. La primera llega en unos minutos (o pulsa «Copiar ahora»).'
+              if conf['activa'] else 'Copias de bases de datos desactivadas. Las ya hechas se borran solas con las antiguas.',
+              'success')
+    elif accion == 'credenciales':
+        motor = request.form.get('motor', '')
+        if motor not in _MOTORES_BD:
+            return volver
+        cred = _bd_credenciales(conf)
+        if request.form.get('borrar'):
+            cred.pop(motor, None)
+            flash(f'Usuario de {_MOTORES_BD[motor]} borrado.', 'success')
+        else:
+            usuario = (request.form.get('usuario') or '').strip()[:120]
+            if not usuario:
+                flash('Escribe el usuario.', 'error')
+                return volver
+            cred[motor] = {'usuario': usuario, 'clave': request.form.get('clave') or ''}
+            flash(f'Guardado (cifrado). En unos segundos verás si ya puedo entrar en {_MOTORES_BD[motor]}.', 'success')
+        conf['cred_cifradas'] = _dosfa.cifrar(DB_FILE, json.dumps(cred)) if cred else None
+        guardar(f'credenciales de {motor} {"borradas" if request.form.get("borrar") else "cambiadas"}')
+    elif accion == 'ahora':
+        if not conf.get('activa'):
+            flash('Primero activa las copias de bases de datos de este equipo.', 'error')
+            return volver
+        agentes.lanzar_copia(row, on_done=_copia_terminada, bd=True)
+        log_audit(session['user_id'], 'DB_BACKUP_START', f'equipo={row["hostname"]}', request.remote_addr)
+        flash('Copiando las bases de datos ahora. Suele tardar poco; recarga la página en un momento.', 'success')
+    elif accion == 'restaurar':
+        snap, motor = request.form.get('snapshot', ''), request.form.get('motor', '')
+        nombre, instancia = request.form.get('nombre', '')[:128], request.form.get('instancia', 'local')[:128]
+        if not _re_vm.fullmatch(r'[0-9a-fA-F]{6,64}', snap) or motor not in _MOTORES_BD:
+            flash('Copia no válida.', 'error')
+            return volver
+        agentes.lanzar_restauracion_bd(row, snap, motor, nombre, instancia, on_done=_copia_terminada)
+        log_audit(session['user_id'], 'DB_RESTORE_START', f'equipo={row["hostname"]} bd={nombre} copia={snap}',
+                  request.remote_addr)
+        flash(f'Recuperando «{nombre}» como una base de datos NUEVA (la original no se toca). Recarga en un momento.',
+              'success')
+    return volver
+
+
+@app.route('/equipos/<int:system_id>/bd/descargar/<snap>')
+@login_required
+def equipo_bd_descargar(system_id, snap):
+    """Descargar una copia de base de datos (el volcado o el .bak), leída directamente del almacén del servidor."""
+    row = _get_system(system_id)
+    if not row or not puede_actuar() or not _re_vm.fullmatch(r'[0-9a-fA-F]{6,64}', snap):
+        abort(404)
+    ruta, nombre = agentes.copia_bd_en_servidor(row, snap)
+    if not ruta:
+        flash('No encuentro esa copia en el almacén.', 'error')
+        return redirect(url_for('equipo_bd', system_id=system_id))
+    log_audit(session['user_id'], 'DB_DOWNLOAD', f'equipo={row["hostname"]} copia={snap} archivo={nombre}',
+              request.remote_addr)
+    proc = agentes.volcar_bd_en_servidor(snap, ruta)
+
+    def trozos():
+        try:
+            while True:
+                b = proc.stdout.read(1024 * 1024)
+                if not b:
+                    break
+                yield b
+        finally:
+            proc.stdout.close()
+            proc.wait()
+    seguro = re.sub(r'[^A-Za-z0-9_.-]', '_', nombre) or 'copia'
+    return Response(trozos(), mimetype='application/octet-stream',
+                    headers={'Content-Disposition': f'attachment; filename="{snap}_{seguro}"'})
+
+
 # ------------------------------------------------------------------ copias de las máquinas virtuales de un equipo
 import re as _re_vm
 
@@ -1955,12 +2093,25 @@ def _ajustes_agente(row):
     """Ajustes generales de las copias + los propios de este equipo (los recibe el agente en cada consulta)."""
     aj = _ajustes_copias()
     vms = agentes.notas_equipo(row).get('vms') or {}
+    bd = agentes.notas_equipo(row).get('bd') or {}
     return {'limite_kbps': aj['limite_kbps'], 'solo_horario': aj['solo_horario'],
             'copia_completa': bool(agentes.notas_equipo(row).get('copia_completa')), 'copia_completa_dias': 7,
             'senuelos': config_manager.get_config('senuelos') is not False,
             # siempre se manda (aunque esté apagada): si no, el agente se quedaría con lo último que recibió
             'vms': {'activa': bool(vms.get('activa')) and _fun.activa('copias_vm'), 'dias': vms.get('dias') or 1,
-                    'excluir': list(vms.get('excluir') or [])}}
+                    'excluir': list(vms.get('excluir') or [])},
+            'bd': {'activa': bool(bd.get('activa')) and _fun.activa('copias_bd'), 'horas': bd.get('horas') or 24,
+                   'excluir': list(bd.get('excluir') or []), 'cred': _bd_credenciales(bd)}}
+
+
+def _bd_credenciales(bd):
+    """Usuarios y contraseñas de las bases de datos de un equipo (guardadas cifradas; solo si hicieron falta)."""
+    if not bd.get('cred_cifradas'):
+        return {}
+    try:
+        return json.loads(_dosfa.descifrar(DB_FILE, bd['cred_cifradas']))
+    except Exception:
+        return {}
 
 
 def _copia_terminada(system_id, ok, resp):

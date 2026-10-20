@@ -165,6 +165,14 @@ def retencion(env: dict) -> dict:
                 borradas += len(grupo.get("remove") or [])
         except (ValueError, IndexError, AttributeError):
             pass
+        # bases de datos (pueden ser cada hora): por cada una, las del último día, 14 diarias, 8 semanales y 12 mensuales
+        rb = run([restic_bin(), "forget", "--prune", "--tag", "bd", "--group-by", "host,tags", "--keep-within", "1d",
+                  "--keep-daily", "14", "--keep-weekly", "8", "--keep-monthly", "12", "--json"], env=restic_env(repo, pwd))
+        try:
+            for grupo in json.loads((rb.stdout or "").strip().splitlines()[0] if rb.stdout.strip() else "[]"):
+                borradas += len(grupo.get("remove") or [])
+        except (ValueError, IndexError, AttributeError):
+            pass
         # máquinas virtuales (ocupan mucho): por cada máquina, las 3 últimas, una por semana 4 semanas y una al mes 3 meses
         rv = run([restic_bin(), "forget", "--prune", "--tag", "vm", "--group-by", "host,tags",
                   "--keep-last", "3", "--keep-weekly", "4", "--keep-monthly", "3", "--json"], env=restic_env(repo, pwd))

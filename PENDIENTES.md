@@ -128,6 +128,19 @@ Dejan de estar «En pruebas»: bloquear atacantes (encendida de serie), panel so
 aprobación, LDAP/Active Directory, OIDC y RADIUS. **Siguen en pruebas** (necesitan equipos físicos): USB de rescate,
 imagen de disco, arranque por red (PXE) y despliegue en masa; cada una con su botón de activar/desactivar.
 
+## 2h. Copias de bases de datos (20/10) — HECHO
+- `agentes/octopus_bd.py`: **SQL Server** (BACKUP … COPY_ONLY con PowerShell/.NET, sin instalar nada; no interfiere
+  con las copias que ya haga la empresa), **MySQL/MariaDB** (mysqldump sin bloquear) y **PostgreSQL** (pg_dump),
+  directo al almacén. Entra solo si puede (socket de root, debian.cnf, usuario postgres, cuenta del sistema) y si no,
+  el panel explica cómo dar permiso (orden para copiar) o deja escribir usuario y contraseña (se guardan cifrados).
+- Cada día, cada 4 horas o cada hora (el agente lo vigila con su propio hilo y candado). **Volver a una hora
+  concreta**: se recupera como base NUEVA `<nombre>_recuperada_<fecha>`, la original no se toca; o **descargar** el
+  volcado/.bak desde el almacén del servidor (aunque el equipo esté apagado).
+- Retención: todas las del último día, 14 diarias, 8 semanales, 12 mensuales (por base de datos).
+- Pruebas: `tests/ci/prueba_bd.py` (22, MySQL 8 y PostgreSQL 16 reales; en GitHub en Linux),
+  `tests/ci/prueba_bd_sqlserver.py` (SQL Server LocalDB en el Windows de GitHub) y de punta a punta por el panel con un
+  agente con MySQL y PostgreSQL de verdad (21, incluida la copia automática sin pulsar nada).
+
 ## 2f. Copias de máquinas virtuales (20/10) — HECHO, «en pruebas» hasta probarlo en un hipervisor real
 - Nuevo `agentes/octopus_vms.py`: detecta las máquinas virtuales del equipo y copia **cada una entera** (discos +
   configuración), aunque esté encendida: **Hyper-V** (instantánea VSS, con toda la cadena de discos), **KVM/libvirt**

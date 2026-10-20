@@ -15,6 +15,8 @@ a ataques (ransomware) y un panel web pensado para personas que no son técnicas
 - **Avisos** por correo y Telegram, siempre con "qué hacer". **Informe mensual** para imprimir o enviar.
 - **Kit de recuperación**: las claves para abrir las copias aunque se pierda el servidor.
 - **Copia completa del equipo** (opcional): todo el disco, para reconstruir un equipo entero.
+- **Bases de datos**: SQL Server, MySQL/MariaDB y PostgreSQL copiadas por su propio motor (siempre sirven), cada día,
+  cada 4 horas o cada hora; se vuelve a la hora que quieras como una base nueva, sin tocar la original.
 - **Máquinas virtuales** (en pruebas): copia cada máquina **entera** aunque esté encendida (Hyper-V, KVM/libvirt y
   Proxmox) y la recupera aparte, sin tocar la original.
 - **Monitorización** (opcional, viene apagada): uso, temperatura, discos y batería de cada equipo, en directo.

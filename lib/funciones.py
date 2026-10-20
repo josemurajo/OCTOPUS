@@ -72,6 +72,12 @@ FUNCIONES: list[dict] = [
      "explica": "Los primeros días de un equipo nuevo, si la detección ve algo raro solo avisa en amarillo (no aísla), "
                 "mientras aprende lo que es normal en ese equipo. Los archivos trampa siguen actuando siempre.",
      "opciones": [("dias", "Días de aprendizaje", "int", 7, "experto", "", {"min": 1, "max": 60})]},
+    {"clave": "copias_bd", "grupo": "copias", "nivel": "basico", "defecto": True,
+     "nombre": "Copias de bases de datos",
+     "explica": "En los equipos con SQL Server, MySQL/MariaDB o PostgreSQL (programas de contabilidad, ERP, tiendas "
+                "online...) copia cada base de datos con su propio motor, así la copia siempre sirve. Cada día, cada 4 "
+                "horas o cada hora; se recupera como una base de datos nueva, sin tocar la original. Se activa equipo por "
+                "equipo (ficha del equipo → Bases de datos)."},
     {"clave": "copias_vm", "grupo": "copias", "nivel": "basico", "defecto": False, "en_pruebas": True,
      "nombre": "Copias de máquinas virtuales",
      "explica": "En los equipos con máquinas virtuales (Hyper-V, KVM/libvirt o Proxmox) copia cada máquina ENTERA, "

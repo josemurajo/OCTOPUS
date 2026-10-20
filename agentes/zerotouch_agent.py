@@ -33,6 +33,7 @@ from pathlib import Path
 PORT = int(os.environ.get("OCTOPUS_AGENT_PORT", "9999"))
 AGENT_VERSION = "3.3"
 _BACKUP_LOCK = threading.Lock()
+_BD_LOCK = threading.Lock()        # las copias de bases de datos van aparte: no esperan a una copia larga de discos
 SYSTEM = platform.system().lower()
 
 
@@ -1079,6 +1080,109 @@ def discos_de_vms() -> list[str]:
         return []
 
 
+# ---------------------------------------------------------------- copias de las bases de datos (opcional)
+# La lógica de cada motor está en octopus_bd.py (va junto al agente). Aquí solo se decide cuándo y se reparte.
+def _bd_mod():
+    try:
+        import octopus_bd
+        return octopus_bd
+    except ImportError:
+        return None
+
+
+def ajustes_bd() -> dict:
+    """Lo que ha elegido el panel para este equipo: {activa, horas, excluir: ['motor:instancia:nombre'], cred}."""
+    v = AJUSTES_SERVIDOR.get("bd")
+    return v if isinstance(v, dict) else {}
+
+
+def _ctx_bd(cfg: dict) -> dict:
+    ctx = _ctx_vms(cfg)
+    ctx["cred"] = ajustes_bd().get("cred") or {}
+    return ctx
+
+
+def clave_bd(b: dict) -> str:
+    return f"{b.get('motor')}:{b.get('instancia', 'local')}:{b.get('nombre')}"
+
+
+def copia_bd(cfg: dict, solo=None) -> dict:
+    """Copia «consciente» de cada base de datos del equipo (salvo las que el panel haya dejado fuera)."""
+    mod = _bd_mod()
+    if mod is None:
+        return {"status": "error", "message": "Falta octopus_bd.py junto al agente (reinstala el agente desde el panel)"}
+    if not _BD_LOCK.acquire(blocking=False):
+        return {"status": "error", "message": "Ya se están copiando las bases de datos de este equipo"}
+    pasos: list[str] = []
+
+    def paso(texto: str) -> None:
+        pasos.append(f"[{datetime.now():%H:%M:%S}] {texto}")
+        log(texto)
+    try:
+        if not _restic_ready(restic_bin()):
+            return {"status": "error", "message": f"restic no encontrado: {restic_bin()}"}
+        err = asegurar_repo(cfg)
+        if err:
+            return err
+        ctx = _ctx_bd(cfg)
+        fuera, solo = set(ajustes_bd().get("excluir") or []), set(solo or [])
+        motores = mod.detectar(ctx["cred"])
+        sin_permiso = [m for m in motores if m.get("acceso") != "ok"]
+        bases = [b for m in motores for b in m.get("bases", [])
+                 if clave_bd(b) not in fuera and (not solo or clave_bd(b) in solo)]
+        if not bases and not sin_permiso:
+            return {"status": "error", "message": "No se ha encontrado ninguna base de datos que copiar en este equipo"}
+        resultados = []
+        for b in bases:
+            paso(f"Base de datos {b['nombre']} ({mod.MOTORES.get(b['motor'], b['motor'])}): copiando")
+            r = mod.copiar(ctx, b)
+            resultados.append(r)
+            paso(f"  {b['nombre']}: " + ("copiada" if r.get("status") == "success" else f"FALLÓ: {r.get('message', '')[:200]}"))
+        if any(r.get("status") == "success" for r in resultados):
+            try:
+                STATE_DIR.mkdir(parents=True, exist_ok=True)
+                (STATE_DIR / "ultima_copia_bd.txt").write_text(datetime.now().isoformat(timespec="seconds"))
+            except OSError:
+                pass
+        mal = [f"{r.get('nombre')}: {r.get('message', '')[:150]}" for r in resultados if r.get("status") != "success"]
+        mal += [f"{mod.MOTORES.get(m['motor'], m['motor'])}: {m.get('mensaje', '')[:200]}" for m in sin_permiso]
+        res = {"status": "success" if not mal else "error", "bases": resultados, "pasos": pasos}
+        if mal:
+            res["message"] = "No se pudo copiar: " + "; ".join(mal)
+        return res
+    finally:
+        _BD_LOCK.release()
+
+
+def toca_copia_bd(ahora: datetime | None = None) -> bool:
+    """Si está activada y la última copia de las bases de datos tiene más de N horas (24, 4 o 1)."""
+    aj = ajustes_bd()
+    if not aj.get("activa"):
+        return False
+    try:
+        horas = float(aj.get("horas") or 24)
+    except (TypeError, ValueError):
+        horas = 24
+    try:
+        ultima = datetime.fromisoformat((STATE_DIR / "ultima_copia_bd.txt").read_text().strip())
+    except (OSError, ValueError):
+        return True
+    return ((ahora or datetime.now()) - ultima).total_seconds() >= horas * 3600 - 300
+
+
+def bd_loop() -> None:
+    """Las copias de bases de datos pueden ser cada hora: este hilo mira cada 5 minutos si ya toca."""
+    time.sleep(120)
+    while True:
+        try:
+            if toca_copia_bd() and not esta_aislado():
+                r = copia_bd(load_config())
+                log(f"Copia de bases de datos: {r.get('status')} {r.get('message', '')}".strip())
+        except Exception as exc:
+            log(f"Copia de bases de datos: {exc}")
+        time.sleep(300)
+
+
 def limite_subida(ajustes: dict, ahora: datetime | None = None) -> int:
     """KB/s maximos para la copia (0 = sin limite). Con 'solo_horario', solo de lunes a viernes de 8 a 20 h."""
     try:
@@ -1344,6 +1448,12 @@ def despachar(cfg: dict, metodo: str, ruta: str, datos: dict | None = None) -> d
             return {"status": "success", "aislado": esta_aislado(), "detector": bool(cfg.get("detector", True))}
         if ruta == "/info":
             return {"status": "success", **info_equipo(cfg)}
+        if ruta == "/bd":
+            mod = _bd_mod()
+            if mod is None:
+                return {"status": "error", "message": "Falta octopus_bd.py junto al agente (reinstala el agente)"}
+            ctx = _ctx_bd(cfg)
+            return {"status": "success", "motores": mod.detectar(ctx["cred"]), "copias": mod.copias(ctx)}
         if ruta == "/vms":
             mod = _vms_mod()
             if mod is None:
@@ -1359,6 +1469,16 @@ def despachar(cfg: dict, metodo: str, ruta: str, datos: dict | None = None) -> d
         if not AJUSTES_SERVIDOR.get("copia_completa"):
             return {"status": "error", "message": "La copia completa no esta activada para este equipo"}
         return copia_completa(cfg)
+    if ruta == "/webhook/copia-bd":
+        if not ajustes_bd().get("activa"):
+            return {"status": "error", "message": "La copia de bases de datos no está activada para este equipo"}
+        return copia_bd(cfg, datos.get("solo"))
+    if ruta == "/webhook/restaurar-bd":
+        mod = _bd_mod()
+        if mod is None:
+            return {"status": "error", "message": "Falta octopus_bd.py junto al agente (reinstala el agente)"}
+        return mod.restaurar(_ctx_bd(cfg), str(datos.get("snapshot", "")), str(datos.get("motor", "")),
+                             str(datos.get("nombre", "")), str(datos.get("instancia", "local")))
     if ruta == "/webhook/copia-vms":
         if not ajustes_vms().get("activa"):
             return {"status": "error", "message": "La copia de máquinas virtuales no está activada para este equipo"}
@@ -1556,6 +1676,7 @@ def main() -> None:
     threading.Thread(target=bucle_ordenes, daemon=True).start()
     threading.Thread(target=copia_atrasada_loop, daemon=True).start()
     threading.Thread(target=monitor_loop, daemon=True).start()
+    threading.Thread(target=bd_loop, daemon=True).start()
     binds = load_config().get("bind_addresses") or ["127.0.0.1"]
 
     def escuchar(addr: str) -> None:

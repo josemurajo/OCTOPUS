@@ -23,7 +23,7 @@ if [ "${1:-}" = "--quitar" ]; then
     systemctl disable --now octopus-agent 2>/dev/null || true
     systemctl disable --now wg-quick@octopus 2>/dev/null || true
     rm -f /etc/systemd/system/octopus-agent.service /etc/cron.d/octopus /etc/wireguard/octopus.conf
-    rm -rf "$DIR/zerotouch_agent.py" "$DIR/octopus_monitor.py" "$DIR/octopus_vms.py" /etc/octopus
+    rm -rf "$DIR/zerotouch_agent.py" "$DIR/octopus_monitor.py" "$DIR/octopus_vms.py" "$DIR/octopus_bd.py" /etc/octopus
     # por si estaba aislado por un incidente
     nft delete table inet octopus 2>/dev/null || true
     iptables -D OUTPUT -j OCTOPUS_OUT 2>/dev/null || true; iptables -D INPUT -j OCTOPUS_IN 2>/dev/null || true
@@ -77,6 +77,7 @@ mkdir -p "$DIR" /etc/octopus /var/log/octopus
 install -m 0755 "$AQUI/zerotouch_agent.py" "$DIR/zerotouch_agent.py"
 [ -f "$AQUI/octopus_monitor.py" ] && install -m 0644 "$AQUI/octopus_monitor.py" "$DIR/octopus_monitor.py"
 [ -f "$AQUI/octopus_vms.py" ] && install -m 0644 "$AQUI/octopus_vms.py" "$DIR/octopus_vms.py"
+[ -f "$AQUI/octopus_bd.py" ] && install -m 0644 "$AQUI/octopus_bd.py" "$DIR/octopus_bd.py"
 install -m 0600 "$AQUI/config.json" /etc/octopus/config.json
 cat > /etc/systemd/system/octopus-agent.service <<EOF
 [Unit]

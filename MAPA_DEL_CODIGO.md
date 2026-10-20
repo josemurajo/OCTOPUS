@@ -13,7 +13,7 @@ que haya (copias, etc.) y responde. El servidor **nunca entra** en los equipos: 
 |---|---|
 | `lib/` | El servidor y el panel (casi todo el cerebro está aquí) |
 | `templates/` | Las pantallas del panel (HTML) |
-| `agentes/` | El programa que va en cada equipo (`zerotouch_agent.py`), el de monitorización (`octopus_monitor.py`) y el de copias de máquinas virtuales (`octopus_vms.py`) |
+| `agentes/` | El programa que va en cada equipo (`zerotouch_agent.py`), el de monitorización (`octopus_monitor.py`) y el de copias de máquinas virtuales (`octopus_vms.py`) y el de bases de datos (`octopus_bd.py`) |
 | `tests/ci/` | Pruebas automáticas que GitHub pasa en cada cambio (Linux, Windows y Mac) |
 | `legal/` | Textos legales (licencia, privacidad, plantillas para la empresa) — se ven en el panel en «Legal y privacidad» |
 | `herramientas/` | Firmar una versión, crear el manifiesto |
@@ -52,6 +52,9 @@ que haya (copias, etc.) y responde. El servidor **nunca entra** en los equipos: 
 - **Un aviso nuevo, o cambiar qué dice y qué botón tiene** → `lib/avisos.py`.
 - **Qué recoge la monitorización** (y qué no se guarda nunca) → función en `lib/funciones.py` (opciones de
   `monitorizacion`) y `lib/monitor.py` (`_privacidad`).
+- **Copias de bases de datos** → `agentes/octopus_bd.py` (cada motor: detectar, cómo entrar, copiar, recuperar); el
+  panel en `lib/admin_panel.py` (rutas `/equipos/<id>/bd`) y `templates/bd.html`; cada cuánto lo decide `bd_loop()` en
+  el agente; cuánto se guardan, en `lib/mantenimiento.py` (etiqueta `bd`).
 - **Copias de máquinas virtuales** → `agentes/octopus_vms.py` (cada hipervisor: detectar, copiar, recuperar); el
   panel en `lib/admin_panel.py` (rutas `/equipos/<id>/vms`) y `templates/vms.html`; cuánto se guardan, en
   `lib/mantenimiento.py` (etiqueta `vm`).

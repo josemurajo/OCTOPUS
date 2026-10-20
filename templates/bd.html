@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% block title %}Bases de datos · {{ s.hostname }}{% endblock %}
+{% block content %}
+{# Bases de datos de un equipo: qué se copia, cada cuánto, permisos, copias y recuperar (lib/admin_panel.py: equipo_bd) #}
+<style>
+.orden { position: relative; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 8px 0;
+         font-family: ui-monospace, Consolas, monospace; font-size: 13px; white-space: pre-wrap; word-break: break-all; }
+.orden button { position: absolute; top: 6px; right: 6px; }
+details.bd { border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; margin: 8px 0; background: var(--card); }
+details.bd summary { cursor: pointer; font-weight: 600; }
+details.bd table { margin-top: 8px; }
+.paso { display: flex; gap: 12px; align-items: flex-start; margin: 14px 0; }
+.paso .n { flex: 0 0 30px; height: 30px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 700;
+           display: flex; align-items: center; justify-content: center; }
+</style>
+<p class="small"><a href="{{ url_for('equipo', system_id=s.id) }}">← {{ s.hostname }}</a></p>
+<h1>Bases de datos de {{ s.hostname }}</h1>
+<p class="lead">Las copias las hace el propio programa de la base de datos, así que <strong>siempre sirven para recuperar</strong>.
+  Cada copia es una foto completa a esa hora: puedes volver a la hora que quieras.</p>
+
+{% if not ok %}
+<div class="notice atencion"><strong>No disponible</strong>{{ motivo }}</div>
+{% else %}
+
+{% for t in trabajos if t.estado == 'en_curso' and t.tipo in ('copia_bd', 'recuperacion_bd') %}
+<div class="notice ok"><strong>En curso</strong>{{ t.mensaje }} Recarga la página en un momento.</div>
+{% endfor %}
+{% for t in trabajos if t.estado != 'en_curso' and t.tipo in ('copia_bd', 'recuperacion_bd') %}
+<div class="notice {{ 'ok' if t.estado == 'ok' else 'problema' }}"><strong>{{ 'Hecho' if t.estado == 'ok' else 'No ha salido bien' }} ({{ t.fin | hace }})</strong>{{ t.mensaje }}</div>
+{% endfor %}
+{% if error %}<div class="notice atencion"><strong>No se pueden ver las bases de datos ahora</strong>{{ error }}</div>{% endif %}
+
+{# ---------------------------------------------------------------- motores en los que no puede entrar #}
+{% for m in motores if m.acceso != 'ok' %}
+<div class="card" style="border-left: 4px solid var(--warn)">
+  <h2 style="margin-top:0">No puedo entrar en {{ MOTORES.get(m.motor, m.motor) }}{% if m.instancia and m.instancia not in ('local', '.') %} ({{ m.instancia }}){% endif %}</h2>
+  <p class="muted small">{{ m.mensaje }}</p>
+  <p>Hay dos formas de arreglarlo. Con una basta:</p>
+  {% if m.motor == 'sqlserver' %}
+  <div class="paso"><div class="n">1</div><div>
+    <strong>Darme permiso (recomendado, una sola vez).</strong> Abre <em>SQL Server Management Studio</em> en ese equipo,
+    pulsa «Nueva consulta», pega esto y pulsa «Ejecutar»:
+    <div class="orden" id="o-{{ loop.index }}">IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = N'NT AUTHORITY\SYSTEM')
+    CREATE LOGIN [NT AUTHORITY\SYSTEM] FROM WINDOWS;
+ALTER SERVER ROLE [sysadmin] ADD MEMBER [NT AUTHORITY\SYSTEM];<button class="btn btn-small" type="button" data-copiar="o-{{ loop.index }}">Copiar</button></div>
+  </div></div>
+  {% elif m.motor == 'mysql' %}
+  <div class="paso"><div class="n">1</div><div>
+    <strong>Crear un usuario para OCTOPUS.</strong> En ese equipo, entra en MySQL como administrador y pega esto (cambia la
+    contraseña por una tuya):
+    <div class="orden" id="o-{{ loop.index }}">CREATE USER 'octopus'@'localhost' IDENTIFIED BY 'pon-aqui-una-clave';
+GRANT ALL PRIVILEGES ON *.* TO 'octopus'@'localhost';<button class="btn btn-small" type="button" data-copiar="o-{{ loop.index }}">Copiar</button></div>
+    Y después escribe ese usuario y esa contraseña aquí abajo.
+  </div></div>
+  {% else %}
+  <div class="paso"><div class="n">1</div><div>
+    <strong>Crear un usuario para OCTOPUS.</strong> En ese equipo, como administrador de PostgreSQL:
+    <div class="orden" id="o-{{ loop.index }}">CREATE ROLE octopus LOGIN SUPERUSER PASSWORD 'pon-aqui-una-clave';<button class="btn btn-small" type="button" data-copiar="o-{{ loop.index }}">Copiar</button></div>
+    Y después escribe ese usuario y esa contraseña aquí abajo.
+  </div></div>
+  {% endif %}
+  {% if puede_actuar() %}
+  <div class="paso"><div class="n">2</div><div style="flex:1">
+    <strong>O escribe un usuario y contraseña que ya tengas</strong> (se guardan cifrados en el servidor):
+    <form method="post" action="{{ url_for('equipo_bd_accion', system_id=s.id) }}" style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="accion" value="credenciales">
+      <input type="hidden" name="motor" value="{{ m.motor }}">
+      <input name="usuario" placeholder="Usuario" autocomplete="off" style="max-width:200px" required>
+      <input name="clave" type="password" placeholder="Contraseña" autocomplete="new-password" style="max-width:200px">
+      <button class="btn btn-primary" type="submit">Guardar</button>
+    </form>
+  </div></div>
+  {% endif %}
+</div>
+{% endfor %}
+
+{# ---------------------------------------------------------------- qué se copia y cada cuánto #}
+<div class="card">
+  <h2 style="margin-top:0">Qué se copia</h2>
+  <form method="post" action="{{ url_for('equipo_bd_accion', system_id=s.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label style="display:flex; gap:8px; align-items:center; font-weight:400">
+      <input type="checkbox" name="activa" {{ 'checked' if conf.activa }} style="width:auto"> Copiar las bases de datos de este equipo</label>
+    <p style="margin:10px 0">
+      <select name="horas" aria-label="Cada cuánto" style="max-width:480px">
+        {% for h, texto in FRECUENCIAS %}<option value="{{ h }}" {{ 'selected' if (conf.horas or 24) == h }}>{{ texto }}</option>{% endfor %}
+      </select></p>
+    {% set bases = [] %}{% for m in motores %}{% for b in m.bases %}{% set _ = bases.append(b) %}{% endfor %}{% endfor %}
+    {% if bases %}
+    <table>
+      <thead><tr><th>Copiar</th><th>Base de datos</th><th>Programa</th><th>Tamaño</th></tr></thead>
+      <tbody>
+      {% for b in bases %}{% set k = clave_bd(b) %}
+        <tr>
+          <td><input type="hidden" name="todas" value="{{ k }}">
+              <input type="checkbox" name="incluir" value="{{ k }}" aria-label="Copiar {{ b.nombre }}"
+                     {{ '' if k in (conf.excluir or []) else 'checked' }} style="width:auto"></td>
+          <td><strong>{{ b.nombre }}</strong>{% if b.instancia not in ('local', '.') %} <span class="muted small">({{ b.instancia }})</span>{% endif %}</td>
+          <td>{{ MOTORES.get(b.motor, b.motor) }}</td>
+          <td>{{ b.tamano | tamano if b.tamano else '—' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% elif not error and not motores %}
+    <p class="muted">No he encontrado ninguna base de datos en este equipo (busco SQL Server, MySQL/MariaDB y PostgreSQL).</p>
+    {% endif %}
+    {% if puede_actuar() %}
+    <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:12px">
+      <button class="btn btn-primary" type="submit" name="accion" value="guardar">Guardar</button>
+      {% if conf.activa %}<button class="btn" type="submit" name="accion" value="ahora">Copiar ahora</button>{% endif %}
+    </div>
+    {% endif %}
+  </form>
+  {% if con_clave and puede_actuar() %}
+  <p class="hint" style="margin-top:12px">Usuarios guardados para:
+    {% for mo in con_clave %}<form method="post" action="{{ url_for('equipo_bd_accion', system_id=s.id) }}" style="display:inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="accion" value="credenciales">
+      <input type="hidden" name="motor" value="{{ mo }}"><input type="hidden" name="borrar" value="1">
+      {{ MOTORES.get(mo, mo) }} <button class="btn btn-small" type="submit">Borrar</button></form>{% endfor %}</p>
+  {% endif %}
+  <p class="hint" style="margin-top:12px">No molesta a quien está trabajando: MySQL y PostgreSQL se copian sin bloquear, y
+    SQL Server con una copia «solo de copia» que no interfiere con las copias que ya haga tu empresa. Se guardan todas las
+    del último día, una al día durante 2 semanas, una a la semana 2 meses y una al mes durante un año.</p>
+</div>
+
+{# ---------------------------------------------------------------- copias hechas #}
+<div class="card">
+  <h2 style="margin-top:0">Volver a una hora concreta</h2>
+  {% if grupos %}
+  <p class="muted small">Abre la base de datos y elige la hora a la que quieres volver. Se recupera como una base de datos
+    <strong>nueva</strong>, al lado de la original, que no se toca.</p>
+  {% for (motor, instancia, nombre), lista in grupos.items() %}
+  <details class="bd" {{ 'open' if loop.first }}>
+    <summary>{{ nombre }} <span class="muted small">· {{ MOTORES.get(motor, motor) }} · {{ lista | length }} copias, la última {{ lista[0].time | hace }}</span></summary>
+    <table>
+      <thead><tr><th>Copia de</th><th></th></tr></thead>
+      <tbody>
+      {% for c in lista[:72] %}
+        <tr>
+          <td>{{ c.time | fecha }}</td>
+          <td style="display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end">{% if puede_actuar() %}
+            <form method="post" action="{{ url_for('equipo_bd_accion', system_id=s.id) }}"
+                  data-confirm="Se creará una base de datos NUEVA con «{{ nombre }}» tal como estaba el {{ c.time | fecha }}. La original no se toca. ¿Seguir?">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="accion" value="restaurar">
+              <input type="hidden" name="snapshot" value="{{ c.id }}"><input type="hidden" name="motor" value="{{ motor }}">
+              <input type="hidden" name="nombre" value="{{ nombre }}"><input type="hidden" name="instancia" value="{{ instancia }}">
+              <button class="btn btn-small btn-primary" type="submit">Recuperar como base nueva</button>
+            </form>
+            <a class="btn btn-small" href="{{ url_for('equipo_bd_descargar', system_id=s.id, snap=c.id) }}">Descargar</a>
+          {% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </details>
+  {% endfor %}
+  {% elif not error %}
+  <p class="muted">Todavía no hay copias de bases de datos de este equipo.</p>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+document.querySelectorAll('[data-copiar]').forEach(function (b) {
+  b.addEventListener('click', function () {
+    var caja = document.getElementById(b.dataset.copiar);
+    var texto = Array.from(caja.childNodes).filter(function (n) { return n.nodeType === 3; }).map(function (n) { return n.textContent; }).join('');
+    navigator.clipboard.writeText(texto.trim()).then(function () { b.textContent = '¡Copiado!'; setTimeout(function () { b.textContent = 'Copiar'; }, 2000); });
+  });
+});
+</script>
+{% endblock %}

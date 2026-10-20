@@ -102,6 +102,7 @@ mkdir -p "$DATOS" "$LOGS"
 install -m 0755 "$AQUI/zerotouch_agent.py" "$DIR/zerotouch_agent.py"
 [ -f "$AQUI/octopus_monitor.py" ] && install -m 0644 "$AQUI/octopus_monitor.py" "$DIR/octopus_monitor.py"
 [ -f "$AQUI/octopus_vms.py" ] && install -m 0644 "$AQUI/octopus_vms.py" "$DIR/octopus_vms.py"
+[ -f "$AQUI/octopus_bd.py" ] && install -m 0644 "$AQUI/octopus_bd.py" "$DIR/octopus_bd.py"
 "$PY" - "$AQUI/config.json" "$DATOS/config.json" "$DIR/restic" <<'PYEOF'
 import json, sys
 cfg = json.load(open(sys.argv[1]))
