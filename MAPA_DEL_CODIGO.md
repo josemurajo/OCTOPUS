@@ -58,6 +58,8 @@ que haya (copias, etc.) y responde. El servidor **nunca entra** en los equipos: 
 - **Copias de máquinas virtuales** → `agentes/octopus_vms.py` (cada hipervisor: detectar, copiar, recuperar); el
   panel en `lib/admin_panel.py` (rutas `/equipos/<id>/vms`) y `templates/vms.html`; cuánto se guardan, en
   `lib/mantenimiento.py` (etiqueta `vm`).
+- **Modo multiempresa** (varios clientes) → función `multiempresa` en `lib/funciones.py`; en `lib/admin_panel.py` los
+  helpers `_cliente_de`/`_clientes_resumen` y las rutas `/clientes` y `/equipos/<id>/cliente`; `templates/clientes.html`.
 - **Textos legales** → los `.md` de `legal/` (se ven solos en el panel). La lista de cuáles se enseñan, en
   `lib/legal.py` (`DOCUMENTOS`).
 - **El nombre del autor / la atribución** → `NOTICE`, `AUTHORS` y la cabecera de cada archivo de código.

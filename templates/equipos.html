@@ -6,13 +6,23 @@
   {% if puede_actuar() %}<div class="actions">{% if modo_experto() %}<span title="{{ 'Desplegar una instalación de referencia en muchos equipos a la vez (Windows y Linux). En Mac no se puede: Apple solo lo permite con su gestión de dispositivos (MDM).' if funcion_activa('despliegue_masa') else 'En pruebas: se podrá usar cuando termine la batería de pruebas. En Mac no se puede: Apple solo lo permite con su gestión de dispositivos (MDM).' }}"><button class="btn" type="button" disabled>Desplegar sistema en varios equipos</button></span>{% endif %}{% if funcion_activa('buscar_equipos') %}<a class="btn" href="{{ url_for('buscar_equipos') }}">Buscar equipos en la red</a>{% endif %}
     <a class="btn btn-primary" href="{{ url_for('equipo_nuevo') }}">+ Añadir equipo</a></div>{% endif %}
 </div>
+{% if multi %}
+<div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:6px 0 12px">
+  <span class="small muted">Cliente:</span>
+  <a class="btn btn-small {{ '' if cliente_filtro else 'btn-primary' }}" href="{{ url_for('equipos') }}">Todos</a>
+  {% for c in clientes %}<a class="btn btn-small {{ 'btn-primary' if cliente_filtro == c }}" href="{{ url_for('equipos', cliente=c) }}">{{ c }}</a>{% endfor %}
+  <a class="btn btn-small {{ 'btn-primary' if cliente_filtro == 'Sin cliente' }}" href="{{ url_for('equipos', cliente='Sin cliente') }}">Sin cliente</a>
+  <a class="btn btn-small" href="{{ url_for('clientes') }}">Ver resumen por cliente →</a>
+</div>
+{% endif %}
 <div class="card" style="padding:6px 10px">
   <table>
-    <thead><tr><th>Equipo</th><th>Estado</th><th>Última copia</th><th>Copias</th><th>Sistema</th><th></th></tr></thead>
+    <thead><tr><th>Equipo</th>{% if multi %}<th>Cliente</th>{% endif %}<th>Estado</th><th>Última copia</th><th>Copias</th><th>Sistema</th><th></th></tr></thead>
     <tbody>
     {% for e in lista %}
     <tr>
       <td><a href="{{ url_for('equipo', system_id=e.sys.id) }}"><strong>{{ e.sys.hostname }}</strong></a><br><span class="muted small">{{ e.sys.last_ip or e.sys.ip_address or '' }}</span></td>
+      {% if multi %}<td class="small">{{ cliente_de(e.sys) or '—' }}</td>{% endif %}
       <td><span class="pill {{ e.est.nivel }}">{{ e.est.texto }}</span></td>
       <td>{{ e.est.ultima | hace }}</td>
       <td>{{ e.est.copias | length }}</td>
@@ -20,7 +30,7 @@
       <td style="text-align:right"><a class="btn btn-small" href="{{ url_for('equipo', system_id=e.sys.id) }}">Abrir</a></td>
     </tr>
     {% else %}
-    <tr><td colspan="6" class="empty">Todavía no hay equipos.</td></tr>
+    <tr><td colspan="{{ 7 if multi else 6 }}" class="empty">Todavía no hay equipos{% if cliente_filtro %} de «{{ cliente_filtro }}»{% endif %}.</td></tr>
     {% endfor %}
     </tbody>
   </table>

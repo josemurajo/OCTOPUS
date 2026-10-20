@@ -1295,6 +1295,45 @@ app.jinja_env.filters['fromjson'] = _fromjson
 app.jinja_env.globals['puede_actuar'] = puede_actuar
 
 
+def _cliente_de(row):
+    try:
+        return (json.loads(row['notes'] or '{}') or {}).get('cliente', '') or ''
+    except (ValueError, TypeError):
+        return ''
+
+
+def _clientes_lista():
+    """Nombres de cliente que ya existen (para los desplegables)."""
+    conn = get_db_connection()
+    rows = conn.execute('SELECT notes FROM systems').fetchall()
+    conn.close()
+    nombres = set()
+    for r in rows:
+        try:
+            c = (json.loads(r['notes'] or '{}') or {}).get('cliente', '')
+        except (ValueError, TypeError):
+            c = ''
+        if c:
+            nombres.add(c)
+    return sorted(nombres, key=str.lower)
+
+
+def _clientes_resumen():
+    """Por cada cliente: nº de equipos, cuántos conectados, cuántos con problema de copia, avisos abiertos."""
+    lista = _equipos_con_estado()
+    clientes = {}
+    for e in lista:
+        nombre = _cliente_de(e['sys']) or 'Sin cliente'
+        c = clientes.setdefault(nombre, {'nombre': nombre, 'equipos': 0, 'online': 0, 'problemas': 0})
+        c['equipos'] += 1
+        if e['est'].get('online'):
+            c['online'] += 1
+        if e['est'].get('nivel') in ('mal', 'error', 'atencion'):
+            c['problemas'] += 1
+    orden = sorted(clientes.values(), key=lambda c: (c['nombre'] == 'Sin cliente', c['nombre'].lower()))
+    return orden
+
+
 def _equipos_con_estado(force=False):
     conn = get_db_connection()
     rows = conn.execute('SELECT * FROM systems ORDER BY hostname').fetchall()
@@ -1741,7 +1780,13 @@ def inicio():
 @app.route('/equipos')
 @login_required
 def equipos():
-    return render_template('equipos.html', lista=_equipos_con_estado())
+    lista = _equipos_con_estado()
+    multi = _fun.activa('multiempresa')
+    cliente = (request.args.get('cliente') or '').strip()
+    if multi and cliente:
+        lista = [e for e in lista if (_cliente_de(e['sys']) or 'Sin cliente') == cliente]
+    return render_template('equipos.html', lista=lista, multi=multi, cliente_de=_cliente_de,
+                           clientes=_clientes_lista() if multi else [], cliente_filtro=cliente)
 
 
 def _get_system(system_id):
@@ -1749,6 +1794,34 @@ def _get_system(system_id):
     row = conn.execute('SELECT * FROM systems WHERE id = ?', (system_id,)).fetchone()
     conn.close()
     return row
+
+
+@app.route('/clientes')
+@login_required
+def clientes():
+    if not _fun.activa('multiempresa'):
+        return redirect(url_for('equipos'))
+    return render_template('clientes.html', clientes=_clientes_resumen())
+
+
+@app.route('/equipos/<int:system_id>/cliente', methods=['POST'])
+@login_required
+def equipo_cliente(system_id):
+    row = _get_system(system_id)
+    if not row or not puede_actuar() or not _fun.activa('multiempresa'):
+        return redirect(url_for('equipos'))
+    nombre = (request.form.get('cliente') or '').strip()[:120]
+    notas = agentes.notas_equipo(row)
+    if nombre:
+        notas['cliente'] = nombre
+    else:
+        notas.pop('cliente', None)
+    with get_db_connection() as c:
+        c.execute('UPDATE systems SET notes = ? WHERE id = ?', (json.dumps(notas) if notas else None, system_id))
+    agentes.invalidar(system_id)
+    log_audit(session['user_id'], 'SYSTEM_SETTINGS', f'{row["hostname"]}: cliente={nombre or "(ninguno)"}', request.remote_addr)
+    flash('Cliente guardado.' if nombre else 'Equipo sin cliente.', 'success')
+    return redirect(url_for('equipo', system_id=system_id))
 
 
 @app.route('/equipos/<int:system_id>')
@@ -1768,7 +1841,9 @@ def equipo(system_id):
                            completa_activa=bool(agentes.notas_equipo(row).get('copia_completa')),
                            ultima_completa=next((c for c in copias if 'completa' in (c.get('tags') or [])), None),
                            limpia=_inc.ultima_limpia(copias) if any(c['sospechosa'] for c in copias) else None,
-                           pasos=_ban.leer(equipo=row['hostname'], limite=12))
+                           pasos=_ban.leer(equipo=row['hostname'], limite=12),
+                           multi=_fun.activa('multiempresa'), cliente=_cliente_de(row),
+                           clientes=_clientes_lista() if _fun.activa('multiempresa') else [])
 
 
 def _lanzar_prueba(row, user_id=None):
@@ -2310,7 +2385,9 @@ def equipo_nuevo():
         conn = get_db_connection()
         cur = conn.execute("INSERT INTO systems (hostname, ip_address, os_family, status, notes) "
                            "VALUES (?, ?, ?, 'unknown', ?)",
-                           (nombre, ip or '', so, json.dumps({'rutas': rutas})))
+                           (nombre, ip or '', so,
+                            json.dumps({'rutas': rutas, **({'cliente': (request.form.get('cliente') or '').strip()[:120]}
+                                                           if (request.form.get('cliente') or '').strip() else {})})))
         conn.commit()
         sid = cur.lastrowid
         conn.close()
@@ -2321,7 +2398,8 @@ def equipo_nuevo():
             flash(f'Conectando con {nombre} ({ip}) para instalar OCTOPUS. Tarda unos minutos; esta página se actualiza sola.', 'success')
             return redirect(url_for('equipo', system_id=sid))
         return redirect(url_for('equipo_instalar', system_id=sid))
-    return render_template('equipo_nuevo.html', rutas_defecto=alta_equipos.RUTAS_POR_DEFECTO)
+    return render_template('equipo_nuevo.html', rutas_defecto=alta_equipos.RUTAS_POR_DEFECTO,
+                           multi=_fun.activa('multiempresa'), clientes=_clientes_lista() if _fun.activa('multiempresa') else [])
 
 
 def _rutas_de(system):

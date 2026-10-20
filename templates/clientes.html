@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Clientes{% endblock %}
+{% block content %}
+{# Módulo multiempresa: resumen por cliente (lib/admin_panel.py: clientes) #}
+<div><h1>Clientes</h1><p class="lead">Cada empresa que llevas, con sus equipos de un vistazo. Pulsa un cliente para
+  ver solo sus equipos.</p></div>
+
+{% if clientes %}
+<div class="mlista" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:14px">
+  {% for c in clientes %}
+  <a class="card meq" href="{{ url_for('equipos', cliente=c.nombre) }}" style="display:block; margin:0">
+    <div class="t" style="display:flex; justify-content:space-between; align-items:center">
+      <span><strong>{{ c.nombre }}</strong></span>
+      {% if c.problemas %}<span class="chip mal">{{ c.problemas }} con aviso</span>
+      {% else %}<span class="chip ok">Al día</span>{% endif %}
+    </div>
+    <p class="muted small" style="margin:8px 0 0">
+      {{ c.equipos }} equipo{{ 's' if c.equipos != 1 }} · {{ c.online }} conectado{{ 's' if c.online != 1 }}</p>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card"><p>Todavía no hay equipos. Cuando añadas equipos y les pongas un cliente, aparecerán aquí
+  agrupados.</p></div>
+{% endif %}
+{% endblock %}

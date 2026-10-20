@@ -6,7 +6,14 @@
   <div class="hero-icon" aria-hidden="true">{{ '✓' if est.nivel == 'ok' else '!' }}</div>
   <div style="flex:1">
     <h1>{{ s.hostname }}</h1>
-    <p class="muted">{{ est.texto }} · última copia {{ est.ultima | hace }}{% if est.ultima %} ({{ est.ultima | fecha }}){% endif %}</p>
+    <p class="muted">{{ est.texto }} · última copia {{ est.ultima | hace }}{% if est.ultima %} ({{ est.ultima | fecha }}){% endif %}{% if multi and cliente %} · Cliente: <strong>{{ cliente }}</strong>{% endif %}</p>
+    {% if multi and puede_actuar() %}
+    <form method="post" action="{{ url_for('equipo_cliente', system_id=s.id) }}" style="display:flex; gap:8px; align-items:center; margin-top:4px">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input list="lista-clientes" name="cliente" value="{{ cliente }}" placeholder="Cliente de este equipo" style="max-width:240px">
+      <datalist id="lista-clientes">{% for c in clientes %}<option value="{{ c }}">{% endfor %}</datalist>
+      <button class="btn btn-small" type="submit">Guardar cliente</button>
+    </form>{% endif %}
   </div>
   <div class="actions">
     {% if puede_actuar() %}

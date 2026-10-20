@@ -44,7 +44,14 @@
         <span>Después, entrar a este equipo <strong>solo con la clave del servidor</strong> (desactiva la contraseña por SSH). Recomendado en servidores.</span></label>
     </div>
 
-    <button class="btn btn-primary" type="submit" id="boton">Conectar e instalar</button>
+      {% if multi %}
+  <div class="field">
+    <label for="cliente">Cliente (de qué empresa es este equipo)</label>
+    <input list="lista-clientes" id="cliente" name="cliente" placeholder="Nombre de la empresa cliente">
+    <datalist id="lista-clientes">{% for c in clientes %}<option value="{{ c }}">{% endfor %}</datalist>
+  </div>
+  {% endif %}
+<button class="btn btn-primary" type="submit" id="boton">Conectar e instalar</button>
   </form>
 </div>
 <script>
