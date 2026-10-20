@@ -175,6 +175,7 @@ try {
         ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
     Copy-Item (Join-Path $Aqui 'zerotouch_agent.py') (Join-Path $Prog 'zerotouch_agent.py') -Force
     if (Test-Path (Join-Path $Aqui 'octopus_monitor.py')) { Copy-Item (Join-Path $Aqui 'octopus_monitor.py') (Join-Path $Prog 'octopus_monitor.py') -Force }
+    if (Test-Path (Join-Path $Aqui 'octopus_vms.py')) { Copy-Item (Join-Path $Aqui 'octopus_vms.py') (Join-Path $Prog 'octopus_vms.py') -Force }
     Copy-Item (Join-Path $Aqui 'config.json') (Join-Path $Datos 'config.json') -Force
     # solo SYSTEM y Administradores pueden leer la configuracion (contiene claves)
     # Permisos: se protege la CARPETA y los archivos de dentro heredan de ella. (Antes se aplicaba con /T a

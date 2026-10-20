@@ -128,6 +128,27 @@ Dejan de estar «En pruebas»: bloquear atacantes (encendida de serie), panel so
 aprobación, LDAP/Active Directory, OIDC y RADIUS. **Siguen en pruebas** (necesitan equipos físicos): USB de rescate,
 imagen de disco, arranque por red (PXE) y despliegue en masa; cada una con su botón de activar/desactivar.
 
+## 2f. Copias de máquinas virtuales (20/10) — HECHO, «en pruebas» hasta probarlo en un hipervisor real
+- Nuevo `agentes/octopus_vms.py`: detecta las máquinas virtuales del equipo y copia **cada una entera** (discos +
+  configuración), aunque esté encendida: **Hyper-V** (instantánea VSS, con toda la cadena de discos), **KVM/libvirt**
+  (instantánea externa temporal + blockcommit; congela el sistema de archivos si tiene qemu-guest-agent) y
+  **Proxmox** (vzdump directo al almacén). Cada copia es completa; solo ocupa lo que cambia.
+- **Recuperar aparte**: nunca toca la original; comprueba que hay sitio; en libvirt deja un XML listo con otro nombre
+  y otra MAC (`virsh define`), en Hyper-V explica la importación, en Proxmox `qmrestore`.
+- Panel: ficha del equipo → **Máquinas virtuales**: activar, cada día o cada semana, elegir cuáles, «Copiar ahora»,
+  copias hechas y «Recuperar aparte». Función «Copias de máquinas virtuales» en Ajustes → Funciones (en pruebas).
+- Retención propia (ocupan mucho): por máquina, 3 últimas + 4 semanales + 3 mensuales. La copia completa del disco ya
+  no duplica los discos de las máquinas virtuales.
+- Pruebas: `tests/ci/prueba_vms.py` (24, hipervisores simulados, copias y recuperación reales; en GitHub en Linux y
+  Mac) y de punta a punta por el panel con el agente del laboratorio (18).
+- 🔴 **Para quitarle «en pruebas»**: probarlo en un Hyper-V, un KVM y un Proxmox de verdad.
+
+## 2g. Imagen del servidor más ligera (20/10) — HECHO
+- `ansible-core` (~100 MB) ya no va en la imagen: `octopus.sh desplegar` lo instala solo la primera vez que se usa
+  (en /data/ansible/venv, se conserva al actualizar).
+- 🔴 **José, 1 minuto**: en la página del repositorio en GitHub, rueda dentada ⚙ junto a «About» → pega la
+  descripción y los temas (yo no puedo cambiar los ajustes del repo desde aquí).
+
 ## 3. Pruebas en Mac, Windows y Linux con GitHub (gratis)  — HECHO
 
 - [x] Repositorio público **josemurajo/OCTOPUS** con las pruebas automáticas (se lanzan solas en cada cambio).

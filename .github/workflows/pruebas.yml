@@ -47,6 +47,10 @@ jobs:
           bash tests/ci/herramientas.sh "$RUNNER_TEMP/bin"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
+      - name: Copias de máquinas virtuales (hipervisores simulados, copias y recuperación de verdad con restic)
+        if: matrix.so != 'windows'
+        run: python tests/ci/prueba_vms.py
+
       - name: OpenSSL 3 (Mac)
         if: matrix.so == 'macos'
         run: echo "$(brew --prefix openssl@3)/bin" >> "$GITHUB_PATH"

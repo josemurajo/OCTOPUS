@@ -72,6 +72,13 @@ FUNCIONES: list[dict] = [
      "explica": "Los primeros días de un equipo nuevo, si la detección ve algo raro solo avisa en amarillo (no aísla), "
                 "mientras aprende lo que es normal en ese equipo. Los archivos trampa siguen actuando siempre.",
      "opciones": [("dias", "Días de aprendizaje", "int", 7, "experto", "", {"min": 1, "max": 60})]},
+    {"clave": "copias_vm", "grupo": "copias", "nivel": "basico", "defecto": False, "en_pruebas": True,
+     "nombre": "Copias de máquinas virtuales",
+     "explica": "En los equipos con máquinas virtuales (Hyper-V, KVM/libvirt o Proxmox) copia cada máquina ENTERA, "
+                "aunque esté encendida, para poder levantarla otra vez. Cada copia es completa, pero solo ocupa lo que "
+                "ha cambiado. Se activa equipo por equipo (ficha del equipo → Máquinas virtuales).",
+     "no_mac": True,
+     "motivo_mac": "En Mac no: Parallels y VMware Fusion no tienen una forma estándar de copiar una máquina encendida."},
 
     # ------------------------------------------------------------------------------------------- ataques
     {"clave": "incident_auto_response", "grupo": "ataques", "nivel": "basico", "defecto": True,
@@ -273,7 +280,7 @@ def para_equipo(clave: str, so: str) -> tuple[bool, str]:
     """¿Se puede usar esta funcion en un equipo de este sistema? (False, motivo) para Mac en lo que Apple no deja."""
     f = _POR_CLAVE[clave]
     if so == "macos" and f.get("no_mac"):
-        return False, MOTIVO_MAC
+        return False, f.get("motivo_mac", MOTIVO_MAC)
     if not activa(clave):
         return False, ("Está en pruebas: se podrá usar cuando termine la batería de pruebas."
                        if f.get("en_pruebas") else "Está apagada en Ajustes → Funciones.")

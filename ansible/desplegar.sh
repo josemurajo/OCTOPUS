@@ -21,7 +21,16 @@ for a in "$@"; do if [[ "$a" == *.ini ]]; then INV="$a"; else ARGS+=("$a"); fi; 
 
 [ -f "$INV" ] || { echo "Falta $INV. Copia ansible/equipos.ini.ejemplo como ansible/equipos.ini, rellenalo y vuelve a ejecutar."; exit 1; }
 [ -f "$DIR/config.json" ] || { echo "Falta la configuracion de los agentes: el servidor no ha arrancado bien (octopus.sh estado)"; exit 1; }
-command -v ansible-playbook >/dev/null || { echo "Falta ansible en el servidor (vuelve a ejecutar instalar_servidor.sh)"; exit 1; }
+# ansible no viene en la imagen (ocupa ~100 MB y casi nadie lo usa): se instala la primera vez que hace falta, en
+# /data/ansible/venv, que se conserva al actualizar OCTOPUS. Necesita Internet solo esa primera vez.
+VENV=/data/ansible/venv
+if ! command -v ansible-playbook >/dev/null && [ ! -x "$VENV/bin/ansible-playbook" ]; then
+    echo "Primera vez: instalando ansible en el servidor (un par de minutos, solo esta vez)..."
+    mkdir -p /data/ansible
+    "$PY" -m venv "$VENV" && "$VENV/bin/pip" install -q "ansible-core>=2.15,<2.18" \
+        || { rm -rf "$VENV"; echo "No se pudo instalar ansible (¿hay Internet en el servidor?). Vuelve a intentarlo."; exit 1; }
+fi
+[ -x "$VENV/bin/ansible-playbook" ] && export PATH="$VENV/bin:$PATH"
 
 if [ ! -f "$KEY" ]; then
     mkdir -p /root/.ssh && chmod 700 /root/.ssh

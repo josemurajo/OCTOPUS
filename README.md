@@ -14,8 +14,18 @@ a ataques (ransomware) y un panel web pensado para personas que no son técnicas
   que las copias sirven.
 - **Avisos** por correo y Telegram, siempre con "qué hacer". **Informe mensual** para imprimir o enviar.
 - **Kit de recuperación**: las claves para abrir las copias aunque se pierda el servidor.
+- **Copia completa del equipo** (opcional): todo el disco, para reconstruir un equipo entero.
+- **Máquinas virtuales** (en pruebas): copia cada máquina **entera** aunque esté encendida (Hyper-V, KVM/libvirt y
+  Proxmox) y la recupera aparte, sin tocar la original.
+- **Monitorización** (opcional, viene apagada): uso, temperatura, discos y batería de cada equipo, en directo.
+- **Panel seguro**: doble autenticación con el móvil, bloqueo de atacantes, usuarios de Active Directory/Microsoft 365.
 
-Instalación y uso en una empresa: **[PRODUCCION.md](PRODUCCION.md)**.
+| Para… | Mira |
+|---|---|
+| Instalarlo en una empresa | **[PRODUCCION.md](PRODUCCION.md)** |
+| Probarlo con máquinas virtuales | **[maquinas/](maquinas/)** (laboratorio con su README) |
+| Saber qué archivo tocar para cambiar algo | **[MAPA_DEL_CODIGO.md](MAPA_DEL_CODIGO.md)** |
+| Ver que todo pasa las pruebas | pestaña **Actions** (Linux, Windows y Mac en cada cambio) |
 
 ## Cómo funciona
 
@@ -71,7 +81,7 @@ Después, en el panel: **Equipos → Añadir equipo**.
 | `install/sandbox/` | Sala de análisis de incidentes (contenedor aislado sin red) |
 | `tests/ci/` | Pruebas automáticas en equipos reales de GitHub (Linux, Windows y Mac) |
 
-El laboratorio de pruebas con máquinas virtuales está en la carpeta [`maquinas/`](maquinas/) (tiene su propio README).
+El laboratorio de pruebas con máquinas virtuales está en la carpeta `maquinas` (al lado de esta).
 
 ## Antes de publicar una versión (para que una actualización nunca rompa las copias)
 

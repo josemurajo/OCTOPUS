@@ -79,6 +79,16 @@ class Agente:
     def copia_completa(self):
         return self._req("POST", "/webhook/copia-completa", timeout=12 * 3600)
 
+    def vms(self):
+        return self._req("GET", "/vms", timeout=90)
+
+    def copia_vms(self, solo=None):
+        return self._req("POST", "/webhook/copia-vms", {"solo": list(solo or [])}, timeout=24 * 3600)
+
+    def restaurar_vm(self, snapshot, nombre, hipervisor):
+        return self._req("POST", "/webhook/restaurar-vm",
+                         {"snapshot": snapshot, "nombre": nombre, "hipervisor": hipervisor}, timeout=24 * 3600)
+
     def restore(self, path, snapshot="latest", destino="original"):
         return self._req("POST", "/webhook/restaurar-archivo",
                          {"archivo": path, "snapshot": snapshot, "destino": destino}, timeout=3600)
@@ -200,27 +210,23 @@ def invalidar(system_id=None):
             _cache.pop(system_id, None)
 
 
-def lanzar_copia(system, on_done=None, completa=False):
-    """Lanza la copia (o la copia completa del equipo) en segundo plano y devuelve el id del trabajo."""
+def _lanzar(system, tipo, mensaje, llamada, al_terminar, on_done=None):
+    """Trabajo largo en segundo plano (copia, recuperación...) que se ve en la ficha del equipo."""
     job_id = uuid.uuid4().hex[:10]
     with _jobs_lock:
         for j in JOBS.values():
             if j["system_id"] == system["id"] and j["estado"] == "en_curso":
                 return j["id"]
-        JOBS[job_id] = {"id": job_id, "system_id": system["id"], "equipo": system["hostname"],
-                        "tipo": "copia", "estado": "en_curso",
-                        "mensaje": "Copia completa del equipo en curso (puede tardar horas)..." if completa else "Copia en curso...",
-                        "inicio": datetime.now(timezone.utc), "fin": None}
-    ip = ip_de(system)
+        JOBS[job_id] = {"id": job_id, "system_id": system["id"], "equipo": system["hostname"], "tipo": tipo,
+                        "estado": "en_curso", "mensaje": mensaje, "inicio": datetime.now(timezone.utc), "fin": None}
     sid = system["id"]
 
     def _run():
-        r = Agente(ip).copia_completa() if completa else Agente(ip).backup()
+        r = llamada()
         ok = r.get("status") == "success"
         with _jobs_lock:
             JOBS[job_id].update(estado="ok" if ok else "error", fin=datetime.now(timezone.utc),
-                                mensaje=("Copia completa terminada" if completa else "Copia terminada") if ok
-                                else (r.get("message") or "Error desconocido"))
+                                mensaje=al_terminar(r) if ok else (r.get("message") or "Error desconocido"))
         invalidar(sid)
         if on_done:
             try:
@@ -230,6 +236,26 @@ def lanzar_copia(system, on_done=None, completa=False):
 
     threading.Thread(target=_run, daemon=True).start()
     return job_id
+
+
+def lanzar_copia(system, on_done=None, completa=False, vms=False):
+    """Lanza la copia (la normal, la completa del equipo o la de sus máquinas virtuales) en segundo plano."""
+    ag = Agente(ip_de(system))
+    if vms:
+        return _lanzar(system, "copia_vms", "Copia de las máquinas virtuales en curso (puede tardar horas)...",
+                       ag.copia_vms, lambda r: "Máquinas virtuales copiadas: " + ", ".join(
+                           v.get("nombre", "?") for v in r.get("vms", [])), on_done)
+    if completa:
+        return _lanzar(system, "copia", "Copia completa del equipo en curso (puede tardar horas)...",
+                       ag.copia_completa, lambda r: "Copia completa terminada", on_done)
+    return _lanzar(system, "copia", "Copia en curso...", ag.backup, lambda r: "Copia terminada", on_done)
+
+
+def lanzar_restauracion_vm(system, snapshot, nombre, hipervisor, on_done=None):
+    """Recupera una máquina virtual en una carpeta aparte del equipo (la original no se toca)."""
+    return _lanzar(system, "recuperacion", f"Recuperando la máquina virtual {nombre} (puede tardar)...",
+                   lambda: Agente(ip_de(system)).restaurar_vm(snapshot, nombre, hipervisor),
+                   lambda r: f"{nombre} recuperada en {r.get('carpeta')}. {r.get('instrucciones', '')}".strip(), on_done)
 
 
 def trabajos_de(system_id=None, limit=10):

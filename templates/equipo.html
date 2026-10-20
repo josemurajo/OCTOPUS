@@ -180,6 +180,15 @@
       </form>
     </li>
     <li>
+      <strong>Máquinas virtuales</strong>
+      {% set okvm, motivovm = para_equipo('copias_vm', s.os_family) %}
+      <p class="hint">Si este equipo tiene máquinas virtuales (Hyper-V, KVM/libvirt o Proxmox), copiarlas enteras aunque
+        estén encendidas, y recuperarlas aparte sin tocar la original.</p>
+      {% if okvm %}<a class="btn" href="{{ url_for('equipo_vms', system_id=s.id) }}">Máquinas virtuales de este equipo</a>
+      {% else %}<span title="{{ motivovm }}"><button class="btn" type="button" disabled>Máquinas virtuales de este equipo</button></span>
+      <p class="hint" style="margin-top:6px">{{ motivovm }}</p>{% endif %}
+    </li>
+    <li>
       <strong>Levantar el equipo entero</strong>
       <p class="hint">Para cuando el equipo ya no arranca o hay que montarlo en un disco nuevo.</p>
       <div style="display:flex; gap:10px; flex-wrap:wrap">

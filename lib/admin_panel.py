@@ -1844,6 +1844,84 @@ def equipo_ajustes(system_id):
     return redirect(url_for('equipo', system_id=system_id))
 
 
+# ------------------------------------------------------------------ copias de las máquinas virtuales de un equipo
+import re as _re_vm
+
+_HIPERVISORES = {'hyperv': 'Hyper-V', 'libvirt': 'KVM / libvirt', 'proxmox': 'Proxmox'}
+
+
+@app.route('/equipos/<int:system_id>/vms')
+@login_required
+def equipo_vms(system_id):
+    """Las máquinas virtuales de un equipo: cuáles copiar, cada cuánto, las copias hechas y recuperar."""
+    row = _get_system(system_id)
+    if not row:
+        return redirect(url_for('equipos'))
+    ok, motivo = _fun.para_equipo('copias_vm', row['os_family'] or '')
+    datos, error = {}, ''
+    if ok:
+        if agentes.estado_equipo(row).get('online'):
+            r = agentes.Agente(agentes.ip_de(row)).vms()
+            if r.get('status') == 'success':
+                datos = r
+            else:
+                error = r.get('message') or 'El equipo no ha contestado.'
+        else:
+            error = 'El equipo está apagado o desconectado: enciéndelo para ver sus máquinas virtuales.'
+    return render_template('vms.html', s=row, ok=ok, motivo=motivo, error=error, vms=datos.get('vms', []),
+                           copias=datos.get('copias', []), conf=agentes.notas_equipo(row).get('vms') or {},
+                           trabajos=agentes.trabajos_de(row['id'], 5), HIP=_HIPERVISORES)
+
+
+@app.route('/equipos/<int:system_id>/vms', methods=['POST'])
+@login_required
+def equipo_vms_accion(system_id):
+    row = _get_system(system_id)
+    if not row or not puede_actuar():
+        return redirect(url_for('equipos'))
+    ok, motivo = _fun.para_equipo('copias_vm', row['os_family'] or '')
+    volver = redirect(url_for('equipo_vms', system_id=system_id))
+    if not ok:
+        flash(motivo, 'error')
+        return volver
+    accion = request.form.get('accion')
+    notas = agentes.notas_equipo(row)
+    conf = notas.get('vms') or {}
+    if accion == 'guardar':
+        activa = request.form.get('activa') == 'on'
+        todas = [n[:200] for n in request.form.getlist('todas')]
+        marcadas = set(request.form.getlist('incluir'))
+        notas['vms'] = {'activa': activa, 'dias': 7 if request.form.get('dias') == '7' else 1,
+                        'excluir': sorted(n for n in todas if n not in marcadas)}
+        with get_db_connection() as c:
+            c.execute('UPDATE systems SET notes = ? WHERE id = ?', (json.dumps(notas), system_id))
+        agentes.invalidar(system_id)
+        log_audit(session['user_id'], 'SYSTEM_SETTINGS', f'{row["hostname"]}: copias_vm={notas["vms"]}', request.remote_addr)
+        flash(('Copias de máquinas virtuales activadas: ' + ('cada semana' if notas['vms']['dias'] == 7 else 'cada día')
+               + ' (la primera, en la próxima copia diaria; o pulsa «Copiar ahora»).') if activa else
+              'Copias de máquinas virtuales desactivadas. Las ya hechas se borran solas con las antiguas.', 'success')
+    elif accion == 'ahora':
+        if not conf.get('activa'):
+            flash('Primero activa las copias de máquinas virtuales de este equipo.', 'error')
+            return volver
+        agentes.lanzar_copia(row, on_done=_copia_terminada, vms=True)
+        log_audit(session['user_id'], 'VM_BACKUP_START', f'equipo={row["hostname"]}', request.remote_addr)
+        flash('Copia de las máquinas virtuales en marcha. La primera puede tardar horas; puedes seguir usando el panel.',
+              'success')
+    elif accion == 'restaurar':
+        snap, nombre = request.form.get('snapshot', ''), request.form.get('nombre', '')[:200]
+        hip = request.form.get('hipervisor', '')
+        if not _re_vm.fullmatch(r'[0-9a-fA-F]{6,64}', snap) or hip not in _HIPERVISORES:
+            flash('Copia no válida.', 'error')
+            return volver
+        agentes.lanzar_restauracion_vm(row, snap, nombre, hip, on_done=_copia_terminada)
+        log_audit(session['user_id'], 'VM_RESTORE_START', f'equipo={row["hostname"]} vm={nombre} copia={snap}',
+                  request.remote_addr)
+        flash(f'Recuperando {nombre} en una carpeta aparte del equipo (la máquina original no se toca). '
+              'Cuando termine, aquí verás dónde ha quedado y cómo arrancarla.', 'success')
+    return volver
+
+
 @app.route('/equipos/<int:system_id>/copia-completa', methods=['POST'])
 @login_required
 def equipo_copia_completa(system_id):
@@ -1876,9 +1954,13 @@ def equipo_copia_completa(system_id):
 def _ajustes_agente(row):
     """Ajustes generales de las copias + los propios de este equipo (los recibe el agente en cada consulta)."""
     aj = _ajustes_copias()
+    vms = agentes.notas_equipo(row).get('vms') or {}
     return {'limite_kbps': aj['limite_kbps'], 'solo_horario': aj['solo_horario'],
             'copia_completa': bool(agentes.notas_equipo(row).get('copia_completa')), 'copia_completa_dias': 7,
-            'senuelos': config_manager.get_config('senuelos') is not False}
+            'senuelos': config_manager.get_config('senuelos') is not False,
+            # siempre se manda (aunque esté apagada): si no, el agente se quedaría con lo último que recibió
+            'vms': {'activa': bool(vms.get('activa')) and _fun.activa('copias_vm'), 'dias': vms.get('dias') or 1,
+                    'excluir': list(vms.get('excluir') or [])}}
 
 
 def _copia_terminada(system_id, ok, resp):

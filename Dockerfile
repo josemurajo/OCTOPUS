@@ -28,7 +28,8 @@ RUN set -eux; arch="${TARGETARCH:-amd64}"; \
     restic version; rest-server --version; docker --version
 
 COPY requirements.txt /app/requirements.txt
-RUN pip install -r /app/requirements.txt "ansible-core>=2.15,<2.18"
+# ansible-core ya no va en la imagen (~100 MB): ansible/desplegar.sh lo instala la primera vez que se usa
+RUN pip install -r /app/requirements.txt
 
 COPY . /app
 # Todo lo que cambia (configuracion, claves, base de datos, tunel) vive en el volumen /data

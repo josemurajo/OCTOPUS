@@ -165,6 +165,14 @@ def retencion(env: dict) -> dict:
                 borradas += len(grupo.get("remove") or [])
         except (ValueError, IndexError, AttributeError):
             pass
+        # máquinas virtuales (ocupan mucho): por cada máquina, las 3 últimas, una por semana 4 semanas y una al mes 3 meses
+        rv = run([restic_bin(), "forget", "--prune", "--tag", "vm", "--group-by", "host,tags",
+                  "--keep-last", "3", "--keep-weekly", "4", "--keep-monthly", "3", "--json"], env=restic_env(repo, pwd))
+        try:
+            for grupo in json.loads((rv.stdout or "").strip().splitlines()[0] if rv.stdout.strip() else "[]"):
+                borradas += len(grupo.get("remove") or [])
+        except (ValueError, IndexError, AttributeError):
+            pass
     detalle = (f"Politica {p['nombre']}: {p['daily']} diarias, {p['weekly']} semanales, {p['monthly']} mensuales. "
                f"Copias antiguas borradas: {borradas}") if ok else (r.stderr or r.stdout)[-400:]
     return {"ok": ok, "detalle": detalle}

@@ -12,7 +12,7 @@ Todas permiten usarlos junto a la AGPL-3.0. Los textos completos de cada licenci
 | rest-server | BSD-2-Clause | https://github.com/restic/rest-server | El almacén de copias del servidor |
 | Python | PSF-2.0 | https://www.python.org | Ejecuta el servidor y el agente |
 | Docker CLI | Apache-2.0 | https://github.com/docker/cli | Sala de análisis (solo en el servidor Docker) |
-| ansible-core | GPL-3.0-or-later | https://github.com/ansible/ansible | Despliegue a muchos equipos Linux; se ejecuta como programa aparte (no se mezcla con el código de OCTOPUS) |
+| ansible-core | GPL-3.0-or-later | https://github.com/ansible/ansible | Solo si se usa «octopus.sh desplegar» (agentes en muchos Linux a la vez): se instala entonces, aparte del código de OCTOPUS |
 | smartmontools | GPL-2.0-or-later | https://www.smartmontools.org | Salud del disco en la monitorización; se instala con el gestor de paquetes del sistema |
 | YARA | BSD-3-Clause | https://github.com/VirusTotal/yara | Análisis de archivos sospechosos (servidor Docker) |
 | OpenSSL | Apache-2.0 | https://www.openssl.org | Certificados del servidor |

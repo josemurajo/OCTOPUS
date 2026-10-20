@@ -929,7 +929,7 @@ def copia_completa(cfg: dict) -> dict:
         excl = EXCL_COMPLETA_WINDOWS if SYSTEM == "windows" else EXCL_COMPLETA_MAC if SYSTEM == "darwin" else EXCL_COMPLETA_LINUX
         cmd = [binary, "backup", *rutas_completas(), "--tag", "octopus-agent", "--tag", "completa",
                "--host", agent_host(cfg), "--json"]
-        for e in excl:
+        for e in [*excl, *discos_de_vms()]:   # las máquinas virtuales ya se copian aparte (y coherentes)
             cmd += ["--exclude", e]
         kbps = limite_subida(AJUSTES_SERVIDOR)
         if kbps:
@@ -977,6 +977,106 @@ def toca_copia_completa(ahora: datetime | None = None) -> bool:
     except (OSError, ValueError):
         return True
     return ((ahora or datetime.now()) - ultima).total_seconds() >= dias * 86400 - 3600
+
+
+# ---------------------------------------------------------------- copias de las máquinas virtuales (opcional)
+# La lógica de cada hipervisor está en octopus_vms.py (va junto al agente). Aquí solo se decide cuándo y se reparte.
+def _vms_mod():
+    try:
+        import octopus_vms
+        return octopus_vms
+    except ImportError:
+        return None
+
+
+def ajustes_vms() -> dict:
+    """Lo que ha elegido el panel para este equipo: {activa, dias, excluir: [nombres]}."""
+    v = AJUSTES_SERVIDOR.get("vms")
+    return v if isinstance(v, dict) else {}
+
+
+def _ctx_vms(cfg: dict) -> dict:
+    opts = []
+    kbps = limite_subida(AJUSTES_SERVIDOR)
+    if kbps:
+        opts += ["--limit-upload", str(kbps)]
+    return {"bin": restic_bin(), "env": restic_env(cfg), "host": agent_host(cfg), "opts": opts, "dir": str(STATE_DIR)}
+
+
+def copia_vms(cfg: dict, solo=None) -> dict:
+    """Copia completa de cada máquina virtual del equipo (salvo las que el panel haya dejado fuera)."""
+    mod = _vms_mod()
+    if mod is None:
+        return {"status": "error", "message": "Falta octopus_vms.py junto al agente (reinstala el agente desde el panel)"}
+    if not _BACKUP_LOCK.acquire(blocking=False):
+        return {"status": "error", "message": "Ya hay una copia en curso en este equipo"}
+    pasos: list[str] = []
+
+    def paso(texto: str) -> None:
+        pasos.append(f"[{datetime.now():%H:%M:%S}] {texto}")
+        log(texto)
+    try:
+        binary = restic_bin()
+        if not _restic_ready(binary):
+            return {"status": "error", "message": f"restic no encontrado: {binary}"}
+        err = asegurar_repo(cfg)
+        if err:
+            return err
+        fuera = set(ajustes_vms().get("excluir") or [])
+        solo = set(solo or [])
+        vms = [v for v in mod.detectar() if v["nombre"] not in fuera and (not solo or v["nombre"] in solo)]
+        if not vms:
+            return {"status": "error", "message": "No se ha encontrado ninguna máquina virtual que copiar en este equipo"}
+        ctx = _ctx_vms(cfg)
+        resultados = []
+        for vm in vms:
+            paso(f"Máquina virtual {vm['nombre']} ({mod.HIPERVISORES.get(vm['hipervisor'], vm['hipervisor'])}, "
+                 f"{vm['estado']}): copiando entera")
+            r = mod.copiar(ctx, vm)
+            resultados.append(r)
+            paso(f"  {vm['nombre']}: " + ("copiada" + (f" (aviso: {r['aviso']})" if r.get("aviso") else "")
+                                         if r.get("status") == "success" else f"FALLÓ: {r.get('message', '')[:200]}"))
+        bien = [r for r in resultados if r.get("status") == "success"]
+        if bien:
+            try:
+                STATE_DIR.mkdir(parents=True, exist_ok=True)
+                (STATE_DIR / "ultima_copia_vms.txt").write_text(datetime.now().isoformat(timespec="seconds"))
+            except OSError:
+                pass
+        mal = [r for r in resultados if r.get("status") != "success"]
+        res = {"status": "success" if not mal else "error", "vms": resultados, "pasos": pasos}
+        if mal:
+            res["message"] = "No se pudo copiar: " + "; ".join(f"{r.get('nombre')}: {r.get('message', '')[:150]}" for r in mal)
+        return res
+    finally:
+        _BACKUP_LOCK.release()
+
+
+def toca_copia_vms(ahora: datetime | None = None) -> bool:
+    """Si está activada y la última copia de las máquinas virtuales tiene más de N días (1 por defecto)."""
+    aj = ajustes_vms()
+    if not aj.get("activa"):
+        return False
+    try:
+        dias = float(aj.get("dias") or 1)
+    except (TypeError, ValueError):
+        dias = 1
+    try:
+        ultima = datetime.fromisoformat((STATE_DIR / "ultima_copia_vms.txt").read_text().strip())
+    except (OSError, ValueError):
+        return True
+    return ((ahora or datetime.now()) - ultima).total_seconds() >= dias * 86400 - 3600
+
+
+def discos_de_vms() -> list[str]:
+    """Discos y configuración de las máquinas virtuales (para no copiarlos dos veces en la copia completa)."""
+    mod = _vms_mod()
+    if mod is None or not ajustes_vms().get("activa"):
+        return []
+    try:
+        return [p for v in mod.detectar() for p in v.get("discos", []) + v.get("config", [])]
+    except Exception:
+        return []
 
 
 def limite_subida(ajustes: dict, ahora: datetime | None = None) -> int:
@@ -1244,6 +1344,11 @@ def despachar(cfg: dict, metodo: str, ruta: str, datos: dict | None = None) -> d
             return {"status": "success", "aislado": esta_aislado(), "detector": bool(cfg.get("detector", True))}
         if ruta == "/info":
             return {"status": "success", **info_equipo(cfg)}
+        if ruta == "/vms":
+            mod = _vms_mod()
+            if mod is None:
+                return {"status": "error", "message": "Falta octopus_vms.py junto al agente (reinstala el agente)"}
+            return {"status": "success", "vms": mod.detectar(), "copias": mod.copias(_ctx_vms(cfg))}
         return {"status": "error", "message": "Orden desconocida"}
     log(f"Orden {ruta}")
     if ruta == "/webhook/aislamiento":
@@ -1254,6 +1359,17 @@ def despachar(cfg: dict, metodo: str, ruta: str, datos: dict | None = None) -> d
         if not AJUSTES_SERVIDOR.get("copia_completa"):
             return {"status": "error", "message": "La copia completa no esta activada para este equipo"}
         return copia_completa(cfg)
+    if ruta == "/webhook/copia-vms":
+        if not ajustes_vms().get("activa"):
+            return {"status": "error", "message": "La copia de máquinas virtuales no está activada para este equipo"}
+        return copia_vms(cfg, datos.get("solo"))
+    if ruta == "/webhook/restaurar-vm":
+        mod = _vms_mod()
+        if mod is None:
+            return {"status": "error", "message": "Falta octopus_vms.py junto al agente (reinstala el agente)"}
+        suspender_detector(3 * 3600)     # escribir discos enteros no es un ataque
+        return mod.restaurar(_ctx_vms(cfg), str(datos.get("snapshot", "")), str(datos.get("nombre", "vm")),
+                             str(datos.get("hipervisor", "")), datos.get("destino") or None)
     if ruta in ("/webhook/backup-forense", "/webhook/backup"):
         return backup_forense(cfg, datos.get("paths") or datos.get("path"))
     if ruta == "/webhook/forense":
@@ -1480,6 +1596,9 @@ def copia_programada() -> int:
     if toca_copia_completa():
         rc = copia_completa(cfg)
         log(f"Copia completa programada: {rc.get('status')} {rc.get('message', '')}".strip())
+    if toca_copia_vms():
+        rv = copia_vms(cfg)
+        log(f"Copia de máquinas virtuales programada: {rv.get('status')} {rv.get('message', '')}".strip())
     return 0 if res.get("status") == "success" else 1
 
 

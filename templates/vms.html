@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Máquinas virtuales · {{ s.hostname }}{% endblock %}
+{% block content %}
+{# Máquinas virtuales de un equipo: cuáles se copian, cada cuánto, copias hechas y recuperar (lib/admin_panel.py: equipo_vms) #}
+<p class="small"><a href="{{ url_for('equipo', system_id=s.id) }}">← {{ s.hostname }}</a></p>
+<h1>Máquinas virtuales de {{ s.hostname }}</h1>
+<p class="lead">Cada máquina se copia <strong>entera</strong> (sus discos y su configuración), aunque esté encendida.
+  Cada copia es completa —desde cualquiera se recupera la máquina entera— pero en el almacén solo ocupa lo que ha
+  cambiado desde la anterior.</p>
+
+{% if not ok %}
+<div class="notice atencion"><strong>No disponible</strong>{{ motivo }}
+  {% if 'pruebas' in motivo %} Se puede encender a sabiendas en Ajustes → Funciones (modo experto).{% endif %}</div>
+{% else %}
+
+{% for t in trabajos if t.estado == 'en_curso' and t.tipo in ('copia_vms', 'recuperacion') %}
+<div class="notice ok"><strong>En curso</strong>{{ t.mensaje }} Esta página no se actualiza sola: recárgala dentro de un rato.</div>
+{% endfor %}
+{% for t in trabajos if t.estado != 'en_curso' and t.tipo in ('copia_vms', 'recuperacion') %}
+<div class="notice {{ 'ok' if t.estado == 'ok' else 'problema' }}"><strong>{{ 'Terminado' if t.estado == 'ok' else 'No ha salido bien' }} ({{ t.fin | hace }})</strong>{{ t.mensaje }}</div>
+{% endfor %}
+
+{% if error %}<div class="notice atencion"><strong>No se pueden ver las máquinas ahora</strong>{{ error }}</div>{% endif %}
+
+<div class="card">
+  <h2 style="margin-top:0">Qué se copia</h2>
+  <form method="post" action="{{ url_for('equipo_vms_accion', system_id=s.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label style="display:flex; gap:8px; align-items:center; font-weight:400">
+      <input type="checkbox" name="activa" {{ 'checked' if conf.activa }} style="width:auto"> Copiar las máquinas virtuales de este equipo</label>
+    <p style="margin:10px 0">
+      <select name="dias" aria-label="Cada cuánto" style="max-width:260px">
+        <option value="1" {{ 'selected' if (conf.dias or 1) == 1 }}>Cada día (con la copia diaria)</option>
+        <option value="7" {{ 'selected' if conf.dias == 7 }}>Cada semana</option>
+      </select></p>
+    {% if vms %}
+    <table>
+      <thead><tr><th>Copiar</th><th>Máquina</th><th>Tipo</th><th>Estado</th><th>Tamaño</th></tr></thead>
+      <tbody>
+      {% for v in vms %}
+        <tr>
+          <td><input type="hidden" name="todas" value="{{ v.nombre }}">
+              <input type="checkbox" name="incluir" value="{{ v.nombre }}" aria-label="Copiar {{ v.nombre }}"
+                     {{ '' if v.nombre in (conf.excluir or []) else 'checked' }} style="width:auto"></td>
+          <td><strong>{{ v.nombre }}</strong></td>
+          <td>{{ HIP.get(v.hipervisor, v.hipervisor) }}</td>
+          <td>{{ v.estado }}</td>
+          <td>{{ v.tamano | tamano if v.tamano else '—' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% elif not error %}
+    <p class="muted">No se ha encontrado ninguna máquina virtual en este equipo (se buscan en Hyper-V, KVM/libvirt y Proxmox).</p>
+    {% endif %}
+    {% if puede_actuar() %}
+    <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:12px">
+      <button class="btn btn-primary" type="submit" name="accion" value="guardar">Guardar</button>
+      {% if conf.activa %}<button class="btn" type="submit" name="accion" value="ahora">Copiar ahora</button>{% endif %}
+    </div>
+    {% endif %}
+  </form>
+  <p class="hint" style="margin-top:12px">Las máquinas encendidas se copian sin apagarlas: en Hyper-V con una
+    instantánea del disco (VSS); en KVM/libvirt pasan un momento a escribir en una capa temporal, se copian quietas y se
+    vuelven a unir (si tienen <em>qemu-guest-agent</em>, además se «congela» su sistema de archivos); en Proxmox con
+    vzdump. Se guardan las 3 últimas, una por semana durante un mes y una al mes durante 3 meses.</p>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Copias hechas</h2>
+  {% if copias %}
+  <table>
+    <thead><tr><th>Fecha</th><th>Máquina</th><th>Tipo</th><th></th></tr></thead>
+    <tbody>
+    {% for c in copias %}
+      <tr>
+        <td>{{ c.time | fecha }}</td>
+        <td>{{ c.nombre }}</td>
+        <td>{{ HIP.get(c.hipervisor, c.hipervisor) }}</td>
+        <td>{% if puede_actuar() %}
+          <form method="post" action="{{ url_for('equipo_vms_accion', system_id=s.id) }}"
+                data-confirm="Se recuperará {{ c.nombre }} en una carpeta NUEVA del equipo {{ s.hostname }}. La máquina original no se toca. ¿Seguir?">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="accion" value="restaurar"><input type="hidden" name="snapshot" value="{{ c.id }}">
+            <input type="hidden" name="nombre" value="{{ c.nombre }}"><input type="hidden" name="hipervisor" value="{{ c.hipervisor }}">
+            <button class="btn btn-small" type="submit">Recuperar aparte</button>
+          </form>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="hint" style="margin-top:10px">«Recuperar aparte» deja la máquina en una carpeta nueva del equipo (comprueba
+    antes que hay sitio) y te dice cómo arrancarla: en KVM/libvirt queda lista con otro nombre y otra dirección de red,
+    para que no choque con la original.</p>
+  {% elif not error %}
+  <p class="muted">Todavía no hay copias de máquinas virtuales de este equipo.</p>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}
