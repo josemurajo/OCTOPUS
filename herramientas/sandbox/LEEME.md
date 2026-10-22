@@ -17,7 +17,7 @@ Si no aparece o da error, falta la virtualización en la BIOS (suele llamarse «
 ## Probar
 
 1. Doble clic en **`PROBAR_OCTOPUS.wsb`**.
-2. Se abre una ventana con otro Windows. Dentro, OCTOPUS se descarga, se instala y se prueba solo en unos 10
+2. Se abre una ventana con otro Windows. Dentro, OCTOPUS se descarga, se instala y se prueba solo en unos 15
    minutos.
 3. Al final verás «TODO CORRECTO» (o lo que haya fallado: haz una foto y pásamela). También se abre el panel con
    el usuario y la contraseña, para que lo mires a tu aire.

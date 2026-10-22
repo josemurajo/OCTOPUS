@@ -873,6 +873,13 @@ def casa_estado():
     return jsonify(_casa.estado())
 
 
+@app.route('/casa/discos')
+@login_required
+def casa_discos():
+    """Los discos donde se pueden guardar las copias (lo usa la pantalla y las pruebas)."""
+    return jsonify(_casa.discos() if _casa.nativo() else [])
+
+
 def _boveda_desconectada():
     try:
         return (_casa.DATA / 'boveda_desconectada').read_text(encoding='utf-8').strip()

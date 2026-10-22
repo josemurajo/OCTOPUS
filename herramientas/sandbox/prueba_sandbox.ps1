@@ -15,7 +15,6 @@ try { $Host.UI.RawUI.WindowTitle = "OCTOPUS - prueba en el Espacio aislado" } ca
 
 $Base = if ($env:OCTOPUS_PRUEBA_DIR) { $env:OCTOPUS_PRUEBA_DIR } else { "C:\OCTOPUS-prueba" }
 $R = "C:\ProgramData\OCTOPUS-Servidor"
-$Datos = "C:\Prueba OCTOPUS"
 $script:Fallos = @()
 $script:Pasos = @()
 
@@ -39,7 +38,7 @@ function Esperar($seg) { $fin = (Get-Date).AddSeconds($seg); while ((Get-Date) -
 Write-Host ""
 Write-Host "  OCTOPUS - prueba completa en un Windows desechable" -ForegroundColor White
 Write-Host "  Todo lo que pase aqui se borra al cerrar la ventana del Espacio aislado." -ForegroundColor Gray
-Write-Host "  Tarda unos 10 minutos. No hace falta que toques nada."
+Write-Host "  Tarda unos 15 minutos. No hace falta que toques nada."
 
 # 1. el codigo de OCTOPUS (lo ultimo de GitHub)
 Titulo "Descargando OCTOPUS"
@@ -61,22 +60,32 @@ $t0 = Get-Date
 Paso ($LASTEXITCODE -eq 0) "el instalador termina bien" ("{0:N0} s" -f ((Get-Date) - $t0).TotalSeconds)
 Paso (Esperar 180) "el panel responde"
 
-# 3. un equipo con su agente: alta, instalacion, copia, estropear y recuperar
-Titulo "Anadiendo un equipo y haciendo copias (3 minutos)"
+# 3. lo nuevo, en este Windows de verdad: modo discreto, modo casa y destinos de copia
 $env:OCTOPUS_NATIVO = "1"; $env:OCTOPUS_DATA = "$R\datos"; $env:OCTOPUS_BOVEDA_DIR = "$R\boveda"; $env:OCTOPUS_BIN = "$R\bin"
 $env:RESTIC_CACHE_DIR = "$R\datos\.cache\restic"; $env:PYTHONUTF8 = "1"; $env:PATH = "$R\bin;$env:PATH"
 New-Item -ItemType Directory -Force -Path "$R\tests\ci" | Out-Null
-Copy-Item "$Repo\tests\ci\prueba_agente.py" "$R\tests\ci\" -Force
-& "$R\python\python.exe" "$R\tests\ci\prueba_agente.py" preparar windows PC-DE-PRUEBA $Datos "$Base\instalador" | Out-Host
-& powershell -NoProfile -ExecutionPolicy Bypass -File "$Base\instalador\instalar_windows.ps1" | Out-Host
-$salida = & "$R\python\python.exe" "$R\tests\ci\prueba_agente.py" probar PC-DE-PRUEBA $Datos 2>&1
-foreach ($l in $salida) {
-    $p = "$l" -split "\|"
-    if ($p.Count -ge 3 -and $p[0] -eq "RESULT") { Paso ($p[1] -eq "PASS") $p[2] } else { Write-Host "    $l" -ForegroundColor DarkGray }
+foreach ($f in "prueba_agente.py", "prueba_casa.py", "prueba_discreto.py") { Copy-Item "$Repo\tests\ci\$f" "$R\tests\ci\" -Force }
+$Py = "$R\python\python.exe"
+function Lanzar($titulo, $argumentos) {
+    Titulo $titulo
+    $salida = & $Py @argumentos 2>&1
+    foreach ($l in $salida) {
+        $t = "$l"
+        if ($t -match "^(PASS|FAIL) (.*)$") { Paso ($Matches[1] -eq "PASS") $Matches[2] }
+        elseif ($t -match "^RESULT\|(PASS|FAIL)\|([^|]*)") { Paso ($Matches[1] -eq "PASS") $Matches[2] }
+        elseif ($t -notmatch "^FALLOS:|^RESUMEN:") { Write-Host "    $t" -ForegroundColor DarkGray }
+    }
 }
+Lanzar "Que no se note: mide este ordenador (procesador, grafica, bateria) y frena si se usa a fondo" @("$R\tests\ci\prueba_discreto.py")
+$Datos = "C:\Users\prueba_casa\Documents"
+New-Item -ItemType Directory -Force -Path $Datos | Out-Null
+[IO.File]::WriteAllText("$Datos\documento.txt", "datos importantes")   # sin BOM: igual que lo comprueba la prueba
+Lanzar "Modo casa: elegir casa, proteger este ordenador y hacer la primera copia (3 minutos)" @("$R\tests\ci\prueba_casa.py", "nativo")
+$Equipo = (& $Py -c "import socket; print(socket.gethostname().split('.')[0])").Trim()
+Lanzar "Destinos de copia: copiar directo a otra carpeta, ademas y en lugar del servidor (3 minutos)" @("$R\tests\ci\prueba_agente.py", "destino", $Equipo, $Datos, "C:\OCTOPUS-otro-destino")
+$Clave = "ClaveDeCasa-2026!x"
 
 # 4. resumen y el panel abierto para mirarlo
-$cred = Get-Content "$R\data\CREDENCIALES_INICIALES.txt" -ErrorAction SilentlyContinue
 $bien = @($script:Pasos | Where-Object { $_.ok }).Count
 Write-Host ""
 if ($script:Fallos.Count -eq 0) {
@@ -89,8 +98,8 @@ if ($script:Fallos.Count -eq 0) {
 Write-Host ""
 Write-Host "  Ahora puedes mirar el panel. Se abre solo en el navegador: https://127.0.0.1:8080" -ForegroundColor White
 Write-Host "  (avisara del certificado: 'Configuracion avanzada' -> 'Continuar')."
-$cred | Where-Object { $_ -match "Usuario|Contrasena" } | ForEach-Object { Write-Host "    $_" -ForegroundColor Yellow }
-Write-Host "  El equipo PC-DE-PRUEBA ya tiene copias. Su carpeta es '$Datos'."
+Write-Host "    Usuario: admin     Contrasena: $Clave   (solo existe en este Windows desechable)" -ForegroundColor Yellow
+Write-Host "  Este ordenador ya esta protegido en modo casa. Su carpeta de prueba es '$Datos'."
 Write-Host ""
 Write-Host "  Cuando termines, CIERRA LA VENTANA DEL ESPACIO AISLADO: se borra todo y en tu PC no queda nada." -ForegroundColor Cyan
 if (-not $env:OCTOPUS_SIN_NAVEGADOR) { Start-Process "https://127.0.0.1:8080" }

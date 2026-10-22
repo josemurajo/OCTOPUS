@@ -19,7 +19,7 @@ Lo tuyo, en orden. Todo es gratis.
    - que un asesor revise `legal/` (privacidad y licencia);
    - comprobar que la marca «OCTOPUS» está libre en la OEPM (https://www.oepm.es, consulta gratis).
 7. 🟢 **Cuando puedas**: la prueba en tu PC **sin dejar rastro**, con el Espacio aislado de Windows (tu Windows es Pro).
-   Doble clic en `PROBAR_OCTOPUS.wsb`; se prueba solo en 10 minutos. Ver `herramientas/sandbox/LEEME.md`.
+   Doble clic en `PROBAR_OCTOPUS.wsb`; se prueba solo en unos 15 minutos (incluye modo casa, no molestar y destinos). Ver `herramientas/sandbox/LEEME.md`.
    (No hay Mac: el Mac se prueba solo en GitHub en cada cambio.)
 
 **Prueba grande en las máquinas virtuales** (cuando José esté en su PC y avise): todo, incluido lo nuevo.

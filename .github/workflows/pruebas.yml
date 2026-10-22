@@ -249,7 +249,7 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install requests
-          python tests/ci/prueba_casa.py windows
+          python tests/ci/prueba_casa.py nativo
       - name: Registros si algo falla
         if: failure()
         shell: pwsh
@@ -273,6 +273,30 @@ jobs:
           for f in /Library/Logs/OCTOPUS-Servidor-instalacion.txt /usr/local/octopus-servidor/datos/logs/servidor.log \
                    /usr/local/octopus-servidor/datos/logs/com.octopus.servidor.log /usr/local/octopus-servidor/datos/logs/pip.log \
                    /usr/local/octopus-servidor/datos/logs/actualizacion_*.log /Library/Logs/Octopus/agent.log; do
+            sudo test -f "$f" && { echo "===== $f"; sudo tail -n 80 "$f"; }
+          done
+          true
+
+  casa-mac:
+    name: Modo casa en Mac (proteger este Mac y copias a un disco externo, de verdad)
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instalar el servidor como un usuario
+        run: sudo OCTOPUS_IP=127.0.0.1 bash instalar_servidor_mac.sh --sin-preguntas
+      - name: Un «disco USB» de mentira (imagen de disco montada en /Volumes)
+        run: |
+          hdiutil create -size 300m -fs APFS -volname OCTOPUS_USB "$RUNNER_TEMP/usb.dmg"
+          hdiutil attach "$RUNNER_TEMP/usb.dmg"
+          ls -la /Volumes
+      - name: Elegir casa, proteger este Mac, copiar y pasar las copias al disco externo
+        run: sudo OCTOPUS_PRUEBA_DISCO=/Volumes/OCTOPUS_USB /usr/local/octopus-servidor/python/bin/python3 tests/ci/prueba_casa.py nativo
+      - name: Registros si algo falla
+        if: failure()
+        run: |
+          for f in /usr/local/octopus-servidor/datos/logs/servidor.log /usr/local/octopus-servidor/datos/logs/casa_instalacion.log \
+                   /Library/Logs/Octopus/agent.log; do
             sudo test -f "$f" && { echo "===== $f"; sudo tail -n 80 "$f"; }
           done
           true

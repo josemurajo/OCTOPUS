@@ -2,9 +2,11 @@
 
     python tests/ci/prueba_casa.py            el panel con una base de datos nueva (cualquier sistema): «¿casa o
                                               empresa?», ajustes de cada modo, menú, mover las copias de disco...
-    python tests/ci/prueba_casa.py windows    contra el servidor NATIVO de Windows ya instalado (pruebas de GitHub):
-                                              elegir casa, «Proteger este ordenador» de verdad, copia, pasar las
-                                              copias a otro disco (D:) y seguir copiando allí sin perder nada.
+    python tests/ci/prueba_casa.py nativo     contra el servidor NATIVO ya instalado en Windows o Mac (pruebas de
+                                              GitHub y el Espacio aislado de Windows): elegir casa, «Proteger este
+                                              ordenador» de verdad, copia, y pasar las copias a otro disco (si lo
+                                              hay) y seguir copiando allí sin perder nada.
+                                              (en Mac, como root: sudo <python del servidor> ...)
 """
 import json
 import os
@@ -138,11 +140,16 @@ def unidad():
 
 
 # =============================================================================================== 2. Windows de verdad
-def windows():
+CLAVE_CASA = "ClaveDeCasa-2026!x"   # solo en máquinas de prueba (GitHub y el Espacio aislado, que se borran)
+
+
+def nativo():
+    import platform
     import requests
     import urllib3
     urllib3.disable_warnings()
-    R = Path(os.environ.get("OCTOPUS_RAIZ", r"C:\ProgramData\OCTOPUS-Servidor"))
+    windows = platform.system() == "Windows"
+    R = Path(os.environ.get("OCTOPUS_RAIZ", r"C:\ProgramData\OCTOPUS-Servidor" if windows else "/usr/local/octopus-servidor"))
     B = "https://127.0.0.1:8080"
     s = requests.Session()
     s.verify = False
@@ -157,14 +164,14 @@ def windows():
     cred = (R / "data" / "CREDENCIALES_INICIALES.txt").read_text(encoding="utf-8")
     inicial = re.search(r"Contrasen?ñ?a[^:]*:\s*(\S+)", cred).group(1)
     s.post(B + "/login", data={"csrf_token": tok(get("/login").text), "username": "admin", "password": inicial})
-    nueva = "ClaveDeCasa-2026!x"
+    nueva = CLAVE_CASA
     post("/cuenta/contrasena", {"actual": inicial, "nueva": nueva, "repetir": nueva}, "/cuenta/contrasena")
     chk(get("/inicio").url.endswith("/bienvenida"), "primera vez: pregunta casa o empresa")
     r = post("/bienvenida", {"modo": "casa"}, "/bienvenida")
     chk(r.url.endswith("/casa") and "Proteger este ordenador" in r.text, "modo casa: pantalla «Tu ordenador»")
 
     # una carpeta personal de mentira para tener algo que copiar
-    perfil = Path(os.environ.get("SystemDrive", "C:") + "\\Users") / "prueba_casa" / "Documents"
+    perfil = (Path(os.environ.get("SystemDrive", "C:") + "\\Users") if windows else Path("/Users")) / "prueba_casa" / "Documents"
     perfil.mkdir(parents=True, exist_ok=True)
     (perfil / "foto_de_las_vacaciones.txt").write_text("recuerdo importante", encoding="utf-8")
     t = get("/casa").text
@@ -204,10 +211,16 @@ def windows():
     chk(r1.get("status") == "success", "primera copia en modo casa (vigilada por el modo discreto)", r1)
     chk("discreto" in r1, "la copia dice si fue despacio para no molestar", r1.get("discreto"))
 
-    # pasar las copias al disco D: (en GitHub es otro disco)
-    t = get("/casa").text
-    chk("D:" in t, "lista los discos de este ordenador", re.findall(r'value="([A-Z]:\\\\?)"', t))
-    r = post("/casa/disco", {"disco": "D:\\"}, "/casa")
+    # pasar las copias a otro disco (en GitHub Windows es D:; en Mac, un disco de mentira montado en /Volumes)
+    discos = get("/casa/discos").json()
+    chk(any(d["sistema"] for d in discos), "lista los discos y sabe cuál es el del sistema", discos)
+    preferido = os.environ.get("OCTOPUS_PRUEBA_DISCO", "")
+    otro = next((d for d in discos if preferido and d["ruta"].rstrip("/\\") == preferido.rstrip("/\\")), None) \
+        or next((d for d in discos if not d["sistema"]), None)
+    if not otro:
+        print("(este ordenador no tiene otro disco: no se prueba pasar las copias)")
+        return
+    r = post("/casa/disco", {"disco": otro["ruta"]}, "/casa")
     fase = ""
     for _ in range(60):
         try:
@@ -217,8 +230,8 @@ def windows():
         if fase in ("hecho", "error"):
             break
         time.sleep(3)
-    chk(fase == "hecho" and Path(r"D:\OCTOPUS-copias\octopus-backups\config").is_file(),
-        "las copias pasan al disco D:", fase)
+    chk(fase == "hecho" and (Path(otro["ruta"]) / "OCTOPUS-copias" / "octopus-backups" / "config").is_file(),
+        f"las copias pasan al otro disco ({otro['ruta']})", fase)
     for _ in range(60):   # el almacén se reinicia apuntando al disco nuevo
         try:
             if get("/healthz").status_code == 200:
@@ -234,8 +247,8 @@ def windows():
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "windows":
-        windows()
+    if len(sys.argv) > 1 and sys.argv[1] in ("nativo", "windows"):
+        nativo()
     else:
         unidad()
     print("FALLOS:", FALLOS or "ninguno")
