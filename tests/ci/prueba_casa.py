@@ -70,6 +70,15 @@ def unidad():
     chk(c.get("/casa").status_code == 200 and "¿Dónde guardo las copias?" in t or "Docker" in t,
         "la pantalla «Tu ordenador» se abre", t[:200])
 
+    # con este ordenador ya protegido, la pantalla sigue abriéndose
+    with a.get_db_connection() as cx:
+        cx.execute("INSERT INTO systems (hostname, ip_address, os_family, status, notes) VALUES (?, '127.0.0.1', "
+                   "'windows', 'unknown', ?)", (casa.nombre_este_equipo(), json.dumps({"rutas": ["C:/x"]})))
+    r = c.get("/casa")
+    chk(r.status_code == 200, "«Tu ordenador» con el ordenador ya protegido", r.status_code)
+    with a.get_db_connection() as cx:
+        cx.execute("DELETE FROM systems")
+
     # carpetas personales (con una carpeta de usuarios de mentira)
     usuarios = Path(tmp) / "Users"
     for p in ("ana/Documents", "ana/Pictures", "ana/OneDrive/Documentos", "Public/Documents", "Default/Documents"):
@@ -121,6 +130,11 @@ def unidad():
     # cambiar a empresa desde Ajustes
     r = post("/ajustes/modo", {"modo": "empresa"}, "/ajustes")
     chk(cm.get_config("modo_uso") == "empresa" and cm.get_config("dosfa") is True, "cambiar a empresa: vuelve la 2FA")
+    r = c.get("/acceso-directo/windows")
+    chk(r.status_code == 200 and b"[InternetShortcut]" in r.data and b"URL=http" in r.data,
+        "empresa: icono de OCTOPUS para el escritorio del PC del jefe (Windows)", r.data[:80])
+    r = c.get("/acceso-directo/mac")
+    chk(r.status_code == 200 and b"<plist" in r.data, "y para Mac")
 
 
 # =============================================================================================== 2. Windows de verdad

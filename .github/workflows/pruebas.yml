@@ -101,7 +101,10 @@ jobs:
           & powershell -NoProfile -ExecutionPolicy Bypass -File "$env:RUNNER_TEMP\inst\instalar_windows.ps1"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python tests/ci/prueba_agente.py probar ci-agente $datos
-          exit $LASTEXITCODE
+          $rc = $LASTEXITCODE
+          python tests/ci/prueba_agente.py destino ci-agente $datos "$env:RUNNER_TEMP\otro_destino"
+          if ($LASTEXITCODE -ne 0 -or $rc -ne 0) { exit 1 }
+          exit 0
 
       - name: Preparar el instalador del panel
         if: matrix.so != 'windows'
@@ -124,6 +127,9 @@ jobs:
       - name: Probar copia y restauracion
         if: matrix.so != 'windows'
         run: python tests/ci/prueba_agente.py probar ci-agente "$DATOS"
+      - name: Destinos de copia (directo a otra carpeta, ademas y en lugar del servidor)
+        if: matrix.so != 'windows'
+        run: python tests/ci/prueba_agente.py destino ci-agente "$DATOS" "$RUNNER_TEMP/otro_destino"
 
       - name: Registros si algo falla
         if: failure()

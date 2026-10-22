@@ -860,7 +860,7 @@ def casa_inicio():
     """Los dos pasos del modo casa: proteger este ordenador y elegir el disco de las copias."""
     equipo = _este_equipo()
     lista = _equipos_con_estado() if equipo else []
-    est = next((e['est'] for e in lista if e['id'] == equipo['id']), None) if equipo else None
+    est = next((e['est'] for e in lista if e['sys']['id'] == equipo['id']), None) if equipo else None
     return render_template('casa.html', nativo=_casa.nativo(), equipo=equipo, est=est,
                            carpetas=_casa.carpetas_personales() if not equipo else _rutas_de(equipo),
                            discos=_casa.discos() if _casa.nativo() else [], estado=_casa.estado(),
@@ -928,6 +928,22 @@ def casa_disco():
     log_audit(session['user_id'], 'CASA_DISCO', f'Copias a {ruta}', request.remote_addr)
     flash(f'Pasando las copias a {disco["nombre"]}. En un momento el panel se recarga solo.', 'info')
     return redirect(url_for('casa_inicio'))
+
+
+@app.route('/acceso-directo/<sistema>')
+@login_required
+def acceso_directo(sistema):
+    """Un icono «OCTOPUS» para el escritorio del PC desde el que se maneja (el del jefe, el del informático...)."""
+    url = _direccion_panel() or request.host_url.rstrip('/')
+    if sistema == 'mac':
+        cuerpo = ('<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
+                  '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict><key>URL</key>'
+                  f'<string>{html_escape(url)}</string></dict></plist>\n')
+        return Response(cuerpo, mimetype='application/octet-stream',
+                        headers={'Content-Disposition': 'attachment; filename="OCTOPUS.webloc"'})
+    cuerpo = f"[InternetShortcut]\r\nURL={url}/\r\n"
+    return Response(cuerpo, mimetype='application/octet-stream',
+                    headers={'Content-Disposition': 'attachment; filename="OCTOPUS.url"'})
 
 
 @app.route('/ajustes/modo', methods=['POST'])
@@ -1744,7 +1760,8 @@ def _direccion_panel():
         import mantenimiento as _m
         env = _m.leer_env()
         host = env.get('OCTOPUS_PUBLIC_HOST') or env.get('OCTOPUS_IP') or ''
-        return f"https://{host}:{env.get('ADMIN_PORT', '8080')}" if host else ''
+        puerto = env.get('OCTOPUS_PUERTO_PANEL') or env.get('ADMIN_PORT', '8080')
+        return f"https://{host}:{puerto}" if host else ''
     except Exception:
         return ''
 
@@ -2318,6 +2335,8 @@ def _ajustes_agente(row):
     return {'limite_kbps': aj['limite_kbps'], 'solo_horario': aj['solo_horario'],
             'copia_completa': bool(agentes.notas_equipo(row).get('copia_completa')), 'copia_completa_dias': 7,
             'senuelos': config_manager.get_config('senuelos') is not False,
+            # siempre se manda: vacío = copiar al almacén del servidor OCTOPUS (lib/destinos.py)
+            'destino': _destinos.para_agente(DB_FILE, agentes.notas_equipo(row)) if _fun.activa('destinos') else {},
             # siempre se manda: el agente decide con esto si vigila al usuario para no molestarle
             'discreto': {'activo': _fun.activa('discreto'), 'bateria': _fun.opcion('discreto', 'bateria') != 'no'},
             # siempre se manda (aunque esté apagada): si no, el agente se quedaría con lo último que recibió
@@ -2360,8 +2379,81 @@ def _copia_terminada(system_id, ok, resp):
                   f'equipo={nombre} ' + ('' if ok else motivo[:200]))
         if not ok:
             _despertar_vigilante()   # el vigilante manda el aviso con su solución y repite la copia
+        fila = _get_system(system_id)
+        if ok and fila and _destinos.en_lugar(agentes.notas_equipo(fila)):
+            _refrescar_destino(fila)
     except Exception as e:
         print(f'[copia] aviso registrando resultado: {e}')
+
+
+# ---------------------------------------------------------------- destinos de copia (lib/destinos.py)
+import destinos as _destinos
+_refrescando = set()
+
+
+def _refrescar_destino(system):
+    """Pregunta al equipo la lista de sus copias en el otro destino y la guarda (en segundo plano, una a la vez)."""
+    sid = system['id']
+    if sid in _refrescando:
+        return
+    _refrescando.add(sid)
+
+    def trabajo():
+        try:
+            import ordenes
+            r = ordenes.pedir(system['hostname'], 'GET', '/snapshots', None, 120)
+            if r.get('status') == 'success':
+                with get_db_connection() as c:
+                    fila = c.execute('SELECT notes FROM systems WHERE id = ?', (sid,)).fetchone()
+                    notas = json.loads(fila['notes'] or '{}') if fila else {}
+                    notas['destino_copias'] = r.get('snapshots') or []
+                    notas['destino_copias_t'] = time.time()
+                    c.execute('UPDATE systems SET notes = ? WHERE id = ?', (json.dumps(notas), sid))
+                agentes.invalidar(sid)
+        except Exception as exc:
+            print(f'[destinos] no se pudo leer la lista de copias de {system["hostname"]}: {exc}')
+        finally:
+            _refrescando.discard(sid)
+    threading.Thread(target=trabajo, daemon=True).start()
+
+
+agentes.refrescar_destino = _refrescar_destino
+
+
+@app.route('/equipos/<int:system_id>/destino', methods=['GET', 'POST'])
+@login_required
+def equipo_destino(system_id):
+    row = _get_system(system_id)
+    if not row:
+        abort(404)
+    if not _fun.activa('destinos'):
+        flash('Enciende «Destinos de copia» en Ajustes → Funciones para usar esto.', 'info')
+        return redirect(url_for('equipo', system_id=system_id))
+    notas = agentes.notas_equipo(row)
+    if request.method == 'POST':
+        if not puede_actuar():
+            abort(403)
+        if request.form.get('accion') == 'probar':
+            import ordenes
+            r = ordenes.pedir(row['hostname'], 'POST', '/webhook/destino-probar', {}, 300)
+            flash(r.get('message') or ('Funciona.' if r.get('status') == 'success' else 'No responde.'),
+                  'success' if r.get('status') == 'success' else 'error')
+            return redirect(url_for('equipo_destino', system_id=system_id))
+        nuevas, error = _destinos.guardar(DB_FILE, notas, request.form)
+        if error:
+            flash(error, 'error')
+            return redirect(url_for('equipo_destino', system_id=system_id))
+        with get_db_connection() as c:
+            c.execute('UPDATE systems SET notes = ? WHERE id = ?', (json.dumps(nuevas), system_id))
+        agentes.invalidar(system_id)
+        d = _destinos.leer(nuevas)
+        log_audit(session['user_id'], 'DESTINO_COPIA', f'{row["hostname"]}: {d["tipo"]} {d["donde"]} ({d["modo"]})',
+                  request.remote_addr)
+        flash('Guardado. El equipo lo sabrá en menos de un minuto; pulsa «Probar el destino» para comprobarlo.'
+              if d['tipo'] != 'octopus' else 'Guardado: las copias vuelven al servidor OCTOPUS.', 'success')
+        return redirect(url_for('equipo_destino', system_id=system_id))
+    return render_template('destino.html', s=row, d=_destinos.leer(notas), tipos=_destinos.TIPOS,
+                           modos=_destinos.MODOS, online=agentes.estado_equipo(row)['online'])
 
 
 @app.route('/equipos/<int:system_id>/copia', methods=['POST'])
@@ -2767,6 +2859,9 @@ def kit_recuperacion():
         return redirect(url_for('ajustes') + '#kit')
     import mantenimiento as _mant
     texto = _mant.kit(_mant.leer_env())
+    with get_db_connection() as _c:
+        _filas = _c.execute('SELECT hostname, notes FROM systems').fetchall()
+    texto += _destinos.para_kit(DB_FILE, [(f['hostname'], agentes.notas_equipo(f)) for f in _filas])
     codigo_rec = _dosfa.nuevo_codigo_recuperacion(DB_FILE)
     texto += ("\n\n=== CÓDIGO PARA QUITAR LA DOBLE AUTENTICACIÓN (si se pierde el móvil y los códigos de emergencia) ===\n"
               f"{codigo_rec}\n"

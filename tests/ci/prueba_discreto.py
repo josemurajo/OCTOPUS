@@ -81,8 +81,11 @@ jugando = time.monotonic() - t
 chk(r.returncode == 0 and "fin" in r.stdout, "jugando: la copia sigue y termina (no se pierde nada)")
 chk(jugando > libre * 3 and jugando > 6, "jugando: va casi parada", f"{jugando:.1f} s frente a {libre:.1f} s")
 chk(r.discreto.get("no_molestar", 0) >= 5, "apunta el tiempo en modo no molestar", r.discreto)
-chk("no molestar" in d.resumen(r.discreto) or "despacio" in d.resumen(r.discreto), "frase para el usuario",
+r.discreto["no_molestar"] = max(r.discreto["no_molestar"], 60)   # la frase es para copias largas
+chk("más despacio" in d.resumen(r.discreto) and "gráfica" in d.resumen(r.discreto), "frase para el usuario",
     d.resumen(r.discreto))
+chk("toda velocidad" in d.resumen({"libre": 300, "despacio": 5, "no_molestar": 0}),
+    "si casi no hubo que frenar, dice que fue a toda velocidad")
 
 medidas = iter([(10.0, 95.0, True, None)] * 4)
 t = time.monotonic()

@@ -97,6 +97,19 @@
   </form>{% endif %}
 </div>
 
+{% if not modo_casa() %}
+<div class="card" id="acceso-directo">
+  <h2>Abrir OCTOPUS desde tu PC</h2>
+  <p>OCTOPUS vive en una máquina aparte y siempre encendida; tú lo manejas desde tu PC. Pon este icono en tu escritorio
+    y entra con un doble clic, sin acordarte de direcciones.</p>
+  <p><a class="btn" href="{{ url_for('acceso_directo', sistema='windows') }}">Icono para Windows</a>
+    <a class="btn" href="{{ url_for('acceso_directo', sistema='mac') }}">Icono para Mac</a></p>
+  <p class="small muted">Guárdalo en el escritorio. La primera vez el navegador avisará del certificado propio de
+    OCTOPUS: «Configuración avanzada» → «Continuar». Los avisos importantes te llegan por correo o Telegram
+    (Ajustes → Avisos).</p>
+</div>
+{% endif %}
+
 <div class="card">
   <h2>Copias e informes</h2>
   <form method="post" action="{{ url_for('ajustes_copias') }}">

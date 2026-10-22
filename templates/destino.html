@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Dónde van sus copias{% endblock %}
+{% block content %}
+{# Destinos de copia (lib/admin_panel.py: equipo_destino; lib/destinos.py) #}
+<style>
+.tipos { display:grid; gap:10px; margin:10px 0; }
+.tipo { border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+.tipo > label { font-weight:400; display:flex; gap:10px; align-items:center; }
+.tipo input[type=radio] { width:20px; height:20px; }
+.campos { margin:10px 0 0 30px; display:none; gap:10px; max-width:560px; }
+.tipo.elegido .campos { display:grid; }
+</style>
+<p><a href="{{ url_for('equipo', system_id=s.id) }}">← {{ s.hostname }}</a></p>
+<h1>Dónde van las copias de {{ s.hostname }}</h1>
+<p class="lead">Lo normal es el servidor OCTOPUS. Si es un servidor enorme o una sucursal con su propio NAS, puede
+  copiar <strong>directo</strong> a otro sitio: los datos no pasan por OCTOPUS, que sigue mandando, vigilando y
+  avisando.</p>
+
+<form method="post" class="card">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="tipos">
+    {% for k, nombre in tipos.items() %}
+    <div class="tipo {{ 'elegido' if d.tipo == k }}">
+      <label><input type="radio" name="tipo" value="{{ k }}" {{ 'checked' if d.tipo == k }}
+        onchange="document.querySelectorAll('.tipo').forEach(function(t){t.classList.remove('elegido')}); this.closest('.tipo').classList.add('elegido')">
+        <strong>{{ nombre }}</strong></label>
+      {% if k == 'carpeta' %}
+      <div class="campos">
+        <div class="field" style="margin:0"><label for="ruta">Carpeta (vista desde el propio equipo)</label>
+          <input id="ruta" name="ruta" value="{{ d.donde if d.tipo == 'carpeta' }}" placeholder="D:\Copias   o   \\NAS\copias   o   /mnt/nas/copias">
+          <p class="hint">Si es una carpeta de red, el equipo tiene que poder entrar en ella sin pedir contraseña.</p></div>
+      </div>
+      {% elif k == 's3' %}
+      <div class="campos">
+        <div class="field" style="margin:0"><label for="endpoint">Dirección del S3</label>
+          <input id="endpoint" name="endpoint" value="{{ d.donde.rsplit('/', 1)[0] if d.tipo == 's3' }}" placeholder="https://s3.eu-central-1.wasabisys.com"></div>
+        <div class="field" style="margin:0"><label for="bucket">Nombre del «bucket»</label>
+          <input id="bucket" name="bucket" value="{{ d.donde.rsplit('/', 1)[1] if d.tipo == 's3' and '/' in d.donde }}"></div>
+        <div class="field" style="margin:0"><label for="acceso">Clave de acceso</label>
+          <input id="acceso" name="acceso" autocomplete="off" placeholder="{{ 'guardada (escribe para cambiarla)' if d.tipo == 's3' }}"></div>
+        <div class="field" style="margin:0"><label for="secreto">Clave secreta</label>
+          <input id="secreto" name="secreto" type="password" autocomplete="new-password" placeholder="{{ 'guardada (escribe para cambiarla)' if d.tipo == 's3' }}"></div>
+        <div class="field" style="margin:0"><label for="region">Región (si te la piden)</label>
+          <input id="region" name="region" placeholder="us-east-1"></div>
+        <p class="hint">Consejo: activa en el S3 el «bloqueo de objetos» para que nadie pueda borrar las copias.</p>
+      </div>
+      {% elif k == 'rest' %}
+      <div class="campos">
+        <div class="field" style="margin:0"><label for="url">Dirección del almacén</label>
+          <input id="url" name="url" value="{{ d.donde if d.tipo == 'rest' }}" placeholder="https://nas.oficina:8000/copias"></div>
+        <div class="field" style="margin:0"><label for="usuario">Usuario</label><input id="usuario" name="usuario" autocomplete="off"></div>
+        <div class="field" style="margin:0"><label for="clave">Contraseña</label>
+          <input id="clave" name="clave" type="password" autocomplete="new-password" placeholder="{{ 'guardada (escribe para cambiarla)' if d.tipo == 'rest' }}"></div>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  <div class="field"><label for="modo">¿En lugar de la copia al servidor OCTOPUS, o además?</label>
+    <select id="modo" name="modo" style="max-width:420px">
+      {% for k, nombre in modos.items() %}<option value="{{ k }}" {{ 'selected' if d.modo == k }}>{{ nombre }}</option>{% endfor %}
+    </select>
+    <p class="hint">«Además» = dos copias en dos sitios (más seguro). «En lugar de» = los datos no pasan por el servidor
+      OCTOPUS (para servidores muy grandes). La copia en el servidor OCTOPUS está protegida contra borrado; en otro
+      destino, depende de ese destino.</p></div>
+  {% if puede_actuar() %}<p><button class="btn btn-primary" type="submit">Guardar</button>
+    {% if d.tipo != 'octopus' %}<button class="btn" type="submit" name="accion" value="probar" {{ 'disabled' if not online }}>Probar el destino</button>{% endif %}</p>{% endif %}
+  <p class="small muted">La clave que cifra estas copias va en el <strong>kit de recuperación</strong> (Ajustes):
+    descárgalo otra vez después de elegir un destino nuevo.</p>
+</form>
+{% endblock %}

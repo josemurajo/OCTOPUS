@@ -117,7 +117,30 @@ def restic_bin() -> str:
     return found or str(bundled)
 
 
-def restic_env(cfg: dict) -> dict:
+def destino() -> dict:
+    """Destino de copia elegido en el panel para este equipo (vacío = el almacén del servidor OCTOPUS)."""
+    d = AJUSTES_SERVIDOR.get("destino")
+    return d if isinstance(d, dict) and d.get("repo") and d.get("password") else {}
+
+
+def env_destino(d: dict) -> dict:
+    """Entorno de restic para copiar DIRECTAMENTE al otro destino (carpeta, S3, otro almacén)."""
+    env = os.environ.copy()
+    for k in ("RESTIC_CACERT", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"):
+        env.pop(k, None)
+    env["RESTIC_REPOSITORY"] = str(d["repo"])
+    env["RESTIC_PASSWORD"] = str(d["password"])
+    for k, v in (d.get("env") or {}).items():
+        env[str(k)] = str(v)
+    return env
+
+
+def restic_env(cfg: dict, central: bool = False) -> dict:
+    """Entorno de restic. Si el panel ha elegido otro destino «en lugar de» el servidor, todo va allí (copias,
+    listas y recuperaciones); con central=True, siempre al almacén del servidor OCTOPUS."""
+    d = destino()
+    if d and d.get("modo") == "en_lugar" and not central:
+        return env_destino(d)
     env = os.environ.copy()
     ip = cfg.get("ip_cerebro", "127.0.0.1")
     port = cfg.get("minio_port", 9000)
@@ -1248,9 +1271,9 @@ def _restic_ready(binary: str) -> bool:
     return bool(shutil.which(binary)) or Path(binary).is_file()
 
 
-def asegurar_repo(cfg: dict) -> dict | None:
+def asegurar_repo(cfg: dict, env: dict | None = None) -> dict | None:
     """Inicializa el repositorio si aun no existe. Devuelve dict de error o None si OK."""
-    env = restic_env(cfg)
+    env = env or restic_env(cfg)
     binary = restic_bin()
     if run_cmd([binary, "cat", "config"], env=env, timeout=120).returncode == 0:
         return None
@@ -1366,11 +1389,44 @@ def _backup_forense_pasos(cfg: dict, path, paso) -> dict:
         _apuntar_copia()
         return {"status": "success", "snapshot_id": snapshot_id, "paths": targets, "host": agent_host(cfg),
                 "aviso": "Algunos archivos no se pudieron leer (en uso o sin permiso)", "omitidos": omitidos,
-                "discreto": discreto}
+                "discreto": discreto, **copia_al_destino(cfg, cmd, paso)}
     log(f"Backup OK snapshot={snapshot_id} rutas={targets}")
     _apuntar_copia()
     return {"status": "success", "snapshot_id": snapshot_id, "paths": targets, "host": agent_host(cfg),
-            "discreto": discreto}
+            "discreto": discreto, **copia_al_destino(cfg, cmd, paso)}
+
+
+def copia_al_destino(cfg: dict, cmd: list[str], paso) -> dict:
+    """Tras la copia: si el destino es «además», una segunda copia directa al otro destino; y en el otro destino
+    se aplican los días que se guardan (allí no llega el mantenimiento del servidor)."""
+    d = destino()
+    if not d:
+        return {}
+    env = env_destino(d)
+    salida: dict = {"destino": {"tipo": d.get("tipo"), "modo": d.get("modo")}}
+    if d.get("modo") == "ademas":
+        paso(f"Segunda copia, directa al otro destino ({d.get('tipo')})")
+        err = asegurar_repo(cfg, env)
+        if err:
+            salida["destino"].update(status="error", message=err.get("message", "")[:500])
+            return salida
+        r = ejecutar_copia(cmd, env)
+        if r.returncode not in (0, 3):
+            salida["destino"].update(status="error", message=(r.stderr or r.stdout or "")[-500:])
+            return salida
+        for line in (r.stdout or "").splitlines():
+            try:
+                j = json.loads(line)
+            except ValueError:
+                continue
+            if j.get("message_type") == "summary":
+                salida["destino"]["snapshot_id"] = j.get("snapshot_id", "")
+    salida["destino"]["status"] = "success"
+    reten = [str(x) for x in (d.get("retencion") or [])]
+    if reten:
+        f = run_cmd([restic_bin(), "forget", "--host", agent_host(cfg), *reten, "--prune"], env=env, timeout=6 * 3600)
+        paso("Limpieza de copias viejas en el otro destino: " + ("hecha" if f.returncode == 0 else "no se pudo"))
+    return salida
 
 
 def listar_snapshots(cfg: dict) -> dict:
@@ -1383,7 +1439,8 @@ def listar_snapshots(cfg: dict) -> dict:
     except ValueError:
         snaps = []
     return {"status": "success", "host": agent_host(cfg), "count": len(snaps),
-            "snapshots": [{"id": s.get("short_id"), "time": s.get("time"), "paths": s.get("paths")} for s in snaps]}
+            "snapshots": [{"id": s.get("short_id"), "time": s.get("time"), "paths": s.get("paths"),
+                           "tags": s.get("tags") or []} for s in snaps]}
 
 
 def listar_archivos(cfg: dict, snapshot: str, path: str) -> dict:
@@ -1524,6 +1581,12 @@ def despachar(cfg: dict, metodo: str, ruta: str, datos: dict | None = None) -> d
         suspender_detector(3 * 3600)     # escribir discos enteros no es un ataque
         return mod.restaurar(_ctx_vms(cfg), str(datos.get("snapshot", "")), str(datos.get("nombre", "vm")),
                              str(datos.get("hipervisor", "")), datos.get("destino") or None)
+    if ruta == "/webhook/destino-probar":
+        d = destino()
+        if not d:
+            return {"status": "error", "message": "Este equipo copia al servidor OCTOPUS (no hay otro destino elegido)"}
+        err = asegurar_repo(cfg, env_destino(d))
+        return err or {"status": "success", "message": "El destino responde y está listo para las copias"}
     if ruta in ("/webhook/backup-forense", "/webhook/backup"):
         return backup_forense(cfg, datos.get("paths") or datos.get("path"))
     if ruta == "/webhook/forense":

@@ -69,6 +69,11 @@ FUNCIONES: list[dict] = [
      "opciones": [("bateria", "Cuidar la batería de los portátiles", "eleccion", "si", "basico",
                    "Sin enchufar, la copia va despacio; con poca batería, casi parada.",
                    {"valores": [("si", "Sí"), ("no", "No")]})]},
+    {"clave": "destinos", "grupo": "copias", "nivel": "experto", "defecto": False,
+     "nombre": "Destinos de copia (copiar directo a otro sitio)",
+     "explica": "Que un equipo copie DIRECTAMENTE a otro sitio (otro disco, una carpeta de red, un NAS o un S3) en lugar "
+                "de al servidor OCTOPUS, o además. Para servidores enormes o sucursales con su NAS: los datos no pasan "
+                "por OCTOPUS, que solo manda, vigila y avisa. Se elige en la ficha de cada equipo."},
     {"clave": "informe_mensual", "grupo": "copias", "nivel": "basico", "defecto": True,
      "nombre": "Informe mensual por correo",
      "explica": "El día 1 de cada mes llega un resumen de cómo han ido las copias."},

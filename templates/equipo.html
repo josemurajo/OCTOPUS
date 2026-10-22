@@ -186,6 +186,14 @@
         {% if completa_activa %}<button class="btn" type="submit" name="accion" value="ahora">Hacer copia completa ahora</button>{% endif %}
       </form>
     </li>
+    {% if funcion_activa('destinos') %}
+    <li>
+      <strong>Dónde van sus copias</strong>
+      <p class="hint">Al servidor OCTOPUS (lo normal), o directo a otro disco, una carpeta de red, un NAS o un S3: los
+        datos no pasan por OCTOPUS, que solo manda, vigila y avisa.</p>
+      <a class="btn" href="{{ url_for('equipo_destino', system_id=s.id) }}">Elegir dónde van sus copias</a>
+    </li>
+    {% endif %}
     <li>
       <strong>Bases de datos</strong>
       {% set okbd, motivobd = para_equipo('copias_bd', s.os_family) %}

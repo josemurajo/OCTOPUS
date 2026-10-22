@@ -48,6 +48,15 @@ a ataques (ransomware) y un panel web pensado para personas que no son técnicas
 - Las copias se hacen con [restic](https://restic.net): formato abierto, se pueden abrir sin OCTOPUS con
   la clave del kit de recuperación.
 
+## Dónde instalarlo
+
+La primera vez que entras, OCTOPUS pregunta **«¿Para casa o para una empresa?»**:
+
+- **Casa:** en tu propio ordenador. Se protege con un clic, guarda las copias en un disco USB y **no se nota**: si
+  juegas o usas el PC a fondo, la copia se pone sola en «no molestar» y vuelve a toda velocidad cuando lo dejas.
+- **Empresa:** en una **máquina aparte y siempre encendida**, no en el servidor de la empresa. Vale un PC viejo, un
+  mini PC o el NAS. Se maneja desde el navegador de tu PC, con un icono en el escritorio.
+
 ## Instalar en dos minutos
 
 En un servidor Linux recién instalado (Ubuntu, Debian, Rocky, Fedora...):

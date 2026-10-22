@@ -362,7 +362,8 @@ def ejecutar(cmd: list[str], env: dict | None = None, timeout: int = 3600, cuida
         t.start()
 
     cpu_m, gpu_m = _Procesador(), (None if medir else _Grafica())
-    estado, motivo, mejoras = "no_molestar", "empezando con calma", 0
+    # empieza con la prioridad mínima (ya nace así) y sin pausas; la primera medida decide
+    estado, motivo, mejoras, motivo_lento = "libre", "", 0, ""
     segundos = {"libre": 0.0, "despacio": 0.0, "no_molestar": 0.0}
     cambios: list[str] = []
     inicio = ultimo = time.monotonic()
@@ -398,6 +399,8 @@ def ejecutar(cmd: list[str], env: dict | None = None, timeout: int = 3600, cuida
                     if log:
                         log(f"Copia {NOMBRES[nuevo]}: {por_que}")
                     estado, motivo, mejoras = nuevo, por_que, 0
+                    if estado != "libre":
+                        motivo_lento = por_que
                     poner_prioridad(proc, estado != "libre")
                     tramo_fin = ahora
             ritmo = RITMO[estado]
@@ -425,7 +428,7 @@ def ejecutar(cmd: list[str], env: dict | None = None, timeout: int = 3600, cuida
         t.join(timeout=30)
     rc = proc.returncode if proc.returncode is not None else 124
     r = Resultado(cmd, rc, "".join(salida), "".join(errores) + ("" if rc != 124 else "\ntimeout"))
-    r.discreto = dict({k: int(v) for k, v in segundos.items()}, cambios=cambios[-20:], ultimo_motivo=motivo)
+    r.discreto = dict({k: int(v) for k, v in segundos.items()}, cambios=cambios[-20:], ultimo_motivo=motivo_lento)
     return r
 
 
@@ -441,9 +444,8 @@ def resumen(d: dict) -> str:
     if not d:
         return ""
     lento = d.get("despacio", 0) + d.get("no_molestar", 0)
-    total = lento + d.get("libre", 0)
-    if lento < 30 and lento * 2 < total:
+    if lento < 30:
         return "La copia fue a toda velocidad: no estabas usando el equipo a fondo."
     m = max(1, round(lento / 60))
     return (f"La copia fue más despacio durante {m} min para no molestarte"
-            + (f": {d.get('ultimo_motivo')}" if d.get("no_molestar") else "") + ".")
+            + (f": {d.get('ultimo_motivo')}" if d.get("ultimo_motivo") else "") + ".")

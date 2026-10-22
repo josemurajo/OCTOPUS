@@ -140,8 +140,68 @@ def completa(equipo: str, carpeta: str) -> int:
     return 1 if FALLOS else 0
 
 
+def destino(equipo: str, datos: str, carpeta_destino: str) -> int:
+    """Destinos de copia: el equipo copia DIRECTO a otra carpeta («además» y luego «en lugar de» el servidor),
+    se recupera desde allí, y la clave de esas copias va en el kit."""
+    import subprocess
+    import agentes
+    import config_manager
+    import destinos
+    cm = config_manager.ConfigManager(DB)
+    cm.set_config("destinos", True, None)
+
+    def poner(form):
+        conn = sqlite3.connect(DB)
+        fila = conn.execute("SELECT notes FROM systems WHERE hostname = ?", (equipo,)).fetchone()
+        notas, error = destinos.guardar(DB, json.loads(fila[0] or "{}"), form)
+        conn.execute("UPDATE systems SET notes = ? WHERE hostname = ?", (json.dumps(notas), equipo))
+        conn.commit()
+        conn.close()
+        time.sleep(10)   # el agente recibe sus ajustes con cada consulta de órdenes
+        return notas, error
+
+    def en_destino(notas):
+        d = destinos.para_agente(DB, notas)
+        env = dict(os.environ, RESTIC_REPOSITORY=d["repo"], RESTIC_PASSWORD=d["password"])
+        env.pop("RESTIC_CACERT", None)
+        r = subprocess.run([agentes._restic_servidor()[0], "snapshots", "--json", "--no-lock"], env=env,
+                           capture_output=True, text=True, timeout=300)
+        return [x.get("short_id") for x in json.loads(r.stdout or "[]") or []]
+
+    notas, error = poner({"tipo": "carpeta", "ruta": carpeta_destino, "modo": "ademas"})
+    resultado(error is None, "guardar el destino «otra carpeta, además»", error or carpeta_destino)
+    r = pedir(equipo, "POST", "/webhook/destino-probar", {}, segundos=300)
+    resultado(r.get("status") == "success", "probar el destino desde el panel", r.get("message"))
+    r = pedir(equipo, "POST", "/webhook/backup", {}, segundos=1800)
+    snap, dest = r.get("snapshot_id", "")[:8], (r.get("destino") or {})
+    central = [c["id"] for c in agentes.copias_por_equipo(force=True)[0].get(equipo.lower(), [])]
+    resultado(r.get("status") == "success" and snap in central, "«además»: la copia va al servidor OCTOPUS", snap)
+    resultado(dest.get("status") == "success" and dest.get("snapshot_id", "")[:8] in en_destino(notas),
+              "«además»: y otra directa a la otra carpeta", dest)
+    notas, error = poner({"tipo": "carpeta", "ruta": carpeta_destino, "modo": "en_lugar"})
+    r = pedir(equipo, "POST", "/webhook/backup", {}, segundos=1800)
+    snap2 = r.get("snapshot_id", "")[:8]
+    central = [c["id"] for c in agentes.copias_por_equipo(force=True)[0].get(equipo.lower(), [])]
+    resultado(r.get("status") == "success" and snap2 in en_destino(notas) and snap2 not in central,
+              "«en lugar de»: la copia va directa a la otra carpeta y no pasa por el servidor", snap2)
+    archivo = Path(datos) / "documento.txt"
+    archivo.write_text("ESTROPEADO", encoding="utf-8")
+    r = pedir(equipo, "POST", "/webhook/restaurar-archivo", {"archivo": str(archivo)}, segundos=600)
+    resultado(r.get("status") == "success" and archivo.read_text(encoding="utf-8") == "datos importantes",
+              "recuperar un archivo desde la otra carpeta", r.get("message", ""))
+    r = pedir(equipo, "GET", "/snapshots", segundos=120)
+    resultado(r.get("count", 0) >= 2, "el equipo lista sus copias del otro destino (las ve el panel)", r.get("count"))
+    kit = destinos.para_kit(DB, [(equipo, notas)])
+    resultado(destinos.para_agente(DB, notas)["password"] in kit, "la clave de esas copias va en el kit de recuperación")
+    poner({"tipo": "octopus"})
+    print(f"\nRESUMEN: {'TODO CORRECTO' if not FALLOS else 'FALLOS: ' + ', '.join(FALLOS)}")
+    return 1 if FALLOS else 0
+
+
 if __name__ == "__main__":
     a = sys.argv[1:]
+    if len(a) == 4 and a[0] == "destino":
+        sys.exit(destino(a[1], a[2], a[3]))
     if len(a) == 3 and a[0] == "completa":
         sys.exit(completa(a[1], a[2]))
     if len(a) == 5 and a[0] == "preparar":

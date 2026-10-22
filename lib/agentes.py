@@ -175,6 +175,11 @@ def horas_sin_copia(system) -> float:
     return h
 
 
+# Lo pone el panel: refresca en segundo plano la lista de copias de un equipo que copia a OTRO destino
+# (esas copias no están en el almacén del servidor: se las pregunta al equipo). Ver lib/destinos.py.
+refrescar_destino = None
+
+
 def estado_equipo(system, force=False):
     """Estado resumido de un equipo para el panel (con cache corta para que las paginas vayan rapido)."""
     import ordenes
@@ -187,6 +192,15 @@ def estado_equipo(system, force=False):
     conectado = ordenes.en_linea(system["hostname"])
     todas, error = copias_por_equipo(force)
     copias = [c for c in todas.get(system["hostname"].lower(), []) if "forense" not in c["tags"]]
+    notas = notas_equipo(system)
+    try:
+        import destinos
+        if destinos.en_lugar(notas):
+            copias = [c for c in destinos.lista_copias(notas.get("destino_copias")) if "forense" not in c["tags"]]
+            if refrescar_destino and conectado and (force or time.time() - float(notas.get("destino_copias_t") or 0) > 1800):
+                refrescar_destino(system)
+    except Exception:
+        pass
     info = {}
     try:
         info = json.loads(system["agent_info"] or "{}") if "agent_info" in system.keys() else {}
