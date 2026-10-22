@@ -287,8 +287,9 @@ jobs:
         run: sudo OCTOPUS_IP=127.0.0.1 bash instalar_servidor_mac.sh --sin-preguntas
       - name: Un «disco USB» de mentira (imagen de disco montada en /Volumes)
         run: |
-          hdiutil create -size 300m -fs APFS -volname OCTOPUS_USB "$RUNNER_TEMP/usb.dmg"
-          hdiutil attach "$RUNNER_TEMP/usb.dmg"
+          # 3 GB «disperso» (solo ocupa lo que se escribe): OCTOPUS pide sitio para las copias más 1 GB de margen
+          hdiutil create -size 3g -type SPARSE -fs APFS -volname OCTOPUS_USB "$RUNNER_TEMP/usb"
+          hdiutil attach "$RUNNER_TEMP/usb.sparseimage"
           ls -la /Volumes
       - name: Elegir casa, proteger este Mac, copiar y pasar las copias al disco externo
         run: sudo OCTOPUS_PRUEBA_DISCO=/Volumes/OCTOPUS_USB /usr/local/octopus-servidor/python/bin/python3 tests/ci/prueba_casa.py nativo
