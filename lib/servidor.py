@@ -107,6 +107,8 @@ def boveda_actual() -> Path:
         log(f"El disco de las copias no está conectado ({elegida}): las copias esperan a que se conecte")
     else:
         DESCONECTADA.unlink(missing_ok=True)
+    # el panel y el mantenimiento leen el almacén directamente del disco: que miren en el disco nuevo
+    os.environ["OCTOPUS_BOVEDA_DIR"] = str(ruta)
     return ruta
 
 

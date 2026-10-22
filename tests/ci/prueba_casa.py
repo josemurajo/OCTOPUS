@@ -196,8 +196,7 @@ def nativo():
             os.environ.setdefault(k.strip(), v.strip())
     import ordenes
     ordenes.init(str(R / "data" / "admin_panel.db"))
-    import socket
-    equipo = socket.gethostname().split(".")[0]
+    equipo = (get("/casa/estado").json().get("proteger") or {}).get("equipo", "")   # el nombre con el que se dio de alta
 
     def pedir(metodo, ruta, datos=None, seg=600):
         return ordenes.pedir(equipo, metodo, ruta, datos, seg)

@@ -117,8 +117,14 @@ def _restic_servidor():
     """restic en el propio servidor contra el almacen: se lee directamente del disco si se puede."""
     import subprocess
     env = dict(os.environ)
-    repo_disco = os.path.join(os.environ.get("OCTOPUS_BOVEDA_DIR", ""), "octopus-backups")
-    if os.environ.get("OCTOPUS_BOVEDA_DIR") and os.path.isdir(repo_disco):
+    boveda = os.environ.get("OCTOPUS_BOVEDA_DIR", "")
+    try:   # si en el panel se pasaron las copias a otro disco (modo casa), mirar allí
+        elegida = open(os.path.join(os.environ.get("OCTOPUS_DATA", "/data"), "boveda_ruta.txt"), encoding="utf-8").read().strip()
+        boveda = elegida or boveda
+    except OSError:
+        pass
+    repo_disco = os.path.join(boveda, "octopus-backups")
+    if boveda and os.path.isdir(repo_disco):
         env["RESTIC_REPOSITORY"] = repo_disco
     env.setdefault("RESTIC_PASSWORD", os.environ.get("RESTIC_PASSWORD", ""))
     import mantenimiento as _m
