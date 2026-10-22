@@ -1,0 +1,15 @@
+<!-- OCTOPUS Zero-Touch - prueba completa en el Espacio aislado de Windows (Windows 10/11 Pro).
+     Doble clic: se abre un Windows desechable, OCTOPUS se instala y se prueba solo dentro, y se abre el panel.
+     Al cerrar la ventana, Windows lo borra todo. No ve tus archivos: no comparte ninguna carpeta con tu PC.
+     Antes, una sola vez: activar "Espacio aislado de Windows" (ver herramientas/sandbox/LEEME.md). -->
+<Configuration>
+  <Networking>Enable</Networking>
+  <MemoryInMB>4096</MemoryInMB>
+  <ClipboardRedirection>Enable</ClipboardRedirection>
+  <PrinterRedirection>Disable</PrinterRedirection>
+  <AudioInput>Disable</AudioInput>
+  <VideoInput>Disable</VideoInput>
+  <LogonCommand>
+    <Command>cmd.exe /c start "OCTOPUS" powershell.exe -NoExit -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol='Tls12'; irm https://raw.githubusercontent.com/josemurajo/OCTOPUS/main/herramientas/sandbox/prueba_sandbox.ps1 | iex"</Command>
+  </LogonCommand>
+</Configuration>

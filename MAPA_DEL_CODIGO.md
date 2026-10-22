@@ -21,6 +21,8 @@ que haya (copias, etc.) y responde. El servidor **nunca entra** en los equipos: 
 | `install/nas/`, `install/unraid/`, `install/proxmox/` | paquetes fáciles: compose para NAS/Portainer, plantilla de Unraid, contenedor LXC de Proxmox en un paso (guía: `INSTALAR_EN_NAS.md`) |
 | `.github/workflows/imagen.yml` | publica la imagen `ghcr.io/josemurajo/octopus` (amd64 + arm64): `edge` cuando pasan las pruebas, `latest`/`stable`/`X.Y.Z` con cada versión firmada |
 | `.github/workflows/publicar.yml` | cuando José sube `MANIFIESTO.sig`: comprueba la firma y pasa la versión a la rama `publicado` (la que descargan los servidores), crea la *Release* y la imagen |
+| `herramientas/FIRMAR_VERSION.bat` | lo que usa José para firmar: doble clic, frase de paso, y pega la firma en el chat |
+| `PROBAR_OCTOPUS.wsb` + `herramientas/sandbox/` | prueba completa en el Espacio aislado de Windows (no deja rastro en el PC) |
 | `DATOS_DEL_AUTOR.txt` | el nombre y los correos públicos de José (privacidad, seguridad): el panel los lee de aquí |
 | `CHANGELOG.md`, `PUBLICAR_VERSION.md`, `CLAUDE.md` | lista de cambios por versión, guía de José para firmar, reglas del proyecto para quien lo mantiene |
 | `maquinas/` (al lado) | El laboratorio de pruebas con máquinas virtuales |

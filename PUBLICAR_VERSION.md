@@ -1,49 +1,30 @@
 # Publicar una versión de OCTOPUS (lo que hace José)
 
-Una versión solo llega a los servidores de las empresas si **tú** la firmas con tu clave. Tardas unos 5 minutos y no
-hace falta saber programar. La primera vez, haz también el paso 0.
+**¿Para qué firmas?** Los servidores de las empresas se actualizan solos y **solo instalan lo que lleva tu firma**.
+Si alguien entrara en tu cuenta de GitHub, no podría colar nada en los servidores de tus clientes: le faltaría tu
+firma, y esa solo se puede hacer en tu PC.
 
-## 0. Solo la primera vez
+## Cada vez que Claude te avise (1 minuto)
 
-- Necesitas **Git Bash**. En Windows se instala con «Git for Windows» (gratis, git-scm.com).
-- Tu clave de publicación ya existe (`~/.ssh/octopus_publicar`), porque la creaste con este mismo script.
-  - **No la compartas con nadie**, tampoco con Claude.
-  - Guarda una copia en un USB que tengas a buen recaudo, junto con su frase de paso. Si la pierdes, los servidores
-    ya instalados no podrán actualizarse solos y habría que actualizarlos a mano.
+1. Doble clic en **`FIRMAR_VERSION.bat`** (guárdalo en el escritorio; está en la carpeta `herramientas`).
+2. Escribe la **frase de paso** de tu clave (no se ve mientras escribes) y pulsa Enter.
+3. Sale «LISTO» y la firma queda copiada. **Pégala en el chat de Claude (Ctrl+V)** y envía.
 
-## 1. Descarga la versión preparada
+Ya está. Claude la sube y GitHub hace el resto: comprueba la firma, pasa la versión a los servidores (rama
+`publicado`), la crea en *Releases* y publica la imagen para los NAS.
 
-1. Entra en https://github.com/josemurajo/OCTOPUS.
-2. Pulsa el botón verde **Code** y luego **Download ZIP**.
-3. Descomprime el ZIP (por ejemplo, en el Escritorio).
+La firma no es secreta, se puede pegar sin problema. Lo secreto es tu clave (`~/.ssh/octopus_publicar`) con su frase
+de paso. **No la compartas con nadie**, tampoco con Claude. Guarda una copia en un USB junto con la frase de paso:
+si la pierdes, los servidores no podrían actualizarse solos.
 
-## 2. Fírmala
+## Si sale un mensaje
 
-1. Haz clic derecho dentro de la carpeta descomprimida (la que tiene `VERSION`, `MANIFIESTO`, `lib`…) y elige
-   **Open Git Bash here**.
-2. Escribe esto y pulsa Enter:
+- **«no hay ninguna version preparada»:** todavía no hay nada que firmar. Espera al aviso de Claude.
+- **«ya esta firmada»:** no hay que hacer nada.
+- **«la clave publica del proyecto NO es la tuya»:** no sigas y avisa a Claude.
+- **«falta ssh-keygen»:** instala Git for Windows (gratis, git-scm.com).
 
-   ```bash
-   bash herramientas/firmar_version.sh
-   ```
+## A mano (sin el .bat)
 
-3. Te pide la **frase de paso** de tu clave. Escríbela (no se ve mientras escribes) y pulsa Enter.
-4. Debe salir «Versión X firmada». Junto al `MANIFIESTO` aparece un archivo nuevo: **`MANIFIESTO.sig`**.
-
-## 3. Súbela
-
-1. En la página del proyecto en GitHub, pulsa **Add file** y luego **Upload files**.
-2. Arrastra el archivo **`MANIFIESTO.sig`** (solo ese) y pulsa **Commit changes**.
-
-Ya está. Se encarga GitHub: comprueba tu firma y cada archivo, la pasa a la rama `publicado`, la crea en
-*Releases* y publica la imagen para los NAS. Los servidores la instalarán solos esa noche, o cuando alguien pulse
-«Actualizar» en el panel.
-
-## Si algo sale mal
-
-- **«No hay MANIFIESTO que firmar»:** la versión todavía no está preparada. Pídeselo a Claude.
-- **«install/firma_publicacion.pub no es tu clave pública actual»:** estás firmando con otra clave o en otra
-  carpeta. No sigas y avisa a Claude.
-- **En la pestaña *Actions* sale en rojo «Publicar versión firmada»:** no se ha publicado nada y los servidores
-  siguen como estaban. Lo normal es que algo cambiara entre preparar la versión y firmarla. Claude la vuelve a
-  preparar y tú la firmas otra vez.
+En la carpeta del proyecto descargado de GitHub (*Code → Download ZIP*), abre Git Bash y ejecuta
+`bash herramientas/firmar_version.sh`. Luego sube `MANIFIESTO.sig` con *Add file → Upload files*.

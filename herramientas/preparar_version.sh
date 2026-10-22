@@ -22,7 +22,5 @@ git commit -q -m "Versión $V: número de versión" 2>/dev/null || true
 bash herramientas/crear_manifiesto.sh >/dev/null
 git add MANIFIESTO
 git commit -q -m "Versión $V lista para firmar (MANIFIESTO)"
-echo "Versión $V preparada ($(wc -l < MANIFIESTO) archivos). Sube los cambios y pide a José que la firme:"
-echo "  1) descargar el proyecto de GitHub (Code → Download ZIP) y descomprimirlo"
-echo "  2) en esa carpeta, Git Bash:  bash herramientas/firmar_version.sh"
-echo "  3) en GitHub: Add file → Upload files → MANIFIESTO.sig → Commit changes"
+echo "Versión $V preparada ($(wc -l < MANIFIESTO) archivos). Sube los cambios (push) y pide a José que la firme:"
+echo "  doble clic en FIRMAR_VERSION.bat, frase de paso, y pega en el chat la firma que le copia."

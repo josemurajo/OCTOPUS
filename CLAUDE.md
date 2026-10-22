@@ -38,6 +38,10 @@ Léelo antes de tocar nada. Son las reglas del proyecto que José ha ido dejando
   `PUBLICAR_VERSION.md`.
 - Para preparar una: añade la sección en `CHANGELOG.md`, haz commit y ejecuta
   `bash herramientas/preparar_version.sh X.Y.Z`. Después, push y avisa a José.
+- José firma con `herramientas/FIRMAR_VERSION.bat` y **pega la firma en el chat** (empieza por
+  `-----BEGIN SSH SIGNATURE-----`). Guárdala tal cual en `MANIFIESTO.sig`, con un salto de línea al final, y
+  comprueba con `bash herramientas/comprobar_publicacion.sh` después de hacer commit y antes del push. Si falla, no
+  la subas.
 - **Entre preparar y que José firme, no se toca `main`.** Cualquier cambio rompe la firma. Si hace falta cambiar
   algo, se vuelve a preparar.
 

@@ -199,6 +199,28 @@ jobs:
           Get-ChildItem "$env:ProgramData\OCTOPUS-Servidor\datos\logs" -Filter "actualizacion_*.log" -ErrorAction SilentlyContinue |
             ForEach-Object { Write-Host "===== $($_.FullName)"; Get-Content $_.FullName -Tail 40 }
 
+  windows-herramientas:
+    name: Windows - firmar version y prueba del Espacio aislado
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: FIRMAR_VERSION.bat (clave de prueba y GitHub simulado)
+        shell: pwsh
+        run: ./tests/ci/prueba_firmar_windows.ps1
+      - name: La prueba del Espacio aislado, en un Windows real y con el PowerShell de Windows (5.1)
+        shell: powershell
+        run: |
+          git archive --prefix=OCTOPUS-main/ --format=zip -o "$env:RUNNER_TEMP\octopus.zip" HEAD
+          $env:OCTOPUS_ZIP_PRUEBA = "$env:RUNNER_TEMP\octopus.zip"
+          $env:OCTOPUS_SIN_NAVEGADOR = "1"
+          $env:OCTOPUS_PRUEBA_DIR = "$env:RUNNER_TEMP\sandbox"
+          powershell -NoProfile -ExecutionPolicy Bypass -File herramientas\sandbox\prueba_sandbox.ps1
+          exit $LASTEXITCODE
+
   servidor-mac-nativo:
     name: Servidor en Mac (nativo, sin Docker ni Homebrew)
     runs-on: macos-latest
