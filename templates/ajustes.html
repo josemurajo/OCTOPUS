@@ -81,6 +81,22 @@
     <button class="btn btn-primary" type="submit">Guardar</button>
   </form>
 </div>
+<div class="card" id="modo">
+  <h2>Para qué usas OCTOPUS</h2>
+  <p>Ahora está en <strong>modo {{ 'casa' if modo_casa() else 'empresa' }}</strong>:
+    {{ 'OCTOPUS en tu propio ordenador, panel sencillo y sin molestar mientras juegas.' if modo_casa()
+       else 'para los equipos de una empresa, con todas las opciones.' }}
+    {% if modo_casa() %}<a href="{{ url_for('casa_inicio') }}">Tu ordenador y el disco de las copias →</a>{% endif %}</p>
+  {% if puede_actuar() %}
+  <form method="post" action="{{ url_for('cambiar_modo') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="modo" value="{{ 'empresa' if modo_casa() else 'casa' }}">
+    <button class="btn" type="submit">Cambiar a modo {{ 'empresa' if modo_casa() else 'casa' }}</button>
+    <span class="small muted">{{ 'Se enciende la doble autenticación para los administradores.' if modo_casa()
+      else 'Se apagan la doble autenticación obligatoria y los informes por correo (se pueden volver a encender).' }}</span>
+  </form>{% endif %}
+</div>
+
 <div class="card">
   <h2>Copias e informes</h2>
   <form method="post" action="{{ url_for('ajustes_copias') }}">

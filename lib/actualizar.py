@@ -82,6 +82,22 @@ def la_hara_sola(act: dict, activada: bool) -> bool:
                 and not automatica_atascada(act.get("remota", "")))
 
 
+def usuario_ocupado() -> bool:
+    """En modo casa: ¿está alguien jugando o usando el ordenador a fondo ahora mismo? (entonces no se actualiza)."""
+    try:
+        import sys as _s
+        _s.path.insert(0, str(Path(__file__).resolve().parent.parent / "agentes"))
+        import octopus_discreto as d
+        p = d._Procesador()
+        p.medir(None)
+        time.sleep(3)
+        cpu = p.medir(None)
+        enchufado, bat = d.medir_bateria()
+        return d.decidir(cpu, d.medir_grafica(), enchufado, bat)[0] != "libre"
+    except Exception:
+        return False
+
+
 def pedir_automatica(act: dict, activada: bool) -> dict:
     """La llama el mantenimiento. Devuelve {'pedida': bool, 'detalle': str}."""
     remota = act.get("remota", "")
@@ -94,6 +110,9 @@ def pedir_automatica(act: dict, activada: bool) -> dict:
         return {"pedida": False, "detalle": f"hay versión nueva ({remota}) pero el actualizador del servidor no está activado"}
     if est["pedida"]:
         return {"pedida": False, "detalle": f"ya hay una actualización en marcha ({est['pedida']})"}
+    if act.get("casa") and usuario_ocupado():
+        return {"pedida": False, "detalle": f"hay versión nueva ({remota}) pero el ordenador se está usando a fondo: "
+                                             f"se actualizará otra noche, sin molestar"}
     todos = _intentos()
     i = todos.get(remota) or {"veces": 0, "ultimo": 0}
     if i["veces"] >= MAX_INTENTOS:

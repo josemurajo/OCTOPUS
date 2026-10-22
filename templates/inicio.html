@@ -2,6 +2,11 @@
 {% from "_aviso.html" import aviso %}
 {% block title %}Inicio{% endblock %}
 {% block content %}
+{% if boveda_desconectada() %}
+<div class="notice problema" style="font-size:17px"><strong>Conecta el disco de las copias</strong>
+  Las copias se guardan en <code>{{ boveda_desconectada() }}</code> y ese disco no está conectado. En cuanto lo
+  conectes, todo sigue solo.</div>
+{% endif %}
 {% if incidentes_abiertos %}
 <div class="notice problema" style="font-size:17px"><strong>Hay {{ incidentes_abiertos }} incidente{{ 's' if incidentes_abiertos != 1 }} de seguridad abierto{{ 's' if incidentes_abiertos != 1 }}</strong>
   OCTOPUS ha aislado el equipo afectado y restaurado una copia sana. Revisa qué ha pasado y libera el equipo cuando esté limpio.
@@ -18,6 +23,8 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <button class="btn btn-primary btn-big" type="submit">Hacer copia de todo ahora</button>
   </form>
+  {% elif not total and modo_casa() %}
+  <div class="actions"><a class="btn btn-primary btn-big" href="{{ url_for('casa_inicio') }}">Proteger este ordenador</a></div>
   {% elif not total %}
   <div class="actions">{% if funcion_activa('buscar_equipos') %}<a class="btn btn-primary btn-big" href="{{ url_for('buscar_equipos') }}">Buscar los equipos de la red</a>{% endif %}
     <a class="btn btn-big" href="{{ url_for('equipo_nuevo') }}">Añadir uno a mano</a></div>

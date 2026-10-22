@@ -939,7 +939,7 @@ def copia_completa(cfg: dict) -> dict:
             cmd.append("--use-fs-snapshot")
         else:
             cmd.append("--one-file-system")
-        result = run_cmd(cmd, env=restic_env(cfg))
+        result = ejecutar_copia(cmd, restic_env(cfg))
         if result.returncode not in (0, 3):
             log(f"Copia completa fallida: {(result.stderr or '').strip()[-300:]}")
             return {"status": "error", "message": (result.stderr or result.stdout)[-1000:]}
@@ -1197,6 +1197,35 @@ def limite_subida(ajustes: dict, ahora: datetime | None = None) -> int:
     return kbps
 
 
+# ---- modo discreto: que la copia no se note (la lógica está en octopus_discreto.py, junto al agente)
+def _discreto_mod():
+    try:
+        import octopus_discreto
+        return octopus_discreto
+    except ImportError:
+        return None
+
+
+def ajustes_discreto() -> dict:
+    """Lo que ha elegido el panel (Ajustes → Funciones → Modo discreto). Si aún no se sabe: encendido."""
+    v = AJUSTES_SERVIDOR.get("discreto")
+    return v if isinstance(v, dict) else {"activo": True, "bateria": True}
+
+
+def ejecutar_copia(cmd: list[str], env: dict) -> subprocess.CompletedProcess:
+    """Lanza una copia de restic. Con el modo discreto, vigilada: va despacio o casi parada mientras el usuario juega
+    o usa el equipo a fondo, y a toda velocidad cuando lo deja. El resultado lleva .discreto con lo que pasó."""
+    mod, aj = _discreto_mod(), ajustes_discreto()
+    if mod and aj.get("activo", True):
+        return mod.ejecutar(cmd, env=env, timeout=12 * 3600, cuidar_bateria=bool(aj.get("bateria", True)), log=log)
+    return run_cmd(cmd, env=env)
+
+
+def resumen_discreto(result) -> str:
+    mod, d = _discreto_mod(), getattr(result, "discreto", None)
+    return mod.resumen(d) if mod and d else ""
+
+
 def opciones_backup(cfg: dict) -> list[str]:
     """Exclusiones (cache, temporales, archivos bloqueados de Windows), instantanea VSS en Windows
     y limite de velocidad si se ha elegido en el panel."""
@@ -1307,13 +1336,16 @@ def _backup_forense_pasos(cfg: dict, path, paso) -> dict:
     paso("Almacen del servidor accesible; copiando...")
     cmd = [binary, "backup", *targets, "--tag", "octopus-agent", "--host", agent_host(cfg), "--json",
            *opciones_backup(cfg)]
-    result = run_cmd(cmd, env=env)
+    result = ejecutar_copia(cmd, env)
     if result.returncode not in (0, 3) and "lock" in (result.stderr or "").lower():
         # una copia anterior se corto (apagon, reinicio...) y dejo el almacen bloqueado: se quitan los bloqueos
         # viejos (no se borra ninguna copia) y se repite una vez
         paso("El almacen estaba bloqueado por una copia que se corto: se quita el bloqueo y se repite")
         run_cmd([binary, "unlock"], env=env, timeout=300)
-        result = run_cmd(cmd, env=env)
+        result = ejecutar_copia(cmd, env)
+    discreto = resumen_discreto(result)
+    if discreto:
+        paso(discreto)
     # restic devuelve 3 cuando la copia SE HA HECHO pero algun archivo no se pudo leer (en uso en Windows,
     # protegido por la privacidad de macOS...): es una copia valida, con aviso.
     incompleta = result.returncode == 3
@@ -1333,10 +1365,12 @@ def _backup_forense_pasos(cfg: dict, path, paso) -> dict:
         log(f"Backup OK con avisos snapshot={snapshot_id}: {len(omitidos)} archivos no se pudieron leer")
         _apuntar_copia()
         return {"status": "success", "snapshot_id": snapshot_id, "paths": targets, "host": agent_host(cfg),
-                "aviso": "Algunos archivos no se pudieron leer (en uso o sin permiso)", "omitidos": omitidos}
+                "aviso": "Algunos archivos no se pudieron leer (en uso o sin permiso)", "omitidos": omitidos,
+                "discreto": discreto}
     log(f"Backup OK snapshot={snapshot_id} rutas={targets}")
     _apuntar_copia()
-    return {"status": "success", "snapshot_id": snapshot_id, "paths": targets, "host": agent_host(cfg)}
+    return {"status": "success", "snapshot_id": snapshot_id, "paths": targets, "host": agent_host(cfg),
+            "discreto": discreto}
 
 
 def listar_snapshots(cfg: dict) -> dict:
@@ -1666,6 +1700,8 @@ def monitor_loop() -> None:
 def main() -> None:
     log("Iniciando agente OCTOPUS")
     log(f"Directorio: {app_dir()}")
+    if _discreto_mod():
+        _discreto_mod().bajar_prioridad_propia()   # el agente vigila en segundo plano: el usuario es lo primero
     signal.signal(signal.SIGINT, lambda *_: sys.exit(0))
     if hasattr(signal, "SIGTERM"):
         signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
@@ -1703,6 +1739,8 @@ def main() -> None:
 def copia_programada() -> int:
     """`zerotouch_agent.py --copia`: copia de seguridad diaria (la lanza cron o el Programador de tareas)."""
     cfg = load_config()
+    if _discreto_mod():
+        _discreto_mod().bajar_prioridad_propia()
     if esta_aislado():
         log("Copia programada omitida: el equipo esta aislado por un incidente")
         return 0

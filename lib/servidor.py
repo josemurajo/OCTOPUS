@@ -84,10 +84,36 @@ def _comando_panel(py: str) -> list[str]:
         return [py, str(BASE_DIR / "lib" / "admin_panel.py")]
 
 
+RUTA_ELEGIDA = DATA / "boveda_ruta.txt"          # la escribe el panel al elegir otro disco (modo casa)
+DESCONECTADA = DATA / "boveda_desconectada"       # el panel avisa «conecta tu disco de copias» mientras exista
+
+
+def boveda_actual() -> Path:
+    """Dónde se guardan las copias: la carpeta elegida en el panel (un disco USB, otro disco...) o la de instalación.
+    Si el disco elegido no está conectado, se apunta para que el panel lo diga claro."""
+    try:
+        elegida = RUTA_ELEGIDA.read_text(encoding="utf-8").strip()
+    except OSError:
+        elegida = ""
+    if not elegida:
+        DESCONECTADA.unlink(missing_ok=True)
+        return BOVEDA
+    ruta = Path(elegida)
+    if ruta.anchor and not Path(ruta.anchor).exists() or not ruta.parent.exists():
+        try:
+            DESCONECTADA.write_text(elegida, encoding="utf-8")
+        except OSError:
+            pass
+        log(f"El disco de las copias no está conectado ({elegida}): las copias esperan a que se conecte")
+    else:
+        DESCONECTADA.unlink(missing_ok=True)
+    return ruta
+
+
 def comandos() -> dict[str, list[str]]:
     py = sys.executable
     return {
-        "almacen": [programa("rest-server"), "--path", str(BOVEDA), "--listen", ":8000", "--append-only",
+        "almacen": [programa("rest-server"), "--path", str(boveda_actual()), "--listen", ":8000", "--append-only",
                     "--htpasswd-file", str(HTPASSWD), "--tls",
                     "--tls-cert", str(BASE_DIR / "data" / "tls" / "panel.crt"),
                     "--tls-key", str(BASE_DIR / "data" / "tls" / "panel.key")],
@@ -211,7 +237,7 @@ def main() -> int:
         try:
             if flag.exists() and time.time() >= float(flag.read_text(encoding="utf-8").strip() or 0):
                 flag.unlink(missing_ok=True)
-                log("Reiniciando el panel y el almacen para usar el certificado nuevo")
+                log("Reiniciando el panel y el almacen (certificado nuevo u otro disco para las copias)")
                 for nombre in ("almacen", "panel"):
                     if nombre in _procesos and _procesos[nombre].poll() is None:
                         _procesos[nombre].terminate()
@@ -223,7 +249,7 @@ def main() -> int:
                 espera[nombre] = retraso
                 log(f"{nombre} se ha parado (codigo {p.returncode}); se reinicia en {retraso:.0f} s")
                 time.sleep(retraso)
-                arrancar(nombre, cmds[nombre])
+                arrancar(nombre, comandos()[nombre])   # se recalcula: puede haber cambiado el disco de las copias
             elif nombre in espera and time.time() - _inicios.get(nombre, 0) > 300:
                 espera.pop(nombre, None)  # lleva 5 min estable: la proxima caida se reintenta rapido
     log("Parando OCTOPUS...")

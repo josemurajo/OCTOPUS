@@ -68,7 +68,29 @@ def db_path(env: dict) -> Path:
     return Path(p) if os.path.isabs(p) else (BASE_DIR / p).resolve()
 
 
+def _modo_casa() -> bool:
+    """¿OCTOPUS vive en el ordenador de una persona? Entonces el mantenimiento tampoco se puede notar."""
+    try:
+        from config_manager import ConfigManager
+        return ConfigManager(str(db_path(leer_env()))).get_config("modo_uso") == "casa"
+    except Exception:
+        return False
+
+
+def _discreto():
+    try:
+        sys.path.insert(0, str(BASE_DIR / "agentes"))
+        import octopus_discreto
+        return octopus_discreto
+    except ImportError:
+        return None
+
+
 def run(cmd, env=None, timeout=6 * 3600):
+    # en casa, lo pesado de cada noche (comprobar y limpiar el almacén con restic) va vigilado por el modo discreto:
+    # si a esa hora alguien está jugando, va casi parado y no se nota
+    if cmd and "restic" in os.path.basename(str(cmd[0])).lower() and _modo_casa() and _discreto():
+        return _discreto().ejecutar(list(cmd), env=env, timeout=timeout * 3)
     try:
         return subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -656,7 +678,7 @@ def main(argv: list[str]) -> int:
                 pass
             # solo de madrugada (el panel se reinicia): si el mantenimiento se lanza de dia, se deja para la noche
             if datetime.now().hour < 7:
-                r = _act.pedir_automatica(_av.leer_actualizacion(), activada)
+                r = _act.pedir_automatica(dict(_av.leer_actualizacion() or {}, casa=_modo_casa()), activada)
             else:
                 r = {"pedida": False, "detalle": "no hay versión nueva" if not _av.leer_actualizacion().get("hay_nueva")
                      else "hay versión nueva: si está activada, se instalará sola esta noche"}

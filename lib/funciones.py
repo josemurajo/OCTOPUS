@@ -61,6 +61,14 @@ FUNCIONES: list[dict] = [
     {"clave": "actualizar_solo", "grupo": "copias", "nivel": "basico", "defecto": True,
      "nombre": "Actualizar OCTOPUS solo (de madrugada)",
      "explica": "Instala solo las versiones nuevas firmadas, por la noche. Apágalo si no quieres que se actualice solo."},
+    {"clave": "discreto", "grupo": "copias", "nivel": "basico", "defecto": True,
+     "nombre": "Que la copia no se note (modo discreto)",
+     "explica": "La persona que usa el equipo es lo primero. Si está jugando, editando vídeo o usando el equipo a fondo, "
+                "la copia se pone sola en «no molestar» y va muy despacio; cuando lo deja, vuelve a toda velocidad. "
+                "Sin ventanas, sin avisos y sin reiniciar nunca nada.",
+     "opciones": [("bateria", "Cuidar la batería de los portátiles", "eleccion", "si", "basico",
+                   "Sin enchufar, la copia va despacio; con poca batería, casi parada.",
+                   {"valores": [("si", "Sí"), ("no", "No")]})]},
     {"clave": "informe_mensual", "grupo": "copias", "nivel": "basico", "defecto": True,
      "nombre": "Informe mensual por correo",
      "explica": "El día 1 de cada mes llega un resumen de cómo han ido las copias."},

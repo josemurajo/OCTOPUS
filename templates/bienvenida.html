@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Bienvenida{% endblock %}
+{% block content %}
+{# Primera vez: ¿casa o empresa? (lib/admin_panel.py: bienvenida; los ajustes de cada modo en lib/casa.py) #}
+<style>
+.modos { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:18px; margin-top:8px; }
+.modo { display:flex; flex-direction:column; gap:10px; margin:0; }
+.modo .icono { font-size:40px; line-height:1; }
+.modo ul { margin:0; padding-left:20px; }
+.modo li { margin:4px 0; }
+.modo form { margin-top:auto; }
+</style>
+<h1>Bienvenido a OCTOPUS</h1>
+<p class="lead">Una sola pregunta para dejarlo todo a tu medida. Lo puedes cambiar cuando quieras en Ajustes.</p>
+
+<div class="modos">
+  <div class="card modo">
+    <div class="icono" aria-hidden="true">🏠</div>
+    <h2>Para casa</h2>
+    <p>Para <strong>tu ordenador</strong> (y, si quieres, los de tu familia). OCTOPUS vive en este mismo PC.</p>
+    <ul>
+      <li>Protege tus documentos, fotos y vídeos con un clic.</li>
+      <li>Guarda las copias en un <strong>disco USB</strong> o en otro disco.</li>
+      <li><strong>No se nota:</strong> si juegas o usas el PC a fondo, se pone solo en «no molestar».
+        Sin ventanas y sin reinicios.</li>
+      <li>Panel más sencillo, solo con lo importante.</li>
+    </ul>
+    {% if not nativo %}<p class="small muted">Aquí OCTOPUS está en Docker o en un NAS: los ordenadores de casa se añaden
+      desde «Equipos».</p>{% endif %}
+    <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-primary btn-big" type="submit" name="modo" value="casa">Es para casa</button></form>
+  </div>
+
+  <div class="card modo">
+    <div class="icono" aria-hidden="true">🏢</div>
+    <h2>Para una empresa</h2>
+    <p>Para <strong>los ordenadores y servidores de una empresa</strong>, manejados desde un solo sitio.</p>
+    <ul>
+      <li>Lo ideal: OCTOPUS en una <strong>máquina aparte y siempre encendida</strong> (un PC viejo, un mini PC o el
+        NAS), no en el servidor de la empresa.</li>
+      <li>Lo manejas desde el navegador de tu PC.</li>
+      <li>Copias de ordenadores, servidores, máquinas virtuales, bases de datos y Microsoft 365 / Google.</li>
+      <li>Doble autenticación, usuarios, avisos por correo y respuesta a ataques.</li>
+    </ul>
+    <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-big" type="submit" name="modo" value="empresa">Es para una empresa</button></form>
+  </div>
+</div>
+{% endblock %}

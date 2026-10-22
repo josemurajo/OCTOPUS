@@ -177,12 +177,13 @@ pre.box { background: #0f172a; color: #e2e8f0; padding: 14px; border-radius: 10p
     <nav class="nav" aria-label="Menú principal">
       {% set ep = request.endpoint or '' %}
       <a href="{{ url_for('inicio') }}" class="{{ 'active' if ep == 'inicio' }}">Inicio</a>
-      <a href="{{ url_for('equipos') }}" class="{{ 'active' if ep in ['equipos','equipo','equipo_nuevo'] }}">Equipos</a>
+      {% if modo_casa() %}<a href="{{ url_for('casa_inicio') }}" class="{{ 'active' if ep == 'casa_inicio' }}">Tu ordenador</a>{% endif %}
+      <a href="{{ url_for('equipos') }}" class="{{ 'active' if ep in ['equipos','equipo','equipo_nuevo'] }}">{{ 'Ordenadores' if modo_casa() else 'Equipos' }}</a>
       {% if funcion_activa('multiempresa') %}<a href="{{ url_for('clientes') }}" class="{{ 'active' if ep == 'clientes' }}">Clientes</a>{% endif %}
       <a href="{{ url_for('restaurar') }}" class="{{ 'active' if ep in ['restaurar','explorar','asistente_recuperar'] }}">Recuperar archivos</a>
       <a href="{{ url_for('avisos') }}" class="{{ 'active' if ep == 'avisos' }}">Avisos</a>
       {% if funcion_activa('monitorizacion') %}<a href="{{ url_for('monitorizacion') }}" class="{{ 'active' if ep in ['monitorizacion','monitorizacion_equipo'] }}">Monitorizacion</a>{% endif %}
-      <a href="{{ url_for('incidentes') }}" class="{{ 'active' if ep in ['incidentes','incidente','sala'] }}">Incidentes{% if incidentes_abiertos %}<span class="badge">{{ incidentes_abiertos }}</span>{% endif %}</a>
+      {% if not modo_casa() or incidentes_abiertos %}<a href="{{ url_for('incidentes') }}" class="{{ 'active' if ep in ['incidentes','incidente','sala'] }}">Incidentes{% if incidentes_abiertos %}<span class="badge">{{ incidentes_abiertos }}</span>{% endif %}</a>{% endif %}
       <a href="{{ url_for('ajustes') }}" class="{{ 'active' if ep == 'ajustes' or ep.startswith('config') or ep in ['audit','deploy','cambiar_password','ajustes_funciones','usuarios'] }}">Ajustes</a>
     </nav>
     <div class="user">{{ session.get('username') }} <a href="{{ url_for('logout') }}">Salir</a></div>

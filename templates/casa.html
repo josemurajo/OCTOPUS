@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Tu ordenador{% endblock %}
+{% block content %}
+{# Modo casa: proteger este ordenador y elegir el disco de las copias (lib/admin_panel.py: casa_*; lib/casa.py) #}
+<style>
+.pasos { counter-reset: paso; }
+.paso h2::before { counter-increment: paso; content: counter(paso); display:inline-grid; place-items:center;
+  width:30px; height:30px; border-radius:50%; background:var(--accent-soft); color:var(--accent); margin-right:10px;
+  font-size:16px; }
+.paso.hecho h2::before { content:"✓"; background:var(--ok-soft); color:var(--ok); }
+.discos { display:grid; gap:10px; margin:10px 0; }
+.disco { display:flex; gap:12px; align-items:center; border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+.disco input { width:20px; height:20px; }
+.disco .txt { flex:1; }
+.carpetas { columns:2; margin:8px 0; padding-left:20px; }
+@media (max-width:600px) { .carpetas { columns:1; } }
+</style>
+<h1>Tu ordenador</h1>
+<p class="lead">Dos pasos y te olvidas: OCTOPUS hará las copias solo y sin molestarte.</p>
+
+{% if desconectado %}
+<div class="notice problema" style="font-size:17px"><strong>Conecta tu disco de copias</strong>
+  Las copias se guardan en <code>{{ desconectado }}</code> y ese disco no está conectado. En cuanto lo conectes, las
+  copias siguen solas.</div>
+{% endif %}
+
+{% if not nativo %}
+<div class="card"><p>Aquí OCTOPUS funciona en Docker o en un NAS. Para proteger un ordenador, ve a
+  <a href="{{ url_for('equipo_nuevo') }}">Añadir equipo</a>: se descarga un instalador y se abre con doble clic.</p></div>
+{% else %}
+<div class="pasos">
+  {% set fase = (estado.proteger or {}).fase %}
+  <div class="card paso {{ 'hecho' if equipo and fase != 'instalando' and fase != 'error' }}" id="proteger">
+    <h2>Proteger este ordenador</h2>
+    {% if equipo and fase not in ('instalando', 'error') %}
+      <p><strong>{{ equipo.hostname }}</strong> está protegido.
+        {% if est %}{{ est.texto }}{% endif %}</p>
+      <p class="small muted">Se copian: {{ carpetas|join(', ') }}. Para cambiarlo:
+        <a href="{{ url_for('equipo', system_id=equipo.id) }}">ficha del ordenador</a>.</p>
+      {% if puede_actuar() %}
+      <form method="post" action="{{ url_for('equipo_copia', system_id=equipo.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-primary" type="submit" {{ 'disabled' if est and not est.online }}>Hacer una copia ahora</button>
+      </form>{% endif %}
+    {% elif fase == 'instalando' %}
+      <p>Instalando la protección en este ordenador... (uno o dos minutos). Esta página se actualiza sola.</p>
+      <script>setTimeout(function(){ location.reload(); }, 5000);</script>
+    {% else %}
+      {% if fase == 'error' %}<div class="notice problema">No se pudo instalar: {{ estado.proteger.error }}. Vuelve a
+        intentarlo; si sigue fallando, usa «Enviar sugerencia o problema» (abajo del todo).</div>{% endif %}
+      <p>Se copiarán las carpetas importantes de las personas de este ordenador:</p>
+      <form method="post" action="{{ url_for('casa_proteger') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% if carpetas %}
+        <ul class="carpetas" style="list-style:none; padding-left:0">
+          {% for c in carpetas %}<li><label style="font-weight:400"><input type="checkbox" name="carpetas" value="{{ c }}" checked> {{ c }}</label></li>{% endfor %}
+        </ul>
+        {% else %}<p class="muted">No he encontrado carpetas personales.</p>{% endif %}
+        {% if puede_actuar() %}<button class="btn btn-primary btn-big" type="submit" {{ 'disabled' if not carpetas }}>Proteger este ordenador</button>{% endif %}
+      </form>
+    {% endif %}
+  </div>
+
+  {% set mover = estado.mover or {} %}
+  <div class="card paso {{ 'hecho' if discos and not (discos|selectattr('actual')|selectattr('sistema')|list) }}" id="disco">
+    <h2>¿Dónde guardo las copias?</h2>
+    <p>Ahora se guardan en <code>{{ boveda }}</code>.</p>
+    {% if mover.fase == 'copiando' %}
+      <p>Pasando las copias a <code>{{ mover.destino }}</code>... Esta página se actualiza sola.</p>
+      <script>setTimeout(function(){ location.reload(); }, 5000);</script>
+    {% elif mover.fase == 'error' %}
+      <div class="notice problema">No se pudieron pasar las copias: {{ mover.error }}. No se ha borrado nada.</div>
+    {% elif mover.fase == 'hecho' and mover.desde and mover.desde != boveda %}
+      <p class="small muted">Las copias antiguas siguen en <code>{{ mover.desde }}</code>. Cuando veas que todo va bien
+        puedes borrarlas para liberar espacio.</p>
+    {% endif %}
+    {% if discos|selectattr('actual')|selectattr('sistema')|list %}
+    <div class="notice atencion"><strong>Las copias están en el mismo disco que tus archivos.</strong> Si ese disco se
+      rompe, lo pierdes todo a la vez. Conecta un disco USB (o elige otro disco) y pásalas allí.</div>
+    {% endif %}
+    {% if puede_actuar() %}
+    <form method="post" action="{{ url_for('casa_disco') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="discos">
+        {% for d in discos %}
+        <label class="disco" style="font-weight:400">
+          <input type="radio" name="disco" value="{{ d.ruta }}" {{ 'checked' if d.actual }}>
+          <span class="txt"><strong>{{ d.nombre }}</strong> <span class="muted">({{ d.ruta }})</span><br>
+            <span class="small">{{ d.libre_gb }} GB libres de {{ d.total_gb }} GB</span></span>
+          {% if d.actual %}<span class="pill ok">Ahora aquí</span>{% endif %}
+          {% if d.externo %}<span class="pill ok">Disco externo: recomendado</span>
+          {% elif d.sistema %}<span class="pill atencion">Mismo disco que tus archivos</span>{% endif %}
+        </label>
+        {% endfor %}
+      </div>
+      <label class="small" style="font-weight:400; display:flex; gap:8px"><input type="checkbox" name="acepto_mismo">
+        Sé que elegir el disco del sistema no me protege si ese disco se rompe.</label>
+      <p><button class="btn btn-primary" type="submit">Guardar las copias aquí</button>
+        <span class="small muted">¿Acabas de conectar un disco? <a href="{{ url_for('casa_inicio') }}">Actualizar la lista</a></span></p>
+    </form>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<p class="small muted">OCTOPUS está en modo casa: la copia se pone sola en «no molestar» si juegas o usas el PC a fondo,
+  y vuelve a toda velocidad cuando lo dejas. ¿Es para una empresa? Cámbialo en <a href="{{ url_for('ajustes') }}">Ajustes</a>.</p>
+{% endblock %}

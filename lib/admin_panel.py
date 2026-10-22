@@ -295,10 +295,14 @@ def security_checks():
         # Contrasena inicial: obligar a cambiarla antes de usar el panel
         if session.get('must_change') and request.endpoint not in ('cambiar_password', 'logout', 'static'):
             return redirect(url_for('cambiar_password'))
+        # Despues de la contrasena, la primera vez: «¿casa o empresa?» (antes del movil: en casa no hace falta)
+        if not session.get('must_change') and puede_actuar() and _falta_modo() \
+                and request.endpoint not in ('bienvenida', 'logout', 'static', 'cambiar_password'):
+            return redirect(url_for('bienvenida'))
         # Primero la contrasena y despues el movil: si se exigieran las dos a la vez, cada pantalla mandaria a la
         # otra y el navegador se quedaria dando vueltas (pasaba en una instalacion recien hecha)
         if session.get('falta_2fa') and not session.get('must_change') \
-                and request.endpoint not in ('cuenta_2fa', 'ayuda_2fa', 'logout', 'static'):
+                and request.endpoint not in ('cuenta_2fa', 'ayuda_2fa', 'logout', 'static', 'bienvenida'):
             return redirect(url_for('cuenta_2fa'))
 
 
@@ -796,6 +800,145 @@ def legal_doc(doc):
     docs = [(k, v[1], v[2]) for k, v in _legal.DOCUMENTOS.items()]
     return render_template('legal.html', docs=docs, doc=doc, titulo=_legal.DOCUMENTOS[doc][1], cuerpo=cuerpo,
                            fuente=URL_CODIGO_FUENTE)
+
+
+# ---------------------------------------------------------------- ¿casa o empresa? (lib/casa.py)
+import casa as _casa
+
+
+def modo_uso():
+    return config_manager.get_config('modo_uso') or ''
+
+
+def _falta_modo():
+    """Aún no se ha elegido casa o empresa. Una instalación que ya tiene equipos es de empresa (como era antes)."""
+    if modo_uso():
+        return False
+    with get_db_connection() as c:
+        if c.execute('SELECT 1 FROM systems LIMIT 1').fetchone():
+            config_manager.set_config('modo_uso', 'empresa', None)
+            return False
+    return True
+
+
+app.jinja_env.globals['modo_casa'] = lambda: modo_uso() == 'casa'
+
+
+@app.route('/bienvenida', methods=['GET', 'POST'])
+@login_required
+def bienvenida():
+    if not puede_actuar():
+        return redirect(url_for('inicio'))
+    if request.method == 'POST':
+        modo = request.form.get('modo')
+        if modo not in ('casa', 'empresa'):
+            flash('Elige una de las dos opciones.', 'error')
+            return redirect(url_for('bienvenida'))
+        _casa.aplicar_preset(modo, config_manager, session['user_id'])
+        log_audit(session['user_id'], 'MODO_USO', f'Modo elegido: {modo}', request.remote_addr)
+        if modo == 'casa':
+            session['falta_2fa'] = False     # en casa la doble autenticación es opcional (se puede encender)
+            return redirect(url_for('casa_inicio'))
+        session['falta_2fa'] = _necesita_2fa(_usuario_actual()) and not _dosfa.activo(DB_FILE, session['user_id'])
+        return redirect(url_for('inicio'))
+    return render_template('bienvenida.html', nativo=_casa.nativo())
+
+
+def _usuario_actual():
+    with get_db_connection() as c:
+        return c.execute('SELECT * FROM users WHERE id = ?', (session['user_id'],)).fetchone()
+
+
+def _este_equipo():
+    with get_db_connection() as c:
+        return c.execute('SELECT * FROM systems WHERE lower(hostname) = lower(?)', (_casa.nombre_este_equipo(),)).fetchone()
+
+
+@app.route('/casa')
+@login_required
+def casa_inicio():
+    """Los dos pasos del modo casa: proteger este ordenador y elegir el disco de las copias."""
+    equipo = _este_equipo()
+    lista = _equipos_con_estado() if equipo else []
+    est = next((e['est'] for e in lista if e['id'] == equipo['id']), None) if equipo else None
+    return render_template('casa.html', nativo=_casa.nativo(), equipo=equipo, est=est,
+                           carpetas=_casa.carpetas_personales() if not equipo else _rutas_de(equipo),
+                           discos=_casa.discos() if _casa.nativo() else [], estado=_casa.estado(),
+                           boveda=str(_casa.boveda_actual()), desconectado=_boveda_desconectada())
+
+
+@app.route('/casa/estado')
+@login_required
+def casa_estado():
+    return jsonify(_casa.estado())
+
+
+def _boveda_desconectada():
+    try:
+        return (_casa.DATA / 'boveda_desconectada').read_text(encoding='utf-8').strip()
+    except OSError:
+        return ''
+
+
+app.jinja_env.globals['boveda_desconectada'] = _boveda_desconectada
+
+
+@app.route('/casa/proteger', methods=['POST'])
+@role_required('admin', 'supremo')
+def casa_proteger():
+    if not _casa.nativo():
+        flash('Aquí OCTOPUS está en Docker: añade este ordenador desde Equipos → Añadir equipo.', 'error')
+        return redirect(url_for('casa_inicio'))
+    nombre = _casa.nombre_este_equipo()
+    so = 'windows' if _casa.SISTEMA == 'windows' else 'macos'
+    rutas = [r for r in request.form.getlist('carpetas') if r in _casa.carpetas_personales()] or _casa.carpetas_personales()
+    if not rutas:
+        flash('No he encontrado carpetas personales en este ordenador. Añádelo desde Equipos → Añadir equipo.', 'error')
+        return redirect(url_for('casa_inicio'))
+    if not _este_equipo():
+        with get_db_connection() as c:
+            c.execute("INSERT INTO systems (hostname, ip_address, os_family, status, notes) VALUES (?, '127.0.0.1', ?, "
+                      "'unknown', ?)", (nombre, so, json.dumps({'rutas': rutas, 'este_equipo': True})))
+        log_audit(session['user_id'], 'SYSTEM_ADD', f'{nombre} ({so}, este ordenador)', request.remote_addr)
+    import alta_equipos
+    _casa.proteger_este_equipo(alta_equipos.paquete(nombre, so, rutas, _ordenes.nuevo_token(nombre)), nombre)
+    flash('Instalando la protección en este ordenador. Tarda uno o dos minutos: no hace falta que hagas nada.', 'info')
+    return redirect(url_for('casa_inicio'))
+
+
+@app.route('/casa/disco', methods=['POST'])
+@role_required('admin', 'supremo')
+def casa_disco():
+    if not _casa.nativo():
+        return redirect(url_for('casa_inicio'))
+    ruta = request.form.get('disco', '')
+    disco = next((d for d in _casa.discos() if d['ruta'] == ruta), None)
+    if not disco:
+        flash('Ese disco ya no está. Vuelve a elegir.', 'error')
+        return redirect(url_for('casa_inicio'))
+    if disco['sistema'] and request.form.get('acepto_mismo') != 'on':
+        flash('Ese es el disco del sistema: si se rompe, perderías a la vez tus archivos y sus copias. Elige otro '
+              'disco, o marca la casilla si de verdad lo quieres así.', 'error')
+        return redirect(url_for('casa_inicio'))
+    necesita = _casa.uso_copias()
+    if disco['libre_gb'] < necesita + 1:
+        flash(f'En ese disco no cabe: hay {disco["libre_gb"]} GB libres y las copias ocupan {necesita} GB.', 'error')
+        return redirect(url_for('casa_inicio'))
+    _casa.mover_copias(ruta, Path(BASE_DIR) / 'install' / '.env')
+    log_audit(session['user_id'], 'CASA_DISCO', f'Copias a {ruta}', request.remote_addr)
+    flash(f'Pasando las copias a {disco["nombre"]}. En un momento el panel se recarga solo.', 'info')
+    return redirect(url_for('casa_inicio'))
+
+
+@app.route('/ajustes/modo', methods=['POST'])
+@role_required('admin', 'supremo')
+def cambiar_modo():
+    modo = request.form.get('modo')
+    if modo in ('casa', 'empresa'):
+        _casa.aplicar_preset(modo, config_manager, session['user_id'])
+        log_audit(session['user_id'], 'MODO_USO', f'Modo cambiado a: {modo}', request.remote_addr)
+        flash('Ahora OCTOPUS está en modo ' + ('casa.' if modo == 'casa' else 'empresa.'), 'success')
+    return redirect(url_for('ajustes'))
 
 
 @app.route('/login/empresa')
@@ -2175,6 +2318,8 @@ def _ajustes_agente(row):
     return {'limite_kbps': aj['limite_kbps'], 'solo_horario': aj['solo_horario'],
             'copia_completa': bool(agentes.notas_equipo(row).get('copia_completa')), 'copia_completa_dias': 7,
             'senuelos': config_manager.get_config('senuelos') is not False,
+            # siempre se manda: el agente decide con esto si vigila al usuario para no molestarle
+            'discreto': {'activo': _fun.activa('discreto'), 'bateria': _fun.opcion('discreto', 'bateria') != 'no'},
             # siempre se manda (aunque esté apagada): si no, el agente se quedaría con lo último que recibió
             'vms': {'activa': bool(vms.get('activa')) and _fun.activa('copias_vm'), 'dias': vms.get('dias') or 1,
                     'excluir': list(vms.get('excluir') or [])},

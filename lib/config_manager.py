@@ -85,6 +85,9 @@ class ConfigManager:
         # Instalar solas (por la noche) las versiones nuevas firmadas; False = en pausa
         "actualizar_solo": True,
 
+        # «casa» (OCTOPUS en el propio ordenador de una persona) o «empresa»; vacío = se pregunta al entrar
+        "modo_uso": "",
+
         # Arreglar solos los avisos sin riesgo (repetir copias, quitar bloqueos...); lo que borra datos pide permiso
         "autoarreglo": True,
 
