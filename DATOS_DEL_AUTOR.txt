@@ -11,10 +11,10 @@
 NOMBRE=José Murillo Rajo
 
 # Correo para que la gente ejerza sus derechos de protección de datos (RGPD)
-CORREO_PRIVACIDAD=
+CORREO_PRIVACIDAD=octopuszerotouch@gmail.com
 
 # Correo para avisar de fallos de seguridad en privado (si lo dejas vacío: el aviso privado de GitHub)
-CORREO_SEGURIDAD=
+CORREO_SEGURIDAD=octopuszerotouch@gmail.com
 
 # Cuánto tiempo, como mucho, se guardan las sugerencias y problemas que llegan al buzón
 CONSERVAR_SUGERENCIAS=24 meses

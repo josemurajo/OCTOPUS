@@ -7,10 +7,7 @@ Actualizado: 22/10/2026 (versión 3.0.0 lista para firmar)
 
 Lo tuyo, en orden. Todo es gratis.
 
-1. 🔴 **Pon tus datos en `DATOS_DEL_AUTOR.txt`** (5 min), en la carpeta principal. Basta con un correo para que la
-   gente ejerza sus derechos de protección de datos (`CORREO_PRIVACIDAD`) y, si quieres, otro para fallos de
-   seguridad (`CORREO_SEGURIDAD`). Es público: crea uno solo para OCTOPUS (Gmail, Outlook o Proton) y pásamelo, o
-   edítalo tú en GitHub (lápiz ✏️ → *Commit changes*).
+1. ✅ Correo de OCTOPUS puesto (octopuszerotouch@gmail.com) en `DATOS_DEL_AUTOR.txt` (22/10).
 2. ⚪ Token de Telegram: **José decide seguir con el actual** (22/10), aunque se vio en el chat. Riesgo asumido:
    quien lo tenga podría mandar mensajes con el bot. Se cambia cuando quieras (@BotFather → `/revoke`).
 3. 🔴 **Haz pública la imagen** (1 min): abre https://github.com/users/josemurajo/packages/container/octopus/settings,
