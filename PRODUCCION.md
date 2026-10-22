@@ -284,7 +284,7 @@ restic -r <ruta-o-direccion-del-almacen> restore latest --host <equipo> --target
   usuarios de la empresa (Active Directory/LDAP, OIDC, RADIUS). Los usuarios locales nunca se pueden suplantar con
   uno de la empresa. Si alguien se queda fuera: `octopus.sh acceso-emergencia` en el servidor.
 - En Windows, el firewall se abre en cualquier tipo de red (Windows marca muchas redes de oficina como «públicas»).
-- Pendiente para una próxima versión: doble autenticación (código de una app) al entrar en el panel.
+- Doble autenticación con el móvil al entrar en el panel (obligatoria para administradores, de serie).
 
 ## 11. Sugerencias y problemas (soporte)
 

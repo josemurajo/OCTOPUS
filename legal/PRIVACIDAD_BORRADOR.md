@@ -39,7 +39,7 @@ cliente nadie puede leerlas, tampoco los autores.
 
 ## B. Lo que llega a los autores (botón «Enviar sugerencia o problema»)
 
-**Responsable:** [nombre de quien mantiene el proyecto], [correo de privacidad].
+**Responsable:** [nombre de quien mantiene el proyecto]. Contacto: [correo de privacidad].
 **Qué datos:** los que el cliente envía al pulsar «Enviar sugerencia o problema» (texto, correo de contacto si lo da,
 identificador anónimo del servidor y, si lo marca, el diagnóstico anónimo).
 **Para qué:** responder y resolver la sugerencia o el problema, y mejorar el Programa.
@@ -47,7 +47,7 @@ identificador anónimo del servidor y, si lo marca, el diagnóstico anónimo).
 **Cuánto tiempo:** lo necesario para resolverlo y, como mucho, [24 meses]; después se borra.
 **Quién más lo ve:** los proveedores técnicos del buzón (Cloudflare y Telegram), con sus garantías para
 transferencias internacionales. [Revisar con asesor: cláusulas contractuales tipo / marco UE-EE. UU.]
-**Derechos:** acceso, rectificación, supresión, oposición, limitación y portabilidad escribiendo a [correo]. Si no se
+**Derechos:** acceso, rectificación, supresión, oposición, limitación y portabilidad dirigiéndote a [correo]. Si no se
 atiende, reclamación ante la Agencia Española de Protección de Datos (www.aepd.es).
 
 ## C. Si alguien instala o mantiene OCTOPUS para otra empresa

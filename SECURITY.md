@@ -8,7 +8,7 @@ Gracias por ayudar a que OCTOPUS sea seguro.
 de que esté arreglado.
 
 Usa el aviso privado de GitHub: pestaña **Security → Report a vulnerability** de este repositorio. Solo lo ven los
-responsables del proyecto.
+responsables del proyecto. Otra forma de avisar en privado: [correo de seguridad].
 
 Cuéntanos, si puedes:
 - qué versión (archivo `VERSION`) y en qué sistema (Linux, Windows, Mac; servidor o agente);

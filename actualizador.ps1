@@ -41,7 +41,7 @@ if (-not ((Test-Path $Clave) -and ((Get-Content $Clave -Raw) -match "ssh-"))) {
     Resultado $false "Esta instalacion no tiene la clave de publicacion de OCTOPUS (install\firma_publicacion.pub): por seguridad la actualizacion a distancia esta desactivada. Actualiza a mano con el instalador de la version nueva."
     exit 1
 }
-$url = Leer "OCTOPUS_URL_CODIGO"; if (-not $url) { $url = "https://codeload.github.com/josemurajo/OCTOPUS/tar.gz/refs/heads/main" }
+$url = Leer "OCTOPUS_URL_CODIGO"; if (-not $url) { $url = "https://codeload.github.com/josemurajo/OCTOPUS/tar.gz/refs/heads/publicado" }
 $proto = Leer "OCTOPUS_PROTO_DESCARGA"   # solo para pruebas; por defecto solo HTTPS
 $esquema = ([Uri]$url).Scheme
 if ($esquema -ne "https" -and -not ($proto -and $proto.TrimStart('=') -eq $esquema)) {

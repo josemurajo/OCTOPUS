@@ -1,0 +1,20 @@
+# OCTOPUS Zero-Touch - DATOS DEL AUTOR (lo único que tiene que rellenar José antes de publicar)
+#
+# Se usan en la página «Legal y privacidad» del panel (protección de datos del botón «Enviar sugerencia o
+# problema») y en el aviso de fallos de seguridad. Escribe detrás del signo = y guarda. Nada más.
+# Un correo vacío no rompe nada: en su lugar se manda a la gente a las incidencias de GitHub.
+#
+# Ojo: este archivo es PÚBLICO (va en GitHub). Pon un correo que no te importe que se vea, por ejemplo uno
+# hecho solo para OCTOPUS (gratis en Gmail, Outlook o Proton). Nunca pongas aquí contraseñas ni claves.
+
+# Tu nombre tal como quieres que aparezca como responsable
+NOMBRE=José Murillo Rajo
+
+# Correo para que la gente ejerza sus derechos de protección de datos (RGPD)
+CORREO_PRIVACIDAD=
+
+# Correo para avisar de fallos de seguridad en privado (si lo dejas vacío: el aviso privado de GitHub)
+CORREO_SEGURIDAD=
+
+# Cuánto tiempo, como mucho, se guardan las sugerencias y problemas que llegan al buzón
+CONSERVAR_SUGERENCIAS=24 meses

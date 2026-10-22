@@ -17,7 +17,7 @@ set -uo pipefail
 RAIZ="$(cd "$(dirname "$(realpath "$0" 2>/dev/null || echo "$0")")" && pwd)"
 HOST_ENV="$RAIZ/install/.env"
 leer() { [ -f "$HOST_ENV" ] || return 0; { grep -E "^$1=" "$HOST_ENV" 2>/dev/null || true; } | tail -1 | cut -d= -f2- | tr -d '\r"'; }
-URL="$(leer OCTOPUS_URL_CODIGO)"; URL="${URL:-https://codeload.github.com/josemurajo/OCTOPUS/tar.gz/refs/heads/main}"
+URL="$(leer OCTOPUS_URL_CODIGO)"; URL="${URL:-https://codeload.github.com/josemurajo/OCTOPUS/tar.gz/refs/heads/publicado}"
 CLAVE="$RAIZ/install/firma_publicacion.pub"
 D=/data/actualizacion
 C=octopus

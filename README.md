@@ -88,25 +88,21 @@ Después, en el panel: **Equipos → Añadir equipo**.
 
 El laboratorio de pruebas con máquinas virtuales está en la carpeta `maquinas` (al lado de esta).
 
-## Antes de publicar una versión (para que una actualización nunca rompa las copias)
+## Cómo se publica una versión (para que una actualización nunca rompa las copias)
 
-1. Cada cambio que se sube a GitHub pasa solo las pruebas automáticas (agente en Linux, Windows y Mac, instalador
-   nativo del servidor en Windows y en Mac, almacén con bloqueo por tiempo y sintaxis de todos los scripts). Si algo falla, no se publica.
-2. Antes de cambiar `VERSION`, se pasa la batería del laboratorio (`maquinas/EJECUTAR_PRUEBAS.bat`): tiene que salir
-   «TODO CORRECTO».
-3. Para que los servidores puedan actualizarse solos, la versión se **firma**: `bash herramientas/crear_manifiesto.sh`
-   (lista de archivos con su huella) y, en el PC de quien publica, `bash herramientas/firmar_version.sh` (con su clave
-   privada, que nunca sale de su PC). Sin firma válida ningún servidor instala la versión.
-4. Al actualizar un servidor, si la versión nueva no arranca, el instalador vuelve solo a la anterior.
+1. Cada cambio que se sube a GitHub pasa solo las pruebas automáticas en equipos reales (Linux, Windows y Mac).
+2. Quien mantiene el código prepara la versión: explica los cambios en [CHANGELOG.md](CHANGELOG.md) y ejecuta
+   `bash herramientas/preparar_version.sh 3.0.0` (pone el número y crea el MANIFIESTO con la huella de cada archivo).
+3. José la **firma** en su PC (`bash herramientas/firmar_version.sh`, con su clave privada, que nunca sale de su PC) y
+   sube el archivo `MANIFIESTO.sig` a GitHub. Paso a paso: [PUBLICAR_VERSION.md](PUBLICAR_VERSION.md).
+4. A partir de ahí todo es automático: se comprueba la firma, la versión pasa a la rama `publicado` (la única que
+   descargan los servidores), se crea en *Releases* y se publica la imagen para los NAS. Lo que está a medio hacer en
+   `main` nunca llega a las empresas.
+5. Al actualizar un servidor, si la versión nueva no arranca, se vuelve sola a la anterior.
 
 ## Versión
 
-Ver `VERSION`. La versión 2.2 añade: avisos con código, explicación y botón «Solucionar», banderines (pasos de cada
-proceso) y diagnóstico descargable, semáforo 3-2-1, archivos señuelo contra ransomware, asistente «Buscar y
-recuperar», «Enviar sugerencia o problema», quién recibe cada aviso, registro de actividad firmado y aviso de
-versión nueva. La versión 2.1 añadió: prueba de recuperación automática, copias sospechosas marcadas,
-aviso sin copia configurable por equipo, aviso al terminar una recuperación, kit cifrado opcional,
-límite de velocidad de las copias e informe mensual.
+Ver `VERSION` y la lista de cambios en [CHANGELOG.md](CHANGELOG.md).
 
 ## Licencia
 

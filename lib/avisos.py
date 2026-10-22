@@ -339,7 +339,7 @@ def comprobar_actualizacion(timeout: float = 15) -> dict:
         pass
     if cfg.get("OCTOPUS_COMPROBAR_ACTUALIZACIONES", "si").lower() in ("no", "0", "false"):
         return {"ok": True, "hay_nueva": False, "detalle": "comprobación desactivada"}
-    url = cfg.get("OCTOPUS_URL_VERSION") or "https://raw.githubusercontent.com/josemurajo/OCTOPUS/main/VERSION"
+    url = cfg.get("OCTOPUS_URL_VERSION") or "https://raw.githubusercontent.com/josemurajo/OCTOPUS/publicado/VERSION"
     local = version_local()
     res = {"fecha": datetime.now().astimezone().isoformat(timespec="seconds"), "local": local}
     try:

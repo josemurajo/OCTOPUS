@@ -1,0 +1,82 @@
+# OCTOPUS Zero-Touch - publica una versión firmada por José (todo automático)
+#
+# Cómo se publica una versión:
+#   1. Claude prepara la versión en main: VERSION, CHANGELOG.md y MANIFIESTO (herramientas/preparar_version.sh).
+#   2. José la firma en su PC (bash herramientas/firmar_version.sh) y sube MANIFIESTO.sig a GitHub
+#      (botón «Add file → Upload files»). Nada más.
+#   3. Esto se lanza solo: comprueba la firma y cada archivo igual que lo hará cada servidor, y si todo está bien
+#      copia la versión a la rama «publicado» (la que descargan los servidores para actualizarse), crea la versión
+#      en la pestaña Releases y publica la imagen para los NAS con las etiquetas 3.0.0, 3.0, stable y latest.
+#
+# Si algo no cuadra (firma de otra clave, un archivo cambiado después de firmar...) no publica nada y lo explica.
+name: Publicar versión firmada
+
+on:
+  push:
+    branches: [main]
+    paths: ["MANIFIESTO.sig"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: publicar
+  cancel-in-progress: false
+
+jobs:
+  comprobar:
+    name: Comprobar firma y archivos
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: La clave es la de José (huella fija)
+        run: |
+          huella="$(ssh-keygen -lf install/firma_publicacion.pub | awk '{print $2}')"
+          echo "Huella de la clave del repositorio: $huella"
+          [ "$huella" = "SHA256:i1yVSDYnOR1CZ6Ag2Zt91PS9Qgx2DEwy8X/6glKFJfE" ] \
+            || { echo "::error::La clave de publicación no es la de José. No se publica."; exit 1; }
+      - name: Firma válida y cada archivo igual al firmado (lo mismo que comprueba cada servidor)
+        run: bash herramientas/comprobar_publicacion.sh
+      - id: v
+        run: echo "version=$(tr -cd '0-9.' < VERSION)" >> "$GITHUB_OUTPUT"
+
+  publicar:
+    name: Pasar a «publicado» y crear la versión
+    needs: comprobar
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Rama publicado (la que descargan los servidores)
+        run: git push --force origin HEAD:refs/heads/publicado
+      - name: Etiqueta y versión en Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ needs.comprobar.outputs.version }}
+        run: |
+          awk -v v="$V" '$0 ~ "^## "v {p=1; next} /^## / && p {exit} p' CHANGELOG.md > notas.md
+          echo "" >> notas.md
+          echo "Versión firmada por José Murillo Rajo (clave SHA256:i1yVSDYnOR1CZ6Ag2Zt91PS9Qgx2DEwy8X/6glKFJfE)." >> notas.md
+          if gh release view "v$V" >/dev/null 2>&1; then
+            echo "La versión v$V ya estaba publicada: solo se actualiza la rama."
+          else
+            git tag -f "v$V" && git push -f origin "refs/tags/v$V"
+            gh release create "v$V" --title "OCTOPUS $V" --notes-file notas.md --verify-tag
+          fi
+
+  imagen:
+    name: Imagen para NAS
+    needs: [comprobar, publicar]
+    uses: ./.github/workflows/imagen.yml
+    with:
+      version: ${{ needs.comprobar.outputs.version }}
+    permissions:
+      contents: read
+      packages: write

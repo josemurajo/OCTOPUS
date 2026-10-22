@@ -171,7 +171,7 @@ FUNCIONES: list[dict] = [
                                 ("lectura", "Solo ver")]})]},
 
     # ------------------------------------------------------------------------------------------- equipos
-    {"clave": "multiempresa", "grupo": "equipos", "nivel": "basico", "defecto": False, "en_pruebas": True,
+    {"clave": "multiempresa", "grupo": "equipos", "nivel": "basico", "defecto": False,
      "nombre": "Modo multiempresa (varios clientes)",
      "explica": "Para informáticos que llevan varias empresas con un solo OCTOPUS: cada equipo se asigna a un CLIENTE, "
                 "y aparece una pantalla «Clientes» con el resumen de cada uno (equipos, copias, avisos). Si lo apagas, "

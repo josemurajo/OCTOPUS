@@ -49,6 +49,46 @@ DOCUMENTOS = {
 }
 
 
+URL_INCIDENCIAS = "https://github.com/josemurajo/OCTOPUS/issues"
+URL_AVISO_PRIVADO = "https://github.com/josemurajo/OCTOPUS/security/advisories/new"
+_CORREO = re.compile(r"^[^@\s<>\"']+@[^@\s<>\"']+\.[A-Za-z]{2,}$")
+
+
+def datos_autor() -> dict:
+    """Lo que José rellena en DATOS_DEL_AUTOR.txt (nombre, correos...). Lo que falte o esté mal escrito se ignora:
+    un archivo a medio rellenar nunca rompe el panel."""
+    d = {"NOMBRE": AUTOR, "CORREO_PRIVACIDAD": "", "CORREO_SEGURIDAD": "", "CONSERVAR_SUGERENCIAS": "24 meses"}
+    try:
+        lineas = (RAIZ / "DATOS_DEL_AUTOR.txt").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        lineas = []
+    for linea in lineas:
+        linea = linea.strip()
+        if not linea or linea.startswith("#") or "=" not in linea:
+            continue
+        k, v = linea.split("=", 1)
+        k, v = k.strip().upper(), v.strip().strip('"').strip("'").strip()
+        if k not in d or len(v) > 120:
+            continue
+        if k.startswith("CORREO") and v and not _CORREO.match(v):
+            continue   # algo que no parece un correo: mejor nada que un dato roto
+        if v or k.startswith("CORREO"):
+            d[k] = v
+    return d
+
+
+def _con_datos_autor(t: str) -> str:
+    """Pone los datos del autor donde los textos tienen huecos entre corchetes."""
+    d = datos_autor()
+    privacidad = d["CORREO_PRIVACIDAD"] or "el responsable a través de su perfil de GitHub (https://github.com/josemurajo)"
+    seguridad = d["CORREO_SEGURIDAD"] or f"el aviso privado de GitHub ({URL_AVISO_PRIVADO})"
+    for hueco, valor in (("[nombre de quien mantiene el proyecto]", d["NOMBRE"]),
+                         ("[correo de privacidad]", privacidad), ("[correo]", privacidad),
+                         ("[correo de seguridad]", seguridad), ("[24 meses]", d["CONSERVAR_SUGERENCIAS"])):
+        t = t.replace(hueco, valor)
+    return t
+
+
 def texto(clave: str, valores: dict | None = None) -> str | None:
     """El texto del documento, con los datos de esta instalación ({empresa}, {procesos}...) ya puestos."""
     d = DOCUMENTOS.get(clave)
@@ -61,6 +101,8 @@ def texto(clave: str, valores: dict | None = None) -> str | None:
         return None
     for k, v in (valores or {}).items():
         t = t.replace("{" + k + "}", str(v))
+    if clave in ("privacidad", "seguridad"):
+        t = _con_datos_autor(t)
     return t
 
 

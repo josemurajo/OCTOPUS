@@ -16,10 +16,13 @@ que haya (copias, etc.) y responde. El servidor **nunca entra** en los equipos: 
 | `agentes/` | El programa que va en cada equipo (`zerotouch_agent.py`), el de monitorización (`octopus_monitor.py`) y el de copias de máquinas virtuales (`octopus_vms.py`) y el de bases de datos (`octopus_bd.py`) |
 | `tests/ci/` | Pruebas automáticas que GitHub pasa en cada cambio (Linux, Windows y Mac) |
 | `legal/` | Textos legales (licencia, privacidad, plantillas para la empresa) — se ven en el panel en «Legal y privacidad» |
-| `herramientas/` | Firmar una versión, crear el manifiesto |
+| `herramientas/` | Preparar una versión (`preparar_version.sh`), crear el manifiesto, firmarla (José) y comprobarla antes de publicar |
 | `install/` | docker-compose y la sala de análisis de incidentes |
 | `install/nas/`, `install/unraid/`, `install/proxmox/` | paquetes fáciles: compose para NAS/Portainer, plantilla de Unraid, contenedor LXC de Proxmox en un paso (guía: `INSTALAR_EN_NAS.md`) |
-| `.github/workflows/imagen.yml` | publica la imagen lista `ghcr.io/josemurajo/octopus` (amd64 + arm64) cuando pasan las pruebas |
+| `.github/workflows/imagen.yml` | publica la imagen `ghcr.io/josemurajo/octopus` (amd64 + arm64): `edge` cuando pasan las pruebas, `latest`/`stable`/`X.Y.Z` con cada versión firmada |
+| `.github/workflows/publicar.yml` | cuando José sube `MANIFIESTO.sig`: comprueba la firma y pasa la versión a la rama `publicado` (la que descargan los servidores), crea la *Release* y la imagen |
+| `DATOS_DEL_AUTOR.txt` | el nombre y los correos públicos de José (privacidad, seguridad): el panel los lee de aquí |
+| `CHANGELOG.md`, `PUBLICAR_VERSION.md`, `CLAUDE.md` | lista de cambios por versión, guía de José para firmar, reglas del proyecto para quien lo mantiene |
 | `maquinas/` (al lado) | El laboratorio de pruebas con máquinas virtuales |
 
 ## Los archivos de `lib/` (el cerebro)

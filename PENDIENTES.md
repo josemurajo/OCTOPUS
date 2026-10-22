@@ -1,20 +1,43 @@
 # OCTOPUS Zero-Touch v2 - PENDIENTES
 
 Lista de cosas por hacer. `[ ]` = pendiente, `[x]` = hecho.
-Actualizado: 14/10/2026 madrugada (versión 2.4: doble autenticación y monitorización)
+Actualizado: 22/10/2026 (versión 3.0.0 lista para firmar)
 
-### Lo que queda, de un vistazo
-- 🔴 **José**: crear la clave de publicación (8.11), crear el bot de Telegram y el buzón (8.6), decir el nombre del personaje de la historia.
-- ✅ Doble autenticación (1) y monitorización (2): **hechas el 14/10** (ver abajo).
-- **Para salir a producción** solo falta: tu clave de publicación, el bot/buzón (mañana), la prueba en equipos físicos
-  (`GUIA_PRUEBA_EQUIPOS_FISICOS.md`, 1 hora) y que un asesor revise `proyecto/legal/` (licencia y privacidad).
-- **Funciones hechas pero «En pruebas»** (vienen apagadas; se encienden en Ajustes → Funciones, modo experto, a sabiendas):
-  bloquear atacantes, panel solo desde la red de la oficina, doble aprobación, Active Directory/LDAP, OIDC, RADIUS,
-  USB de rescate, imagen de disco, arranque por red y despliegue en masa. Cuando pasen su batería, se cambia
-  `en_pruebas` a `False` en `lib/funciones.py` y vienen encendidas o disponibles para todos.
-- Por hacer: fases reales de 8.10 (USB de rescate, imagen de disco, PXE, despliegue), passkeys y caja fuerte de claves
-  (8.4), optimización con medidas (8.8), modo multiempresa y copia de Microsoft 365/Google (8.2), probar en un Windows
-  y un Mac físicos de la oficina.
+## ✅ PARA SALIR A PRODUCCIÓN (22/10/2026) — el programa está listo; solo faltan cosas tuyas
+
+Lo tuyo, en orden. Todo es gratis.
+
+1. 🔴 **Pon tus datos en `DATOS_DEL_AUTOR.txt`** (5 min), en la carpeta principal. Basta con un correo para que la
+   gente ejerza sus derechos de protección de datos (`CORREO_PRIVACIDAD`) y, si quieres, otro para fallos de
+   seguridad (`CORREO_SEGURIDAD`). Es público: crea uno solo para OCTOPUS (Gmail, Outlook o Proton) y pásamelo, o
+   edítalo tú en GitHub (lápiz ✏️ → *Commit changes*).
+2. 🔴 **Revoca el token viejo de Telegram** en @BotFather (`/revoke`) y pon el nuevo en Cloudflare (`TELEGRAM_TOKEN`),
+   porque se vio en el chat.
+3. 🔴 **Haz pública la imagen** (1 min), si no lo has hecho ya: GitHub → tu perfil → *Packages* → **octopus** →
+   *Package settings* → *Change visibility* → **Public**.
+4. 🔴 **Firma la versión 3.0.0** (5 min) cuando te avise de que está preparada: [PUBLICAR_VERSION.md](PUBLICAR_VERSION.md).
+   Al subir la firma, todo lo demás es automático.
+5. 🟠 **Descripción y temas del repositorio** (1 min): rueda ⚙ junto a «About» en GitHub.
+6. 🟠 **Antes de vender o anunciarlo**:
+   - que un asesor revise `legal/` (privacidad y licencia);
+   - comprobar que la marca «OCTOPUS» está libre en la OEPM (https://www.oepm.es, consulta gratis).
+7. 🟢 **Cuando puedas**: probar en un Windows y un Mac físicos de la oficina (`GUIA_PRUEBA_EQUIPOS_FISICOS.md`, 1 hora).
+
+**Qué viene «en pruebas»** (está hecho, pero viene apagado hasta probarlo en algo real; se puede encender en Ajustes
+→ Funciones, modo experto):
+
+| Función | Para quitarle el «en pruebas» necesito |
+|---|---|
+| Copias de máquinas virtuales | un Hyper-V o un Proxmox de verdad (Proxmox es gratis) |
+| Copia de Microsoft 365 / Google | una cuenta gratis del Microsoft 365 Developer Program y una cuenta de Google |
+| Active Directory/LDAP, OIDC, RADIUS | el servidor de usuarios de una empresa de verdad (o uno de prueba) |
+| USB de rescate, imagen de disco, arranque por red, despliegue | un PC físico viejo |
+
+Lo demás (copias de equipos y de bases de datos, avisos, recuperación, doble autenticación, multiempresa, paquetes
+para NAS…) viene listo y probado.
+
+**Para después** (no impide salir): imagen ISO todo en uno, VMware ESXi, llaves de acceso (passkeys), caja fuerte de
+claves y optimización con medidas reales (8.8).
 
 ---
 
@@ -113,7 +136,8 @@ Si no se instala, ese equipo no se monitoriza.
   probar arrancando un PC o una VM real).
 - ✅ Copias de **máquinas virtuales** (Hyper-V, KVM/libvirt, Proxmox), completas y en caliente.
 - ✅ Copias de **bases de datos** (SQL Server, MySQL/MariaDB, PostgreSQL): volcado consciente, recuperar como base
-  nueva y descargar. (Las dos vienen «en pruebas» hasta probarlas en un equipo real).
+  nueva y descargar. (Las VM vienen «en pruebas» hasta probarlas en un hipervisor real; las bases de datos ya
+  vienen disponibles: se prueban con los motores de verdad en GitHub).
 - ✅ Copia de la **nube (Microsoft 365 y Google)**: correo (.eml) y archivos (OneDrive/Drive) al almacén del
   servidor, incremental, con asistente paso a paso en Ajustes → Copia de la nube, credenciales cifradas, recuperación.
   Motor probado de punta a punta con API simulada (`tests/ci/prueba_nube.py`). Viene «en pruebas»: la prueba real
