@@ -42,6 +42,11 @@ Lo tuyo, en orden. Todo es gratis.
 Lo demás (copias de equipos y de bases de datos, avisos, recuperación, doble autenticación, multiempresa, paquetes
 para NAS…) viene listo y probado.
 
+**Llaves de acceso (huella / Windows Hello) — descartado por ahora (22/10):** los navegadores solo las permiten
+con un nombre de dominio y un certificado reconocido. OCTOPUS se abre por IP y con certificado propio, así que no
+funcionarían. Se podría retomar si algún día se usa un nombre propio con certificado gratis (Let's Encrypt).
+La doble autenticación con el móvil ya cubre esa seguridad.
+
 **Para después** (no impide salir): imagen ISO todo en uno, VMware ESXi, llaves de acceso (passkeys), caja fuerte de
 claves y optimización con medidas reales (8.8).
 

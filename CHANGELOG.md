@@ -22,6 +22,8 @@ instalan versiones con esa firma. Lo más nuevo, arriba.
 - **Modo discreto** (para todos): si la persona juega o usa el equipo a fondo, la copia se pone sola en «no
   molestar» y va casi parada; cuando lo deja, vuelve a toda velocidad. Sin ventanas y sin reinicios. En casa, el
   mantenimiento de la noche tampoco se nota y no actualiza mientras se usa el ordenador.
+- **Icono «OCTOPUS te protege»** junto al reloj de Windows (encendido en casa): verde si todo va bien. Al pasar
+  el ratón dice cuándo fue la última copia. Solo avisa si algo va mal.
 - **Empresa:** OCTOPUS en una máquina aparte siempre encendida, con un icono en el escritorio del PC desde el que se
   maneja.
 - **Destinos de copia:** un equipo puede copiar directo a otro disco, una carpeta de red, un NAS o un S3, «en lugar

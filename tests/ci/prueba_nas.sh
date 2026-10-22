@@ -33,7 +33,7 @@ curl -fsk -m 3 https://127.0.0.1:8443/healthz >/dev/null && ok "panel en https:/
 codigo="$(curl -sk -m 5 -o /dev/null -w '%{http_code}' https://127.0.0.1:8444/)"
 [[ "$codigo" =~ ^[24] ]] && ok "almacén en https://IP:8444 ($codigo)" || mal "almacén ($codigo)"
 
-sleep 2
+for _ in $(seq 1 30); do docker logs $NOMBRE 2>&1 | grep -qi "contrasena (de un solo uso)" && break; sleep 1; done
 CLAVE="$(docker logs $NOMBRE 2>&1 | grep -i 'contrasena' | grep -o ': [^ ]*$' | tail -1 | cut -c3-)"
 docker logs $NOMBRE 2>&1 | grep -q "PRIMER ACCESO" && [ -n "$CLAVE" ] && ok "la primera contraseña sale en el Registro" \
     || { mal "contraseña en el Registro"; docker logs --tail 40 $NOMBRE; }
