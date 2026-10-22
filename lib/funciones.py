@@ -74,6 +74,11 @@ FUNCIONES: list[dict] = [
      "explica": "Que un equipo copie DIRECTAMENTE a otro sitio (otro disco, una carpeta de red, un NAS o un S3) en lugar "
                 "de al servidor OCTOPUS, o además. Para servidores enormes o sucursales con su NAS: los datos no pasan "
                 "por OCTOPUS, que solo manda, vigila y avisa. Se elige en la ficha de cada equipo."},
+    {"clave": "icono_usuario", "grupo": "equipos", "nivel": "basico", "defecto": False,
+     "nombre": "Icono «OCTOPUS te protege» junto al reloj (Windows)",
+     "explica": "Un pulpo pequeño junto al reloj de los Windows protegidos: verde si todo va bien, y al pasar el ratón "
+                "dice cuándo fue la última copia. Solo avisa si algo va mal (como mucho una vez cada 12 horas). Se "
+                "pone al instalar el agente; en los equipos ya instalados, al reinstalarlo. En modo casa viene encendido."},
     {"clave": "informe_mensual", "grupo": "copias", "nivel": "basico", "defecto": True,
      "nombre": "Informe mensual por correo",
      "explica": "El día 1 de cada mes llega un resumen de cómo han ido las copias."},

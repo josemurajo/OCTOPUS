@@ -16,6 +16,8 @@ $Prog    = Join-Path $env:ProgramFiles 'Octopus'
 $Datos   = Join-Path $env:ProgramData 'Octopus'
 $Tarea   = 'OCTOPUS Agente'
 $TareaCopia = 'OCTOPUS Copia diaria'
+$TareaIcono = 'OCTOPUS Icono'
+$EstadoPublico = Join-Path $env:ProgramData 'Octopus-estado'
 $ReglaFw = 'OCTOPUS Agente'
 $WgExe   = Join-Path $env:ProgramFiles 'WireGuard\wireguard.exe'   # solo para quitar restos de versiones anteriores
 $ResticVer = '0.16.4'
@@ -76,7 +78,11 @@ function Buscar-Python {
 # ------------------------------------------------------------------ desinstalar
 if ($Desinstalar) {
     Paso 'Quitando OCTOPUS de este equipo'
-    foreach ($t in @($Tarea, $TareaCopia)) {
+    Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -like '*octopus_bandeja.ps1*' } |
+        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    Remove-Item $EstadoPublico -Recurse -Force -ErrorAction SilentlyContinue
+    foreach ($t in @($Tarea, $TareaCopia, $TareaIcono)) {
         if (Get-ScheduledTask -TaskName $t -ErrorAction SilentlyContinue) {
             Stop-ScheduledTask -TaskName $t -ErrorAction SilentlyContinue
             Unregister-ScheduledTask -TaskName $t -Confirm:$false
@@ -200,6 +206,24 @@ try {
         -ExecutionTimeLimit (New-TimeSpan -Hours 12) -MultipleInstances IgnoreNew
     Register-ScheduledTask -TaskName $TareaCopia -Action $accionCopia -Trigger (New-ScheduledTaskTrigger -Daily -At '20:00') `
         -Principal $principal -Settings $ajustesCopia -Force | Out-Null
+
+    # Icono junto al reloj "OCTOPUS te protege" (si el panel lo ha pedido: modo casa o la funcion encendida).
+    # Lo arranca Windows a cada persona al iniciar sesion, con sus permisos normales (no como administrador).
+    $conIcono = $false
+    try { $conIcono = [bool]((Get-Content (Join-Path $Aqui 'config.json') -Raw | ConvertFrom-Json).icono) } catch { }
+    if (Get-ScheduledTask -TaskName $TareaIcono -ErrorAction SilentlyContinue) { Unregister-ScheduledTask -TaskName $TareaIcono -Confirm:$false }
+    New-Item -ItemType Directory -Force -Path $EstadoPublico | Out-Null
+    if ($conIcono -and (Test-Path (Join-Path $Aqui 'octopus_bandeja.ps1'))) {
+        Copy-Item (Join-Path $Aqui 'octopus_bandeja.ps1') (Join-Path $Prog 'octopus_bandeja.ps1') -Force
+        $accionIcono = New-ScheduledTaskAction -Execute 'powershell.exe' `
+            -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$(Join-Path $Prog 'octopus_bandeja.ps1')`""
+        $quien = New-ScheduledTaskPrincipal -GroupId 'S-1-5-32-545' -RunLevel Limited     # todas las personas (Usuarios)
+        $ajIcono = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew
+        Register-ScheduledTask -TaskName $TareaIcono -Action $accionIcono -Trigger (New-ScheduledTaskTrigger -AtLogOn) `
+            -Principal $quien -Settings $ajIcono -Force | Out-Null
+        Start-ScheduledTask -TaskName $TareaIcono -ErrorAction SilentlyContinue
+        Bien 'Icono "OCTOPUS te protege" junto al reloj'
+    }
 
     # versiones anteriores abrian el 9999: ya no hace falta (solo escucha en 127.0.0.1)
     Get-NetFirewallRule -DisplayName $ReglaFw -ErrorAction SilentlyContinue | Remove-NetFirewallRule

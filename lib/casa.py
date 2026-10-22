@@ -47,7 +47,8 @@ def nativo() -> bool:
 PRESETS = {
     # en casa el panel solo se usa desde este mismo ordenador: menos pasos, nada de correos
     "casa": {"dosfa": False, "informe_mensual": False, "multiempresa": False, "buscar_equipos": False,
-             "monitorizacion": False, "discreto": True, "bloqueo_atacantes": True, "senuelos": True},
+             "monitorizacion": False, "discreto": True, "bloqueo_atacantes": True, "senuelos": True,
+             "icono_usuario": True},
     "empresa": {"dosfa": True, "discreto": True},
 }
 

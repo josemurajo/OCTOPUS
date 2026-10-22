@@ -1283,6 +1283,29 @@ def asegurar_repo(cfg: dict, env: dict | None = None) -> dict | None:
     return None
 
 
+# Estado para la persona que usa el equipo (el icono junto al reloj, agentes/octopus_bandeja.ps1). Sin claves:
+# va en una carpeta aparte que puede leer cualquiera (la del agente solo la leen el sistema y los administradores).
+ESTADO_PUBLICO = (Path(os.environ.get("PROGRAMDATA", "C:\\ProgramData")) / "Octopus-estado" if SYSTEM == "windows"
+                  else Path("/Library/Application Support/Octopus-estado") if SYSTEM == "darwin"
+                  else Path("/var/lib/octopus-estado")) / "estado.json"
+
+
+def estado_usuario(ok: bool, texto: str = "") -> None:
+    try:
+        cfg = load_config()
+        ultima = ULTIMA_COPIA.read_text().strip() if ULTIMA_COPIA.is_file() else ""
+        ESTADO_PUBLICO.parent.mkdir(parents=True, exist_ok=True)
+        tmp = ESTADO_PUBLICO.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"ok": bool(ok), "texto": texto[:200], "ultima_copia": ultima,
+                                   "panel": cfg.get("panel_url", ""), "t": datetime.now().isoformat(timespec="seconds")},
+                                  ensure_ascii=False), encoding="utf-8")
+        tmp.replace(ESTADO_PUBLICO)
+        if SYSTEM != "windows":
+            os.chmod(ESTADO_PUBLICO, 0o644)
+    except Exception:
+        pass
+
+
 ULTIMA_COPIA = STATE_DIR / "ultima_copia.txt"
 HORAS_COPIA_ATRASADA = 26
 
@@ -1311,7 +1334,9 @@ def copia_atrasada_loop() -> None:
             h = horas_desde_ultima_copia()
             if h is None:
                 _apuntar_copia()          # recien instalado: se cuenta desde ahora (la primera copia la pide el panel)
-            elif h > HORAS_COPIA_ATRASADA and not esta_aislado():
+            elif h > HORAS_COPIA_ATRASADA * 2:
+                estado_usuario(False, "hace días que no hay copia; se hará en cuanto se pueda")
+            if h is not None and h > HORAS_COPIA_ATRASADA and not esta_aislado():
                 log(f"La ultima copia es de hace {int(h)} h (el equipo estuvo apagado): copia atrasada ahora")
                 copia_programada()
         except Exception as exc:
@@ -1337,6 +1362,8 @@ def _backup_forense(cfg: dict, path=None) -> dict:
         log(texto)
     res = _backup_forense_pasos(cfg, path, paso)
     paso(f"Fin de la copia ({int(time.time() - inicio)} s): {res.get('status')}")
+    estado_usuario(res.get("status") == "success",
+                   "" if res.get("status") == "success" else "la última copia no se pudo hacer; se repite sola")
     res["pasos"] = pasos
     return res
 

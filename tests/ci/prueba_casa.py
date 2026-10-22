@@ -210,6 +210,17 @@ def nativo():
     r1 = pedir("POST", "/webhook/backup", {}, 1200)
     chk(r1.get("status") == "success", "primera copia en modo casa (vigilada por el modo discreto)", r1)
     chk("discreto" in r1, "la copia dice si fue despacio para no molestar", r1.get("discreto"))
+    if windows:
+        import subprocess
+        estado = Path(os.environ.get("ProgramData", r"C:\ProgramData")) / "Octopus-estado" / "estado.json"
+        e = json.loads(estado.read_text(encoding="utf-8")) if estado.is_file() else {}
+        chk(e.get("ok") is True and e.get("ultima_copia"), "deja el estado para el icono junto al reloj (sin claves)", e)
+        tarea = subprocess.run(["schtasks", "/Query", "/TN", "OCTOPUS Icono"], capture_output=True, text=True)
+        chk(tarea.returncode == 0, "en casa se instala el icono «OCTOPUS te protege» (al iniciar sesión)")
+        icono = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Octopus" / "octopus_bandeja.ps1"
+        t = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(icono), "-Prueba"],
+                           capture_output=True, text=True, timeout=60).stdout.strip()
+        chk(t.startswith("OK|OCTOPUS te protege. Ultima copia hace"), "el icono dice «te protege» y cuándo fue la copia", t)
 
     # pasar las copias a otro disco (en GitHub Windows es D:; en Mac, un disco de mentira montado en /Volumes)
     discos = get("/casa/discos").json()

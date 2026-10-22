@@ -61,6 +61,15 @@ def _env() -> dict:
     return env
 
 
+def _icono_activo() -> bool:
+    """¿Llevan los equipos el icono «OCTOPUS te protege» junto al reloj? (Ajustes → Funciones; en casa, sí)."""
+    try:
+        import funciones
+        return bool(funciones.activa("icono_usuario"))
+    except Exception:
+        return False
+
+
 def config_agente(nombre: str, rutas: list[str], token: str) -> dict:
     """Configuracion del agente: la base comun del servidor + el nombre, las carpetas y la clave del equipo."""
     base_file = ANSIBLE_DIR / "config.json"
@@ -69,7 +78,8 @@ def config_agente(nombre: str, rutas: list[str], token: str) -> dict:
     cfg = json.loads(base_file.read_text(encoding="utf-8"))
     if not cfg.get("servidor"):
         raise RuntimeError("El servidor no sabe su direccion (OCTOPUS_IP): vuelve a ejecutar el instalador")
-    cfg.update({"hostname": nombre, "backup_paths": rutas, "agent_token": token, "bind_addresses": ["127.0.0.1"]})
+    cfg.update({"hostname": nombre, "backup_paths": rutas, "agent_token": token, "bind_addresses": ["127.0.0.1"],
+                "icono": _icono_activo()})
     return cfg
 
 
@@ -84,6 +94,8 @@ def paquete(nombre: str, so: str, rutas: list[str], token: str) -> bytes:
         z.writestr("octopus_vms.py", (BASE_DIR / "agentes" / "octopus_vms.py").read_bytes())
         z.writestr("octopus_bd.py", (BASE_DIR / "agentes" / "octopus_bd.py").read_bytes())
         z.writestr("octopus_discreto.py", (BASE_DIR / "agentes" / "octopus_discreto.py").read_bytes())
+        if so == "windows":
+            z.writestr("octopus_bandeja.ps1", (BASE_DIR / "agentes" / "octopus_bandeja.ps1").read_bytes())
         z.writestr("config.json", json.dumps(cfg, indent=2, ensure_ascii=False))
         if so == "windows":
             for f in ("INSTALAR.bat", "instalar_windows.ps1", "DESINSTALAR.bat"):
