@@ -164,8 +164,11 @@ def destino(equipo: str, datos: str, carpeta_destino: str) -> int:
         d = destinos.para_agente(DB, notas)
         env = dict(os.environ, RESTIC_REPOSITORY=d["repo"], RESTIC_PASSWORD=d["password"])
         env.pop("RESTIC_CACERT", None)
-        r = subprocess.run([agentes._restic_servidor()[0], "snapshots", "--json", "--no-lock"], env=env,
-                           capture_output=True, text=True, timeout=300)
+        cmd = [agentes._restic_servidor()[0], "snapshots", "--json", "--no-lock"]
+        if os.name != "nt" and os.geteuid() != 0:
+            # el agente corre como root: la carpeta de destino es suya (como en un equipo de verdad)
+            cmd = ["sudo", "-n", "env", f"RESTIC_REPOSITORY={d['repo']}", f"RESTIC_PASSWORD={d['password']}"] + cmd
+        r = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=300)
         return [x.get("short_id") for x in json.loads(r.stdout or "[]") or []]
 
     notas, error = poner({"tipo": "carpeta", "ruta": carpeta_destino, "modo": "ademas"})

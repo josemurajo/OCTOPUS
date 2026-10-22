@@ -25,6 +25,13 @@ Lo tuyo, en orden. Todo es gratis.
    Doble clic en `PROBAR_OCTOPUS.wsb`; se prueba solo en 10 minutos. Ver `herramientas/sandbox/LEEME.md`.
    (No hay Mac: el Mac se prueba solo en GitHub en cada cambio.)
 
+**Prueba grande en las máquinas virtuales** (cuando José esté en su PC y avise): todo, incluido lo nuevo.
+- El modo casa y el modo discreto (jugar mientras copia).
+- Los destinos de copia.
+- El servidor en cada sistema operativo: Linux en Docker, Windows nativo, Mac y NAS.
+- Las nuevas formas de uso: casa y empresa con máquina aparte.
+- Para las pruebas en el PC de José: el Espacio aislado de Windows (`PROBAR_OCTOPUS.wsb`), sin dejar rastro.
+
 **Qué viene «en pruebas»** (está hecho, pero viene apagado hasta probarlo en algo real; se puede encender en Ajustes
 → Funciones, modo experto):
 

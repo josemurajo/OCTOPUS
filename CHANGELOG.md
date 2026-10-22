@@ -14,6 +14,19 @@ instalan versiones con esa firma. Lo más nuevo, arriba.
   paso a paso. Viene «en pruebas».
 - Todo cifrado antes de salir del equipo; almacén con bloqueo contra borrado y copia externa con bloqueo por tiempo.
 
+**Para casa o para empresa** (lo primero que pregunta)
+- **Modo casa:** OCTOPUS en tu propio ordenador.
+  - Se protege con un clic.
+  - Las copias van a un disco USB u otro disco, con aviso si es el mismo disco y aviso de «conecta el disco».
+  - El panel es más sencillo.
+- **Modo discreto** (para todos): si la persona juega o usa el equipo a fondo, la copia se pone sola en «no
+  molestar» y va casi parada; cuando lo deja, vuelve a toda velocidad. Sin ventanas y sin reinicios. En casa, el
+  mantenimiento de la noche tampoco se nota y no actualiza mientras se usa el ordenador.
+- **Empresa:** OCTOPUS en una máquina aparte siempre encendida, con un icono en el escritorio del PC desde el que se
+  maneja.
+- **Destinos de copia:** un equipo puede copiar directo a otro disco, una carpeta de red, un NAS o un S3, «en lugar
+  de» o «además» del servidor. OCTOPUS manda, vigila y avisa.
+
 **Fácil de usar**
 - Panel web en español, en modo básico (lo importante) o experto (todo).
 - Avisos que explican qué pasa y se arreglan solos.

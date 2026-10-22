@@ -23,6 +23,9 @@ que haya (copias, etc.) y responde. El servidor **nunca entra** en los equipos: 
 | `.github/workflows/publicar.yml` | cuando José sube `MANIFIESTO.sig`: comprueba la firma y pasa la versión a la rama `publicado` (la que descargan los servidores), crea la *Release* y la imagen |
 | `herramientas/FIRMAR_VERSION.bat` | lo que usa José para firmar: doble clic, frase de paso, y pega la firma en el chat |
 | `PROBAR_OCTOPUS.wsb` + `herramientas/sandbox/` | prueba completa en el Espacio aislado de Windows (no deja rastro en el PC) |
+| `lib/casa.py` + `templates/bienvenida.html`, `casa.html` | «¿casa o empresa?», modo casa: proteger este ordenador, elegir el disco de las copias y pasarlas |
+| `agentes/octopus_discreto.py` | modo discreto: la copia va despacio o en «no molestar» si el usuario juega o usa el equipo a fondo |
+| `lib/destinos.py` + `templates/destino.html` | destinos de copia: un equipo copia directo a otra carpeta, NAS o S3 (OCTOPUS manda y vigila) |
 | `DATOS_DEL_AUTOR.txt` | el nombre y los correos públicos de José (privacidad, seguridad): el panel los lee de aquí |
 | `CHANGELOG.md`, `PUBLICAR_VERSION.md`, `CLAUDE.md` | lista de cambios por versión, guía de José para firmar, reglas del proyecto para quien lo mantiene |
 | `maquinas/` (al lado) | El laboratorio de pruebas con máquinas virtuales |
