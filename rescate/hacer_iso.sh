@@ -22,7 +22,7 @@ DEBIAN_FRONTEND=noninteractive chroot "$R" apt-get install -y -qq --no-install-r
   linux-image-amd64 live-boot systemd-sysv udev kmod iproute2 isc-dhcp-client ca-certificates \
   python3 python3-cryptography whiptail gdisk parted dosfstools e2fsprogs util-linux ntfs-3g exfatprogs \
   firmware-linux-free firmware-realtek firmware-misc-nonfree shim-signed grub-efi-amd64-signed \
-  locales keyboard-configuration console-setup less nano pciutils usbutils >/dev/null
+  locales keyboard-configuration console-setup less nano pciutils usbutils busybox >/dev/null
 
 # el programa de rescate y restic
 install -d "$R/opt/octopus"
@@ -61,6 +61,8 @@ cat > "$R/root/.bash_profile" <<'EOF'
 echo "OCTOPUS: rescate listo"
 sb=$(od -An -t u1 /sys/firmware/efi/efivars/SecureBoot-* 2>/dev/null | awk '{print $NF}')
 [ "$sb" = 1 ] && echo "OCTOPUS: arranque seguro encendido"
+srv=$(tr ' ' '\n' < /proc/cmdline | sed -n 's/^octopus.servidor=//p')
+[ -n "$srv" ] && echo "OCTOPUS: arrancado por red desde $srv"
 if grep -q octopus.prueba /proc/cmdline; then
   python3 /opt/octopus/octopus_rescate.py version; restic version; exit 0
 fi
@@ -106,6 +108,12 @@ mcopy -i "$EFI" "$R/usr/lib/grub/x86_64-efi-signed/gcdx64.efi.signed" ::/EFI/BOO
 printf 'search --file --set=root /.disk/info\nset prefix=($root)/boot/grub\nconfigfile $prefix/grub.cfg\n' > "$T/stub.cfg"
 mcopy -i "$EFI" "$T/stub.cfg" ::/EFI/debian/grub.cfg
 mcopy -i "$EFI" "$T/stub.cfg" ::/EFI/BOOT/grub.cfg
+# Arranque por red (lo usa el servidor, install/pxe): shim y el GRUB firmado para red (UEFI, también con arranque
+# seguro) y GRUB para BIOS antiguas. El servidor añade su grub.cfg con su dirección.
+install -d "$I/pxe"
+cp "$R/usr/lib/shim/shimx64.efi.signed" "$I/pxe/bootx64.efi"
+cp "$R/usr/lib/grub/x86_64-efi-signed/grubnetx64.efi.signed" "$I/pxe/grubx64.efi"
+grub-mknetdir --net-directory="$I/pxe" --subdir=grub -d /usr/lib/grub/i386-pc >/dev/null
 # BIOS antigua
 grub-mkimage -O i386-pc-eltorito -p /boot/grub -o "$I/boot/grub/eltorito.img" \
   biosdisk iso9660 part_msdos part_gpt normal configfile linux search search_fs_file serial terminal echo test true \

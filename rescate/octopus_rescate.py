@@ -380,13 +380,25 @@ def _gb(n: int) -> str:
     return f"{n / 1024 ** 3:.0f} GB" if n >= 1024 ** 3 else f"{n / 1024 ** 2:.0f} MB"
 
 
+def servidor_del_arranque() -> str:
+    """Si ha arrancado por red desde el servidor de OCTOPUS, su dirección (así no hay que escribirla)."""
+    try:
+        for x in Path("/proc/cmdline").read_text().split():
+            if x.startswith("octopus.servidor="):
+                return x.split("=", 1)[1]
+    except OSError:
+        pass
+    return ""
+
+
 def con_menus() -> int:
     m = Menu()
     m.aviso("Bienvenido al rescate de OCTOPUS.\n\nNecesitas: el cable de red puesto y, en el panel de OCTOPUS (desde "
             "otro ordenador o el móvil), la ficha del equipo → «USB de rescate» → «Dar código».")
     cfg = None
+    por_red = servidor_del_arranque()
     while cfg is None:
-        servidor = m.pregunta("Dirección del servidor OCTOPUS (sale en la misma pantalla del código):")
+        servidor = m.pregunta("Dirección del servidor OCTOPUS (sale en la misma pantalla del código):", por_red)
         if servidor is None:
             return 1
         codigo = m.pregunta("Código (12 letras y números):")

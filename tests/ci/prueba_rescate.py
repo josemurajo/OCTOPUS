@@ -113,6 +113,13 @@ def unidad():
     with a.get_db_connection() as cx:
         quedan = cx.execute("SELECT COUNT(*) FROM rescate_codigos WHERE datos IS NOT NULL AND usado = 1").fetchone()[0]
     chk(quedan == 0, "lo usado no se guarda")
+    # arranque por red: la pantalla (aquí no hay Docker: tiene que decirlo claro)
+    chk(cl.get("/arranque-red").status_code == 302, "arranque por red: apagado, no se abre")
+    a.config_manager.set_config("arranque_red", True)
+    h = cl.get("/arranque-red").get_data(as_text=True)
+    chk("Arranque por red" in h and ("Docker" in h or "OCTOPUS_IP" in h or "Encender" in h), "pantalla del arranque por red",
+        h[-600:])
+    chk("Arranque por red" in cl.get("/equipos").get_data(as_text=True), "botón en Equipos")
 
 
 def _sh(*cmd, **k):

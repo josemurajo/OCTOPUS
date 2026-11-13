@@ -150,6 +150,16 @@ parar)         "${DC[@]}" stop ;;
 arrancar)      "${DC[@]}" up -d --no-build octopus ;;
 reiniciar)     docker restart octopus ;;
 consola)       docker exec -it octopus bash ;;
+abrir-arranque-red)  # si el cortafuegos del servidor esta activo: abre lo que necesita el arranque por red
+    P_H="${OCTOPUS_PXE_HTTP:-8090}"
+    if command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then
+        firewall-cmd -q --permanent --add-port=67/udp --add-port=69/udp --add-port=4011/udp --add-port="$P_H/tcp" \
+            && firewall-cmd -q --reload && echo "Abierto en el cortafuegos (firewalld)"
+    elif command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
+        for p in 67/udp 69/udp 4011/udp "$P_H/tcp"; do ufw allow "$p" >/dev/null; done && echo "Abierto en el cortafuegos (ufw)"
+    else
+        echo "No hay cortafuegos activo: no hace falta abrir nada."
+    fi ;;
 *)
     cat <<EOF
 Uso: sudo bash octopus.sh <orden>     (en Windows: octopus.ps1)
@@ -168,6 +178,7 @@ Uso: sudo bash octopus.sh <orden>     (en Windows: octopus.ps1)
   actualizar      instala la version de esta carpeta (conserva datos y copias)
   actualizar-pedido  hace la actualizacion pedida desde el panel (normalmente la lanza sola un temporizador)
   volver          vuelve a la version anterior si la actualizacion da problemas
+  abrir-arranque-red  abre en el cortafuegos del servidor lo que necesita el arranque por red (si esta activo)
   parar | arrancar | reiniciar | consola
 EOF
 ;;

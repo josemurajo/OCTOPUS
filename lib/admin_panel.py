@@ -3735,7 +3735,34 @@ def levantar(system_id, que):
         return redirect(url_for('equipo_imagen', system_id=system_id))
     if que == 'usb_rescate':
         return redirect(url_for('equipo_rescate', system_id=system_id))
+    if que == 'arranque_red':
+        return redirect(url_for('arranque_red'))
     return render_template('levantar.html', s=row, f=f)
+
+
+# ------------------------------------------------------------------ Arranque por red (lib/arranque_red.py, install/pxe)
+@app.route('/arranque-red', methods=['GET', 'POST'])
+@login_required
+def arranque_red():
+    """Encender o apagar el arranque por red: F12 → «red» y el equipo arranca el rescate de OCTOPUS sin pendrive."""
+    import arranque_red as _ar
+    if not _fun.activa('arranque_red'):
+        flash('El arranque por red está apagado (Ajustes → Funciones).', 'info')
+        return redirect(url_for('equipos'))
+    ok, motivo = _fun.para_equipo('arranque_red', '')
+    if ok:
+        ok, motivo = _ar.se_puede()
+    if request.method == 'POST' and ok:
+        if not puede_actuar():
+            abort(403)
+        if request.form.get('accion') == 'encender':
+            _ar.encender()
+            log_audit(session['user_id'], 'ARRANQUE_RED', 'encender', request.remote_addr)
+        elif request.form.get('accion') == 'apagar':
+            _ar.apagar()
+            log_audit(session['user_id'], 'ARRANQUE_RED', 'apagar', request.remote_addr)
+        return redirect(url_for('arranque_red'))
+    return render_template('arranque_red.html', ok=ok, motivo=motivo, est=_ar.estado() if ok else {})
 
 
 # ------------------------------------------------------------------ USB de rescate (rescate/octopus_rescate.py)

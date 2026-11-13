@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Arranque por red{% endblock %}
+{% block content %}
+{# Arranque por red: lib/admin_panel.py: arranque_red; lib/arranque_red.py; el contenedor: install/pxe #}
+<p class="small"><a href="{{ url_for('equipos') }}">← Equipos</a></p>
+<h1>Arranque por red</h1>
+<p class="lead">Para rescatar un ordenador <strong>sin pendrive</strong>: lo enciendes, pulsas <strong>F12</strong> (o la
+  tecla de tu marca) y eliges «red». Arranca el rescate de OCTOPUS desde este servidor y ya sabe dónde está.</p>
+<p class="hint">No cambia nada de tu red: el router sigue dando las direcciones como siempre. OCTOPUS solo contesta a los
+  ordenadores que piden arrancar por red. Vale para PCs modernos (también con «Arranque seguro») y antiguos.</p>
+
+{% if not ok %}
+<div class="card" role="alert">{{ motivo }}</div>
+{% else %}
+<div class="card">
+  {% if est.haciendo %}<p>⏳ {{ est.haciendo }}</p><meta http-equiv="refresh" content="5">
+  {% elif est.encendido and est.listo %}<p><strong>✔ Encendido</strong> en {{ est.ip }}. Ya puedes arrancar ordenadores por red.</p>
+  {% elif est.encendido %}<p>⏳ Arrancando (la primera vez descarga el rescate, unos 300 MB)...</p><meta http-equiv="refresh" content="10">
+  {% else %}<p>Apagado.</p>{% endif %}
+  {% if est.error %}<p class="error">✘ {{ est.error }}</p>{% endif %}
+  {% if puede_actuar() and not est.haciendo %}
+  <form method="post" style="display:inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% if est.encendido %}<button class="btn" name="accion" value="apagar" type="submit">Apagar</button>
+    {% else %}<button class="btn btn-primary btn-big" name="accion" value="encender" type="submit">Encender</button>{% endif %}
+  </form>{% endif %}
+</div>
+
+<div class="card">
+  <h2>Cómo se usa</h2>
+  <ol>
+    <li>Conecta el ordenador por <strong>cable</strong> a la misma red que este servidor.</li>
+    <li>Enciéndelo pulsando F12 (Dell, Lenovo), F11 (MSI), F8 (Asus), Esc o F9 (HP) y elige la opción de red
+      (pone «PXE», «Network» o «LAN»). Si no sale, actívala en la BIOS: «Network boot» / «PXE».</li>
+    <li>Si no sale nada y el servidor tiene cortafuegos, en el servidor: <code>sudo bash octopus.sh abrir-arranque-red</code>.</li>
+    <li>Sale el menú de OCTOPUS → «rescate». Después, en el panel, la ficha del equipo → «USB de rescate» → «Dar código».</li>
+  </ol>
+</div>
+{% if est.registro %}
+<details class="card"><summary>Qué está haciendo (para técnicos)</summary>
+  <pre class="small" style="white-space:pre-wrap">{% for l in est.registro %}{{ l }}
+{% endfor %}</pre></details>
+{% endif %}
+{% endif %}
+{% endblock %}

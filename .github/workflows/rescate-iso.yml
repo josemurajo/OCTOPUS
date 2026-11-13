@@ -9,7 +9,8 @@ name: USB de rescate (imagen)
 
 on:
   push:
-    paths: ["rescate/**", "tests/ci/prueba_iso_rescate.py", ".github/workflows/rescate-iso.yml"]
+    paths: ["rescate/**", "install/pxe/**", "tests/ci/prueba_iso_rescate.py", "tests/ci/prueba_pxe.py",
+            ".github/workflows/rescate-iso.yml"]
   workflow_dispatch:
   workflow_call:
     inputs:
@@ -24,7 +25,7 @@ jobs:
   iso:
     name: Fabricar y arrancar la imagen del USB de rescate
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - name: Herramientas
@@ -32,7 +33,7 @@ jobs:
           bash tests/ci/herramientas.sh "$RUNNER_TEMP/bin"
           sudo apt-get update -qq
           sudo apt-get install -y -qq debootstrap debian-archive-keyring squashfs-tools xorriso mtools dosfstools \
-            grub-pc-bin qemu-system-x86 ovmf >/dev/null
+            grub-pc-bin qemu-system-x86 ovmf dnsmasq-base >/dev/null
           # que la máquina virtual vaya rápida (KVM)
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules
           sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm || true
@@ -40,6 +41,8 @@ jobs:
         run: sudo bash rescate/hacer_iso.sh "$RUNNER_TEMP/octopus-rescate.iso" "$RUNNER_TEMP/bin/restic"
       - name: Arrancarla (arranque seguro, UEFI y BIOS)
         run: python3 tests/ci/prueba_iso_rescate.py "$RUNNER_TEMP/octopus-rescate.iso"
+      - name: Arranque por red de verdad (router aparte, servidor OCTOPUS y tres PCs arrancando por red)
+        run: sudo python3 tests/ci/prueba_pxe.py "$RUNNER_TEMP/octopus-rescate.iso"
       - name: Subirla a la versión publicada
         if: inputs.version != ''
         env:
