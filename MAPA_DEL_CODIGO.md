@@ -13,7 +13,7 @@ que haya (copias, etc.) y responde. El servidor **nunca entra** en los equipos: 
 |---|---|
 | `lib/` | El servidor y el panel (casi todo el cerebro está aquí) |
 | `templates/` | Las pantallas del panel (HTML) |
-| `agentes/` | El programa que va en cada equipo (`zerotouch_agent.py`), el de monitorización (`octopus_monitor.py`) y el de copias de máquinas virtuales (`octopus_vms.py`) y el de bases de datos (`octopus_bd.py`) |
+| `agentes/` | El programa que va en cada equipo (`zerotouch_agent.py`), el de monitorización (`octopus_monitor.py`) y el de copias de máquinas virtuales (`octopus_vms.py`), el de bases de datos (`octopus_bd.py`) y el de la imagen de disco de Windows (`octopus_imagen.py`, con wbadmin) |
 | `tests/ci/` | Pruebas automáticas que GitHub pasa en cada cambio (Linux, Windows y Mac) |
 | `legal/` | Textos legales (licencia, privacidad, plantillas para la empresa) — se ven en el panel en «Legal y privacidad» |
 | `herramientas/` | Preparar una versión (`preparar_version.sh`), crear el manifiesto, firmarla (José) y comprobarla antes de publicar |

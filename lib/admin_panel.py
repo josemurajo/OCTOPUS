@@ -2350,7 +2350,14 @@ def _ajustes_agente(row):
             'vms': {'activa': bool(vms.get('activa')) and _fun.activa('copias_vm'), 'dias': vms.get('dias') or 1,
                     'excluir': list(vms.get('excluir') or [])},
             'bd': {'activa': bool(bd.get('activa')) and _fun.activa('copias_bd'), 'horas': bd.get('horas') or 24,
-                   'excluir': list(bd.get('excluir') or []), 'cred': _bd_credenciales(bd)}}
+                   'excluir': list(bd.get('excluir') or []), 'cred': _bd_credenciales(bd)},
+            'imagen': _imagen_ajustes(row)}
+
+
+def _imagen_ajustes(row):
+    im = agentes.notas_equipo(row).get('imagen') or {}
+    return {'activa': bool(im.get('activa')) and _fun.activa('imagen_disco') and (row['os_family'] or '') == 'windows',
+            'destino': im.get('destino') or '', 'dias': im.get('dias') or 7}
 
 
 def _bd_credenciales(bd):
@@ -3672,7 +3679,64 @@ def levantar(system_id, que):
         flash(motivo, 'error')
         return redirect(url_for('equipo', system_id=system_id))
     f = next(x for x in _fun.FUNCIONES if x['clave'] == que)
+    if que == 'imagen_disco':
+        return redirect(url_for('equipo_imagen', system_id=system_id))
     return render_template('levantar.html', s=row, f=f)
+
+
+@app.route('/equipos/<int:system_id>/imagen', methods=['GET', 'POST'])
+@login_required
+def equipo_imagen(system_id):
+    """Copia «imagen de disco» de un Windows (agentes/octopus_imagen.py): para cuando el ordenador ni arranca."""
+    if os.path.join(BASE_DIR, 'agentes') not in sys.path:
+        sys.path.append(os.path.join(BASE_DIR, 'agentes'))
+    import octopus_imagen as _imi   # lo mismo que usa el agente (aquí solo para validar el destino y los pasos)
+    row = _get_system(system_id)
+    if not row:
+        return redirect(url_for('equipos'))
+    ok, motivo = _fun.para_equipo('imagen_disco', row['os_family'] or '')
+    if ok and (row['os_family'] or '') != 'windows':
+        ok, motivo = False, 'La imagen de disco solo se hace en Windows (con su propia herramienta).'
+    if not ok:
+        flash(motivo, 'error')
+        return redirect(url_for('equipo', system_id=system_id))
+    notas = agentes.notas_equipo(row)
+    im = notas.get('imagen') or {}
+    if request.method == 'POST':
+        if not puede_actuar():
+            abort(403)
+        if request.form.get('accion') == 'ahora':
+            import ordenes as _ord
+            agentes._lanzar(row, 'copia', 'Haciendo la imagen de disco (puede tardar una hora o más)',
+                            lambda: _ord.pedir(row['hostname'], 'POST', '/webhook/imagen-disco', {}, 12 * 3600),
+                            lambda r: f'Imagen de disco hecha en {r.get("destino")}.')
+            flash('Haciendo la imagen de disco. Puedes cerrar esta página: el progreso sale en la ficha del equipo.', 'info')
+            return redirect(url_for('equipo', system_id=system_id))
+        destino = _imi.destino_valido(request.form.get('destino', ''))
+        if request.form.get('activa') == 'on' and not destino:
+            flash('Escribe dónde guardarla: otra unidad (E:) o una carpeta de red (\\\\NAS\\copias).', 'error')
+            return redirect(url_for('equipo_imagen', system_id=system_id))
+        try:
+            dias = max(1, min(60, int(request.form.get('dias') or 7)))
+        except ValueError:
+            dias = 7
+        notas['imagen'] = {'activa': request.form.get('activa') == 'on', 'destino': destino or im.get('destino') or '',
+                           'dias': dias}
+        with get_db_connection() as c:
+            c.execute('UPDATE systems SET notes = ? WHERE id = ?', (json.dumps(notas), system_id))
+        agentes.invalidar(system_id)
+        log_audit(session['user_id'], 'SYSTEM_SETTINGS', f'{row["hostname"]}: imagen={notas["imagen"]}', request.remote_addr)
+        flash('Guardado.', 'success')
+        return redirect(url_for('equipo_imagen', system_id=system_id))
+    info = {}
+    if agentes.estado_equipo(row).get('online'):
+        try:
+            import ordenes as _ord
+            info = _ord.pedir(row['hostname'], 'GET', '/imagen', None, 60)
+        except Exception:
+            info = {}
+    return render_template('imagen.html', s=row, im=im, info=info, como=_imi.COMO_RECUPERAR,
+                           trabajos=agentes.trabajos_de(row['id'], 5))
 
 
 def _funciones_vista():

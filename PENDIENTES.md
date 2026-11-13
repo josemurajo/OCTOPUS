@@ -130,7 +130,8 @@ Si no se instala, ese equipo no se monitoriza.
 - **Google de prueba**: una cuenta normal de Google (gratis) para probar la copia de Gmail/Drive.
 - **Un hipervisor de verdad** cuando puedas (Hyper-V en un Windows, o Proxmox/KVM): para quitarle el «en pruebas» a
   las copias de máquinas virtuales. Proxmox se instala gratis.
-- **Un PC físico** (aunque sea viejo) para probar el USB de rescate y la imagen de disco.
+- **Un PC físico** (aunque sea viejo) para probar el USB de rescate y **recuperar** una imagen de disco (hacerla ya
+  se prueba de verdad en la CI con wbadmin; recuperarla necesita arrancar desde un USB).
 - Nada de esto cuesta dinero. Cuando tengas cada cosa, me avisas y hacemos la prueba real.
 
 - 🔴 **José, 1 minuto (gratis), cuando termine la primera publicación de la imagen**: GitHub → tu perfil →

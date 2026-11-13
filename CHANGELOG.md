@@ -8,6 +8,9 @@ instalan versiones con esa firma. Lo más nuevo, arriba.
 - **Pasar a un ordenador nuevo:** si se rompe, lo cambias o reinstalas Windows, instalas OCTOPUS en el nuevo y traes
   tus carpetas desde la copia del viejo. Se cambia solo el nombre de usuario si es distinto, y no se sobrescribe nada.
 - **Copias de máquinas de VirtualBox** (Windows, Linux y Mac), sin abrir VirtualBox. Viene «en pruebas».
+- **Imagen de disco de Windows**, para cuando el ordenador ni arranca: con la herramienta que trae Windows, en un
+  disco USB o una carpeta de red, sola cada pocos días y sin molestar si estás jugando. Se recupera con un USB de
+  instalación de Windows, sin OCTOPUS. Viene «en pruebas».
 
 ## 3.0.0 - 2026-10-22 (primera versión para empresas)
 

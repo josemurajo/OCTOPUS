@@ -212,8 +212,10 @@ FUNCIONES: list[dict] = [
      "no_mac": True},
     {"clave": "imagen_disco", "grupo": "equipos", "nivel": "experto", "defecto": False, "en_pruebas": True,
      "nombre": "Copia «imagen de disco»",
-     "explica": "Además de los archivos, una copia del disco entero en bloque, para clonarlo tal cual en otro disco. "
-                "Ocupa más. No disponible en Mac.", "no_mac": True},
+     "explica": "Para cuando el ordenador ni arranca: una foto de todo lo necesario para arrancar Windows (sistema, "
+                "programas y ajustes), hecha con la herramienta que trae Windows, en un disco USB o una carpeta de red. "
+                "Se recupera con un USB de instalación de Windows, sin OCTOPUS. Solo Windows.",
+     "no_mac": True, "solo_windows": True},
     {"clave": "arranque_red", "grupo": "equipos", "nivel": "experto", "defecto": False, "en_pruebas": True,
      "nombre": "Arranque por red (PXE)",
      "explica": "Los equipos arrancan desde el servidor pulsando F12, sin pendrive, y aparecen en el panel para "
@@ -313,6 +315,8 @@ def para_equipo(clave: str, so: str) -> tuple[bool, str]:
     f = _POR_CLAVE[clave]
     if so == "macos" and f.get("no_mac"):
         return False, f.get("motivo_mac", MOTIVO_MAC)
+    if f.get("solo_windows") and so and so != "windows":
+        return False, "Solo para Windows (se hace con la herramienta que trae Windows)."
     if not activa(clave):
         return False, ("Está en pruebas: se podrá usar cuando termine la batería de pruebas."
                        if f.get("en_pruebas") else "Está apagada en Ajustes → Funciones.")

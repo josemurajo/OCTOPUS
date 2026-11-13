@@ -89,6 +89,28 @@ def unidad():
         and pd(r"C:\Users\pepe\Documents", [r"C:\Users\a\x", r"C:\Users\b\x"]) == r"C:\Users\pepe\Documents"
         and pd(r"D:\Trabajo", [r"C:\Users\juan\Desktop"]) == r"D:\Trabajo",
         "propone la misma carpeta con el usuario del ordenador nuevo (y si duda, la deja igual)")
+    # «Imagen de disco» (solo Windows): apagada se queda en la ficha; encendida, la pantalla se abre y guarda
+    r = c.get(f"/equipos/{sid}/imagen")
+    chk(r.status_code == 302, "imagen de disco: en pruebas y apagada, no se abre", r.status_code)
+    cm.set_config("imagen_disco", True)
+    r = c.get(f"/equipos/{sid}/imagen")
+    t = r.get_data(as_text=True)
+    chk(r.status_code == 200 and "ni arranca" in t and "Recuperación de imagen del sistema" in t,
+        "pantalla «Imagen de disco» con los pasos para recuperar", r.status_code)
+    r = post(f"/equipos/{sid}/imagen", {"activa": "on", "destino": "C:/no-vale", "dias": "7"}, f"/equipos/{sid}/imagen")
+    with a.get_db_connection() as cx:
+        notas = json.loads(cx.execute("SELECT notes FROM systems WHERE id=?", (sid,)).fetchone()[0])
+    chk("imagen" not in notas, "un destino que no vale no se guarda", notas)
+    r = post(f"/equipos/{sid}/imagen", {"activa": "on", "destino": "e:\\", "dias": "3"}, f"/equipos/{sid}/imagen")
+    with a.get_db_connection() as cx:
+        notas = json.loads(cx.execute("SELECT notes FROM systems WHERE id=?", (sid,)).fetchone()[0])
+    chk(notas.get("imagen") == {"activa": True, "destino": "E:", "dias": 3}, "guarda destino E: y cada 3 días", notas)
+    import octopus_imagen as oi
+    chk(oi.destino_valido("\\\\NAS\\copias\\") == "\\\\NAS\\copias" and oi.destino_valido("C:/x") is None
+        and oi.destino_valido("rm -rf") is None and oi.destino_valido("\\\\srv") is None,
+        "destino: unidad o carpeta de red, y nada más")
+    chk(not a._fun.para_equipo("imagen_disco", "linux")[0], "en Linux no se ofrece")
+    cm.set_config("imagen_disco", False)
     with a.get_db_connection() as cx:
         cx.execute("DELETE FROM systems")
 

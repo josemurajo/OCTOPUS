@@ -96,6 +96,7 @@ def paquete(nombre: str, so: str, rutas: list[str], token: str) -> bytes:
         z.writestr("octopus_discreto.py", (BASE_DIR / "agentes" / "octopus_discreto.py").read_bytes())
         if so == "windows":
             z.writestr("octopus_bandeja.ps1", (BASE_DIR / "agentes" / "octopus_bandeja.ps1").read_bytes())
+            z.writestr("octopus_imagen.py", (BASE_DIR / "agentes" / "octopus_imagen.py").read_bytes())
         z.writestr("config.json", json.dumps(cfg, indent=2, ensure_ascii=False))
         if so == "windows":
             for f in ("INSTALAR.bat", "instalar_windows.ps1", "DESINSTALAR.bat"):

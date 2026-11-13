@@ -52,6 +52,8 @@ jobs:
       - name: Copias de máquinas virtuales (hipervisores simulados, copias y recuperación de verdad con restic)
         if: matrix.so != 'windows'
         run: python tests/ci/prueba_vms.py
+      - name: Imagen de disco (destinos y avisos; la de verdad va en el trabajo de Windows)
+        run: python tests/ci/prueba_imagen.py
 
       - name: Copia de la nube (Microsoft 365 y Google simulados, copia y recuperación de verdad con restic)
         if: matrix.so == 'linux'
@@ -234,6 +236,26 @@ jobs:
           $env:OCTOPUS_SIN_NAVEGADOR = "1"
           $env:OCTOPUS_PRUEBA_DIR = "$env:RUNNER_TEMP\sandbox"
           powershell -NoProfile -ExecutionPolicy Bypass -File herramientas\sandbox\prueba_sandbox.ps1
+          exit $LASTEXITCODE
+
+  imagen-windows:
+    name: Imagen de disco en Windows (wbadmin de verdad)
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Poner la herramienta de copias de Windows Server
+        shell: pwsh
+        run: |
+          Install-WindowsFeature Windows-Server-Backup | Out-Host
+          if (-not (Test-Path "$env:SystemRoot\System32\wbadmin.exe")) { Write-Error "Sin wbadmin"; exit 1 }
+      - name: Hacer una copia de una carpeta en D y verla como version
+        shell: pwsh
+        run: |
+          python tests/ci/prueba_imagen.py real D:
           exit $LASTEXITCODE
 
   casa-windows:

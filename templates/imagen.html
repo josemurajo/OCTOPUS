@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Imagen de disco{% endblock %}
+{% block content %}
+{# Copia «imagen de disco» (solo Windows): lib/admin_panel.py: equipo_imagen; el agente: agentes/octopus_imagen.py #}
+<p><a href="{{ url_for('equipo', system_id=s.id) }}">← {{ s.hostname }}</a></p>
+<h1>Imagen de disco de {{ s.hostname }}</h1>
+<p class="lead">Para el día en que el ordenador <strong>ni arranca</strong> (disco roto, Windows estropeado): una foto
+  de todo lo necesario para arrancar (Windows, programas y ajustes). La hace la herramienta que ya trae Windows y se
+  guarda en un disco USB u otro disco, o en una carpeta de red. Si estás jugando o usando mucho el ordenador, espera.</p>
+
+{% if info and not info.disponible %}
+<div class="card" role="alert"><strong>Este ordenador no puede hacerla todavía.</strong> {{ info.motivo }}</div>
+{% elif not info %}
+<p class="hint">{{ s.hostname }} está apagado o sin conexión: puedes guardar los ajustes igualmente.</p>
+{% endif %}
+
+<form method="post" class="card">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="field"><label><input type="checkbox" name="activa" {{ 'checked' if im.activa }} style="width:20px;height:20px">
+    Hacerla sola de vez en cuando</label></div>
+  <div class="field"><label for="destino">Dónde guardarla</label>
+    <input id="destino" name="destino" value="{{ im.destino or '' }}" placeholder="E:   o   \\NAS\copias" style="max-width:320px">
+    <p class="hint">Un disco USB (su letra, por ejemplo <code>E:</code>) o una carpeta de red (<code>\\NAS\copias</code>).
+      Nunca el mismo disco de Windows.</p></div>
+  <div class="field"><label for="dias">Cada cuántos días</label>
+    <input id="dias" name="dias" type="number" min="1" max="60" value="{{ im.dias or 7 }}" style="max-width:100px"></div>
+  {% if puede_actuar() %}<button class="btn btn-primary" type="submit">Guardar</button>{% endif %}
+</form>
+
+{% if puede_actuar() and im.destino %}
+<form method="post" class="card">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="accion" value="ahora">
+  <button class="btn btn-big" type="submit" {{ 'disabled' if not info or not info.disponible }}>Hacer una imagen ahora</button>
+  <p class="hint">Tarda una hora o más. Se puede seguir usando el ordenador.</p>
+</form>
+{% endif %}
+
+<div class="card">
+  <h2>Imágenes guardadas</h2>
+  {% if info and info.versiones %}
+  <ul>{% for v in info.versiones %}<li>{{ v }}{{ ' (la más nueva)' if loop.first }}</li>{% endfor %}</ul>
+  {% else %}<p class="muted">Ninguna todavía{{ ' (o el disco no está conectado)' if im.destino }}.</p>{% endif %}
+  {% if trabajos %}<h3>Últimos trabajos</h3>
+  <ul class="small">{% for t in trabajos %}<li>{{ {'ok': '✔', 'error': '✘', 'en_curso': '⏳'}.get(t.estado, '') }} {{ t.mensaje or t.tipo }}</li>{% endfor %}</ul>{% endif %}
+</div>
+
+<div class="card">
+  <h2>Cómo recuperar el ordenador entero</h2>
+  <p>No hace falta OCTOPUS (por eso sirve cuando todo ha fallado):</p>
+  <ol>{% for paso in como %}<li>{{ paso }}</li>{% endfor %}</ol>
+</div>
+{% endblock %}

@@ -1013,6 +1013,51 @@ def _vms_mod():
         return None
 
 
+def _imagen_mod():
+    try:
+        import octopus_imagen
+        return octopus_imagen
+    except ImportError:
+        return None
+
+
+def ajustes_imagen() -> dict:
+    """Imagen de disco de Windows: {activa, destino, dias} (ficha del equipo → Copia «imagen de disco»)."""
+    v = AJUSTES_SERVIDOR.get("imagen")
+    return v if isinstance(v, dict) else {}
+
+
+def toca_imagen(ahora: datetime | None = None) -> bool:
+    aj = ajustes_imagen()
+    if not aj.get("activa") or not aj.get("destino") or _imagen_mod() is None:
+        return False
+    try:
+        dias = float(aj.get("dias") or 7)
+        ultima = datetime.fromisoformat((STATE_DIR / "ultima_imagen.txt").read_text().strip())
+    except (OSError, ValueError, TypeError):
+        return True
+    return ((ahora or datetime.now()) - ultima).total_seconds() >= dias * 86400
+
+
+def imagen_disco(cfg: dict, programada: bool = False) -> dict:
+    mod = _imagen_mod()
+    if mod is None:
+        return {"status": "error", "message": "Falta octopus_imagen.py junto al agente (reinstala el agente desde el panel)"}
+    destino = str(ajustes_imagen().get("destino") or "")
+    if not destino:
+        return {"status": "error", "message": "Elige primero dónde guardar la imagen (ficha del equipo)"}
+    suspender_detector(12 * 3600)
+    r = mod.hacer(destino, mirar_si_ocupado=programada)
+    aceptar_senuelos_actuales()
+    if r.get("status") == "success":
+        try:
+            (STATE_DIR / "ultima_imagen.txt").write_text(datetime.now().isoformat())
+        except OSError:
+            pass
+    log(f"Imagen de disco: {r.get('status')} {r.get('message', '')}".strip())
+    return r
+
+
 def ajustes_vms() -> dict:
     """Lo que ha elegido el panel para este equipo: {activa, dias, excluir: [nombres]}."""
     v = AJUSTES_SERVIDOR.get("vms")
@@ -1638,6 +1683,14 @@ def despachar(cfg: dict, metodo: str, ruta: str, datos: dict | None = None) -> d
                 return {"status": "error", "message": "Falta octopus_bd.py junto al agente (reinstala el agente)"}
             ctx = _ctx_bd(cfg)
             return {"status": "success", "motores": mod.detectar(ctx["cred"]), "copias": mod.copias(ctx)}
+        if ruta == "/imagen":
+            mod = _imagen_mod()
+            if mod is None:
+                return {"status": "error", "message": "Falta octopus_imagen.py junto al agente (reinstala el agente)"}
+            ok, motivo = mod.disponible()
+            dest = str(ajustes_imagen().get("destino") or "")
+            return {"status": "success", "disponible": ok, "motivo": motivo,
+                    "versiones": mod.versiones(dest) if ok and dest else []}
         if ruta == "/vms":
             mod = _vms_mod()
             if mod is None:
@@ -1697,6 +1750,8 @@ def despachar(cfg: dict, metodo: str, ruta: str, datos: dict | None = None) -> d
         return quitar_aviso()
     if ruta == "/webhook/restauracion":
         return restaurar_backup(cfg, datos.get("target", "/"), datos.get("snapshot", "latest"))
+    if ruta == "/webhook/imagen-disco":
+        return imagen_disco(cfg)
     if ruta == "/webhook/traer-de-otro":
         return traer_de_otro(cfg, str(datos.get("snapshot", "")), list(datos.get("pares") or []))
     if ruta == "/webhook/restaurar-archivo":
@@ -1916,6 +1971,8 @@ def copia_programada() -> int:
     if toca_copia_vms():
         rv = copia_vms(cfg)
         log(f"Copia de máquinas virtuales programada: {rv.get('status')} {rv.get('message', '')}".strip())
+    if toca_imagen():
+        imagen_disco(cfg, programada=True)
     return 0 if res.get("status") == "success" else 1
 
 
