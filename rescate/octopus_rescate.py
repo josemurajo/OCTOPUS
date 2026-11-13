@@ -36,6 +36,7 @@ import urllib.request
 from pathlib import Path
 
 # ----------------------------------------------------------------------------------------------- el código del panel
+VERSION = "1.0"
 ALFABETO = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"   # sin 0/O, 1/I/L: que no haya dudas al copiarlo de la pantalla
 LARGO = 12
 
@@ -463,6 +464,9 @@ def main(argv: list[str]) -> int:
     if not argv:
         return con_menus()
     orden, args = argv[0], argv[1:]
+    if orden == "version":
+        print("OCTOPUS rescate", VERSION)
+        return 0
     if orden == "config" and len(args) == 3:
         Path(args[2]).write_text(json.dumps(pedir_config(args[0], args[1])), encoding="utf-8")
         return 0

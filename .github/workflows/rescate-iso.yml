@@ -1,0 +1,50 @@
+# OCTOPUS Zero-Touch - la imagen del USB de rescate (octopus-rescate.iso)
+#
+# Se fabrica con rescate/hacer_iso.sh (Debian, todo gratis) y se prueba arrancándola como pendrive en tres
+# ordenadores virtuales: moderno con «Arranque seguro», moderno sin él y antiguo (BIOS).
+#   - Si cambia algo del rescate: solo fabrica y prueba.
+#   - Al publicar una versión firmada (publicar.yml la llama): además la sube a esa versión en Releases, que es de
+#     donde la descarga el panel (…/releases/latest/download/octopus-rescate.iso).
+name: USB de rescate (imagen)
+
+on:
+  push:
+    paths: ["rescate/**", "tests/ci/prueba_iso_rescate.py", ".github/workflows/rescate-iso.yml"]
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  iso:
+    name: Fabricar y arrancar la imagen del USB de rescate
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Herramientas
+        run: |
+          bash tests/ci/herramientas.sh "$RUNNER_TEMP/bin"
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq debootstrap debian-archive-keyring squashfs-tools xorriso mtools dosfstools \
+            grub-pc-bin qemu-system-x86 ovmf >/dev/null
+          # que la máquina virtual vaya rápida (KVM)
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm || true
+      - name: Fabricar
+        run: sudo bash rescate/hacer_iso.sh "$RUNNER_TEMP/octopus-rescate.iso" "$RUNNER_TEMP/bin/restic"
+      - name: Arrancarla (arranque seguro, UEFI y BIOS)
+        run: python3 tests/ci/prueba_iso_rescate.py "$RUNNER_TEMP/octopus-rescate.iso"
+      - name: Subirla a la versión publicada
+        if: inputs.version != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ inputs.version }}
+        run: |
+          cp "$RUNNER_TEMP/octopus-rescate.iso.sha256" "$RUNNER_TEMP/octopus-rescate.iso.sha256.txt"
+          gh release upload "v$V" "$RUNNER_TEMP/octopus-rescate.iso" "$RUNNER_TEMP/octopus-rescate.iso.sha256.txt" --clobber

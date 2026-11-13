@@ -71,6 +71,15 @@ jobs:
             gh release create "v$V" --title "OCTOPUS $V" --notes-file notas.md --verify-tag
           fi
 
+  rescate:
+    name: USB de rescate
+    needs: [comprobar, publicar]
+    uses: ./.github/workflows/rescate-iso.yml
+    with:
+      version: ${{ needs.comprobar.outputs.version }}
+    permissions:
+      contents: write
+
   imagen:
     name: Imagen para NAS
     needs: [comprobar, publicar]

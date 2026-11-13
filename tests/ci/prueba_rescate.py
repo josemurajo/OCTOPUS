@@ -148,8 +148,10 @@ def disco(fuente, arrancar=False):
         res = r.restaurar_linux(cfg, lista[0]["id"], loop)
         chk(res["status"] == "success" and "UEFI" in res["arranque"] and "BIOS" in res["arranque"],
             "pone la copia y el arranque UEFI y BIOS", res)
-        partes = json.loads(_sh("lsblk", "-J", "-o", "PATH,FSTYPE,PARTTYPE", loop).stdout)["blockdevices"][0]["children"]
-        chk([p["fstype"] for p in partes] == ["vfat", None, "ext4"], "particiones: EFI, BIOS y el sistema", partes)
+        tipos = [subprocess.run(["blkid", "-p", "-s", "TYPE", "-o", "value", r.particion(loop, n)], capture_output=True,
+                                text=True).stdout.strip() for n in (1, 2, 3)]
+        chk(tipos == ["vfat", "", "ext4"] and os.path.exists(r.particion(loop, 2)), "particiones: EFI, BIOS y el sistema",
+            tipos)
         m = tempfile.mkdtemp()
         _sh("mount", r.particion(loop, 3), m)
         _sh("mount", r.particion(loop, 1), m + "/boot/efi")
