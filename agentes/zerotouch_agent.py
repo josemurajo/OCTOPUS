@@ -1963,14 +1963,21 @@ def copia_programada() -> int:
             AJUSTES_SERVIDOR.update(r["ajustes"])
     except Exception as exc:
         log(f"No se pudieron leer los ajustes del servidor ({exc.__class__.__name__}); copia sin limite de velocidad")
-    res = backup_forense(cfg)
-    log(f"Copia programada: {res.get('status')} {res.get('message', '')}".strip())
-    if toca_copia_completa():
-        rc = copia_completa(cfg)
-        log(f"Copia completa programada: {rc.get('status')} {rc.get('message', '')}".strip())
+    # «Este ordenador solo es para trabajar en la máquina virtual»: se copian solo sus máquinas, no sus carpetas
+    solo_vms = bool(ajustes_vms().get("activa") and ajustes_vms().get("solo"))
+    if solo_vms:
+        res = {"status": "success", "message": "solo se copian las máquinas virtuales de este equipo"}
+    else:
+        res = backup_forense(cfg)
+        log(f"Copia programada: {res.get('status')} {res.get('message', '')}".strip())
+        if toca_copia_completa():
+            rc = copia_completa(cfg)
+            log(f"Copia completa programada: {rc.get('status')} {rc.get('message', '')}".strip())
     if toca_copia_vms():
         rv = copia_vms(cfg)
         log(f"Copia de máquinas virtuales programada: {rv.get('status')} {rv.get('message', '')}".strip())
+        if solo_vms:
+            res = rv
     if toca_imagen():
         imagen_disco(cfg, programada=True)
     return 0 if res.get("status") == "success" else 1

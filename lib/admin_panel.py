@@ -1508,9 +1508,11 @@ def _equipos_con_estado(force=False):
     rows = conn.execute('SELECT * FROM systems ORDER BY hostname').fetchall()
     conn.close()
     lista = []
+    de, _ = relaciones_vm(rows)
     for r in rows:
         est = agentes.estado_equipo(r, force=force)
-        lista.append({'sys': r, 'est': est, 'trabajos': agentes.trabajos_de(r['id'], 1)})
+        lista.append({'sys': r, 'est': est, 'trabajos': agentes.trabajos_de(r['id'], 1),
+                      'vm_de': de.get(r['id'])})
     return lista
 
 
@@ -2004,7 +2006,9 @@ def equipo(system_id):
     est = agentes.estado_equipo(row, force=request.args.get('refrescar') == '1')
     import mantenimiento as _mant
     copias = _inc.marcar_copias(row['id'], est['copias'])
-    return render_template('equipo.html', monitor_activa=_mon.activa(system_id), monitor_estado=_mon.estado(system_id), s=row, est=est, copias=copias, trabajos=agentes.trabajos_de(row['id'], 5),
+    vm_de, vm_dentro = relaciones_vm()
+    return render_template('equipo.html', vm_de=vm_de.get(row['id']), vm_dentro=vm_dentro.get(row['id'], []),
+                           solo_vms=agentes.solo_vms(row), monitor_activa=_mon.activa(system_id), monitor_estado=_mon.estado(system_id), s=row, est=est, copias=copias, trabajos=agentes.trabajos_de(row['id'], 5),
                            prueba=_mant.leer_pruebas().get(row['hostname'].lower()),
                            horas_sin_copia=agentes.horas_sin_copia(row),
                            horas_propias=agentes.notas_equipo(row).get('horas_sin_copia'),
@@ -2233,6 +2237,38 @@ import re as _re_vm
 _HIPERVISORES = {'hyperv': 'Hyper-V', 'libvirt': 'KVM / libvirt', 'proxmox': 'Proxmox', 'virtualbox': 'VirtualBox'}
 
 
+def _todos_los_equipos():
+    with get_db_connection() as c:
+        return c.execute('SELECT * FROM systems ORDER BY hostname').fetchall()
+
+
+def _nombre_simple(n):
+    return _re_vm.sub(r'[^a-z0-9]', '', (n or '').lower())
+
+
+def relaciones_vm(filas=None):
+    """Qué equipos son máquinas virtuales de otro (con OCTOPUS dentro), según lo marcado en «Máquinas virtuales».
+    Devuelve {id_invitado: (fila_anfitrion, nombre_vm)} y {id_anfitrion: [(nombre_vm, fila_invitado)]}."""
+    filas = filas if filas is not None else _todos_los_equipos()
+    por_id = {r['id']: r for r in filas}
+    de, dentro = {}, {}
+    for r in filas:
+        for nombre, sid in ((agentes.notas_equipo(r).get('vms') or {}).get('dentro') or {}).items():
+            if sid in por_id and sid != r['id']:
+                de[sid] = (r, nombre)
+                dentro.setdefault(r['id'], []).append((nombre, por_id[sid]))
+    return de, dentro
+
+
+def propuesta_dentro(vms, filas, system_id):
+    """Para cada máquina virtual, el equipo con su mismo nombre (si hay uno): seguramente es ella con OCTOPUS dentro."""
+    por_nombre = {}
+    for r in filas:
+        if r['id'] != system_id:
+            por_nombre.setdefault(_nombre_simple(r['hostname']), r['id'])
+    return {v['nombre']: por_nombre.get(_nombre_simple(v['nombre'])) for v in vms}
+
+
 @app.route('/equipos/<int:system_id>/vms')
 @login_required
 def equipo_vms(system_id):
@@ -2251,9 +2287,13 @@ def equipo_vms(system_id):
                 error = r.get('message') or 'El equipo no ha contestado.'
         else:
             error = 'El equipo está apagado o desconectado: enciéndelo para ver sus máquinas virtuales.'
+    filas = _todos_los_equipos()
+    conf = agentes.notas_equipo(row).get('vms') or {}
+    propuesta = propuesta_dentro(datos.get('vms', []), filas, row['id'])
+    propuesta.update(conf.get('dentro') or {})
     return render_template('vms.html', s=row, ok=ok, motivo=motivo, error=error, vms=datos.get('vms', []),
-                           copias=datos.get('copias', []), conf=agentes.notas_equipo(row).get('vms') or {},
-                           trabajos=agentes.trabajos_de(row['id'], 5), HIP=_HIPERVISORES)
+                           copias=datos.get('copias', []), conf=conf, otros=[r for r in filas if r['id'] != row['id']],
+                           dentro=propuesta, trabajos=agentes.trabajos_de(row['id'], 5), HIP=_HIPERVISORES)
 
 
 @app.route('/equipos/<int:system_id>/vms', methods=['POST'])
@@ -2274,8 +2314,18 @@ def equipo_vms_accion(system_id):
         activa = request.form.get('activa') == 'on'
         todas = [n[:200] for n in request.form.getlist('todas')]
         marcadas = set(request.form.getlist('incluir'))
+        dentro = {}
+        otros = {r['id'] for r in _todos_los_equipos() if r['id'] != system_id}
+        for i, n in enumerate(todas):
+            try:
+                sid = int(request.form.get(f'dentro_{i}') or 0)
+            except ValueError:
+                sid = 0
+            if sid in otros:
+                dentro[n] = sid
         notas['vms'] = {'activa': activa, 'dias': 7 if request.form.get('dias') == '7' else 1,
-                        'excluir': sorted(n for n in todas if n not in marcadas)}
+                        'excluir': sorted(n for n in todas if n not in marcadas),
+                        'solo': activa and request.form.get('solo') == 'on', 'dentro': dentro}
         with get_db_connection() as c:
             c.execute('UPDATE systems SET notes = ? WHERE id = ?', (json.dumps(notas), system_id))
         agentes.invalidar(system_id)
@@ -2348,7 +2398,7 @@ def _ajustes_agente(row):
             'discreto': {'activo': _fun.activa('discreto'), 'bateria': _fun.opcion('discreto', 'bateria') != 'no'},
             # siempre se manda (aunque esté apagada): si no, el agente se quedaría con lo último que recibió
             'vms': {'activa': bool(vms.get('activa')) and _fun.activa('copias_vm'), 'dias': vms.get('dias') or 1,
-                    'excluir': list(vms.get('excluir') or [])},
+                    'excluir': list(vms.get('excluir') or []), 'solo': bool(vms.get('solo'))},
             'bd': {'activa': bool(bd.get('activa')) and _fun.activa('copias_bd'), 'horas': bd.get('horas') or 24,
                    'excluir': list(bd.get('excluir') or []), 'cred': _bd_credenciales(bd)},
             'imagen': _imagen_ajustes(row)}

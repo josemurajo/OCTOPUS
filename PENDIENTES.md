@@ -29,6 +29,9 @@ Lo tuyo, en orden. Todo es gratis.
 
 **Hecho 13/11:** copias de máquinas de **VirtualBox** (Windows, Linux y Mac), leyendo los registros de cada usuario
 sin abrir VirtualBox. Viene «en pruebas» hasta probarlo con tus máquinas de VirtualBox (tienes las de vagrant).
+También: «este ordenador solo es para trabajar en la máquina virtual» (copia solo la máquina) y enlazar la máquina con
+el equipo que es ella por dentro (OCTOPUS instalado dentro). Recomendado para empresas: archivos de dentro cada día +
+la máquina entera cada semana.
 
 **Qué viene «en pruebas»** (está hecho, pero viene apagado hasta probarlo en algo real; se puede encender en Ajustes
 → Funciones, modo experto):

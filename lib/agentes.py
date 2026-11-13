@@ -166,6 +166,18 @@ def notas_equipo(system) -> dict:
         return {}
 
 
+def solo_vms(system) -> bool:
+    """«Este ordenador solo es para trabajar en la máquina virtual»: de él se copian solo sus máquinas virtuales."""
+    v = notas_equipo(system).get("vms") or {}
+    if not (v.get("activa") and v.get("solo")):
+        return False
+    try:
+        import funciones
+        return funciones.activa("copias_vm")
+    except Exception:
+        return False
+
+
 def horas_sin_copia(system) -> float:
     """Horas sin copia a partir de las cuales el equipo pasa a 'Copia antigua' y se avisa.
     Se puede ajustar por equipo (un portatil puede pasar dias fuera); si no, ALERTA_SIN_COPIA_HORAS (26)."""
@@ -178,6 +190,11 @@ def horas_sin_copia(system) -> float:
             h = float(os.environ.get("ALERTA_SIN_COPIA_HORAS", "26"))
         except ValueError:
             h = 26
+    if solo_vms(system):   # sus copias son las de las máquinas virtuales: cada día o cada semana
+        try:
+            h = max(h, float((notas_equipo(system).get("vms") or {}).get("dias") or 1) * 24 + 2)
+        except (TypeError, ValueError):
+            pass
     return h
 
 
@@ -271,6 +288,8 @@ def _lanzar(system, tipo, mensaje, llamada, al_terminar, on_done=None):
 def lanzar_copia(system, on_done=None, completa=False, vms=False, bd=False):
     """Lanza la copia (la normal, la completa, la de sus máquinas virtuales o la de sus bases de datos) en segundo plano."""
     ag = Agente(ip_de(system))
+    if not (bd or completa or vms) and solo_vms(system):
+        vms = True   # en este equipo «copiar» es copiar su máquina virtual
     if bd:
         return _lanzar(system, "copia_bd", "Copia de las bases de datos en curso...", ag.copia_bd,
                        lambda r: "Bases de datos copiadas: " + ", ".join(b.get("nombre", "?") for b in r.get("bases", [])),

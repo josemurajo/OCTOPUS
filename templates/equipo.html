@@ -7,6 +7,13 @@
   <div style="flex:1">
     <h1>{{ s.hostname }}</h1>
     <p class="muted">{{ est.texto }} · última copia {{ est.ultima | hace }}{% if est.ultima %} ({{ est.ultima | fecha }}){% endif %}{% if multi and cliente %} · Cliente: <strong>{{ cliente }}</strong>{% endif %}</p>
+    {% if vm_de %}<p class="small">Es la máquina virtual «{{ vm_de[1] }}» de
+      <a href="{{ url_for('equipo', system_id=vm_de[0].id) }}">{{ vm_de[0].hostname }}</a>: aquí se copian sus archivos
+      de dentro; la máquina entera se copia desde {{ vm_de[0].hostname }}.</p>{% endif %}
+    {% if vm_dentro %}<p class="small">Sus máquinas virtuales con OCTOPUS dentro:
+      {% for nombre, f in vm_dentro %}<a href="{{ url_for('equipo', system_id=f.id) }}">{{ f.hostname }}</a>{{ ' («' ~ nombre ~ '»)' if nombre|lower != f.hostname|lower }}{{ ', ' if not loop.last }}{% endfor %}.</p>{% endif %}
+    {% if solo_vms %}<p class="small">Este ordenador solo es para trabajar en su máquina virtual: se copian sus
+      máquinas virtuales, no sus carpetas (<a href="{{ url_for('equipo_vms', system_id=s.id) }}">cambiar</a>).</p>{% endif %}
     {% if multi and puede_actuar() %}
     <form method="post" action="{{ url_for('equipo_cliente', system_id=s.id) }}" style="display:flex; gap:8px; align-items:center; margin-top:4px">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

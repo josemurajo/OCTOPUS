@@ -232,6 +232,28 @@ chk(rvr["status"] == "success" and "Juegos Win10.vdi" in rec and sha(rec["Juegos
     and "datos.vdi" in rec and "Juegos Win10.vbox" in rec, "VirtualBox: recupera discos y .vbox idénticos")
 chk("Máquina → Añadir" in rvr.get("instrucciones", ""), "VirtualBox: explica cómo añadirla a VirtualBox")
 
+# «Este ordenador solo es para trabajar en la máquina virtual»: la copia diaria no copia sus carpetas
+import zerotouch_agent as z  # noqa: E402
+hechas = []
+z.load_config = lambda: {}
+z._https = lambda *a, **k: {"ajustes": {"vms": {"activa": True, "solo": True, "dias": 7}}}
+z.backup_forense = lambda cfg, *a: hechas.append("carpetas") or {"status": "success"}
+z.copia_completa = lambda cfg: hechas.append("completa") or {"status": "success"}
+z.copia_vms = lambda cfg, *a: hechas.append("vms") or {"status": "success"}
+z.toca_copia_completa = lambda *a: True
+z.toca_imagen = lambda *a: False
+z.esta_aislado = lambda: False
+z._discreto_mod = lambda: None
+z.toca_copia_vms = lambda *a: True
+chk(z.copia_programada() == 0 and hechas == ["vms"], "solo la máquina virtual: copia la máquina y no las carpetas", hechas)
+hechas.clear()
+z.toca_copia_vms = lambda *a: False
+chk(z.copia_programada() == 0 and hechas == [], "solo la máquina virtual: el resto de días no hace nada", hechas)
+z._https = lambda *a, **k: {"ajustes": {"vms": {"activa": True, "solo": False}}}
+z.AJUSTES_SERVIDOR.clear()
+z.copia_programada()
+chk(hechas == ["carpetas", "completa"], "sin marcarlo, la copia de carpetas sigue igual", hechas)
+
 shutil.rmtree(T, ignore_errors=True)
 print("FALLOS:", F or "ninguno")
 sys.exit(1 if F else 0)

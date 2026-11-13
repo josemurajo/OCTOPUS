@@ -33,9 +33,15 @@
         <option value="1" {{ 'selected' if (conf.dias or 1) == 1 }}>Cada día (con la copia diaria)</option>
         <option value="7" {{ 'selected' if conf.dias == 7 }}>Cada semana</option>
       </select></p>
+    <label style="display:flex; gap:8px; align-items:center; font-weight:400">
+      <input type="checkbox" name="solo" {{ 'checked' if conf.solo }} style="width:auto">
+      Este ordenador solo es para trabajar en la máquina virtual: copiar solo las máquinas, no las carpetas del ordenador</label>
+    <p class="hint">Útil si la persona trabaja siempre dentro de la máquina virtual. Si además instalas OCTOPUS
+      <strong>dentro</strong> de la máquina, márcalo abajo («OCTOPUS dentro»): así se copian también sus archivos cada
+      día, y el panel enseña las dos cosas juntas.</p>
     {% if vms %}
     <table>
-      <thead><tr><th>Copiar</th><th>Máquina</th><th>Tipo</th><th>Estado</th><th>Tamaño</th></tr></thead>
+      <thead><tr><th>Copiar</th><th>Máquina</th><th>Tipo</th><th>Estado</th><th>Tamaño</th><th>OCTOPUS dentro</th></tr></thead>
       <tbody>
       {% for v in vms %}
         <tr>
@@ -46,12 +52,16 @@
           <td>{{ HIP.get(v.hipervisor, v.hipervisor) }}</td>
           <td>{{ v.estado }}</td>
           <td>{{ v.tamano | tamano if v.tamano else '—' }}</td>
+          <td><select name="dentro_{{ loop.index0 }}" aria-label="Equipo que es {{ v.nombre }} por dentro" style="max-width:200px">
+              <option value="">— no —</option>
+              {% for o in otros %}<option value="{{ o.id }}" {{ 'selected' if dentro.get(v.nombre) == o.id }}>{{ o.hostname }}</option>{% endfor %}
+            </select></td>
         </tr>
       {% endfor %}
       </tbody>
     </table>
     {% elif not error %}
-    <p class="muted">No se ha encontrado ninguna máquina virtual en este equipo (se buscan en Hyper-V, KVM/libvirt y Proxmox).</p>
+    <p class="muted">No se ha encontrado ninguna máquina virtual en este equipo (se buscan en Hyper-V, KVM/libvirt, Proxmox y VirtualBox).</p>
     {% endif %}
     {% if puede_actuar() %}
     <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:12px">

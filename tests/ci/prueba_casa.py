@@ -111,6 +111,40 @@ def unidad():
         "destino: unidad o carpeta de red, y nada más")
     chk(not a._fun.para_equipo("imagen_disco", "linux")[0], "en Linux no se ofrece")
     cm.set_config("imagen_disco", False)
+
+    # «Este ordenador solo es para trabajar en la máquina virtual» y la máquina con OCTOPUS dentro
+    cm.set_config("copias_vm", True)
+    with a.get_db_connection() as cx:
+        cx.execute("INSERT INTO systems (hostname, ip_address, os_family, status, notes) VALUES ('ANA-VM', '10.0.0.9', "
+                   "'windows', 'unknown', '{}')")
+        invitado = cx.execute("SELECT id FROM systems WHERE hostname='ANA-VM'").fetchone()[0]
+    chk(a.propuesta_dentro([{"nombre": "ana vm"}, {"nombre": "Otra"}], a._todos_los_equipos(), sid)
+        == {"ana vm": invitado, "Otra": None}, "propone el equipo que se llama igual que la máquina virtual")
+    r = post(f"/equipos/{sid}/vms", {"accion": "guardar", "activa": "on", "dias": "7", "solo": "on",
+                                     "todas": ["Trabajo Ana", "Pruebas"], "incluir": ["Trabajo Ana"],
+                                     "dentro_0": str(invitado), "dentro_1": "999"}, f"/equipos/{sid}/vms")
+    fila = a._get_system(sid)
+    conf = a.agentes.notas_equipo(fila).get("vms")
+    chk(conf.get("solo") is True and conf.get("dentro") == {"Trabajo Ana": invitado} and conf.get("excluir") == ["Pruebas"],
+        "guarda «solo la máquina virtual» y qué equipo es la máquina por dentro", conf)
+    chk(a._ajustes_agente(fila)["vms"]["solo"] is True, "el agente recibe «solo la máquina virtual»")
+    chk(a.agentes.solo_vms(fila) and a.agentes.horas_sin_copia(fila) >= 7 * 24,
+        "si se copia cada semana, no avisa de «copia antigua» al día siguiente", a.agentes.horas_sin_copia(fila))
+    llamado = {}
+    orig = a.agentes._lanzar
+    a.agentes._lanzar = lambda system, tipo, *x, **k: llamado.setdefault("tipo", tipo)
+    a.agentes.lanzar_copia(fila)
+    a.agentes._lanzar = orig
+    chk(llamado.get("tipo") == "copia_vms", "«Hacer copia ahora» copia la máquina virtual", llamado)
+    t = c.get(f"/equipos/{invitado}").get_data(as_text=True)
+    chk("Es la máquina virtual «Trabajo Ana»" in t, "la ficha de la máquina dice de qué ordenador es")
+    t = c.get(f"/equipos/{sid}").get_data(as_text=True)
+    chk("ANA-VM" in t and "solo es para trabajar en su máquina virtual" in t, "la ficha del ordenador enseña su máquina")
+    chk("máquina virtual de" in c.get("/equipos").get_data(as_text=True), "la lista de equipos las enseña juntas")
+    cm.set_config("copias_vm", False)
+    chk(not a.agentes.solo_vms(fila), "con la función apagada, se vuelve a copiar normal")
+    with a.get_db_connection() as cx:
+        cx.execute("DELETE FROM systems WHERE id=?", (invitado,))
     with a.get_db_connection() as cx:
         cx.execute("DELETE FROM systems")
 
