@@ -2230,7 +2230,7 @@ def equipo_bd_descargar(system_id, snap):
 # ------------------------------------------------------------------ copias de las máquinas virtuales de un equipo
 import re as _re_vm
 
-_HIPERVISORES = {'hyperv': 'Hyper-V', 'libvirt': 'KVM / libvirt', 'proxmox': 'Proxmox'}
+_HIPERVISORES = {'hyperv': 'Hyper-V', 'libvirt': 'KVM / libvirt', 'proxmox': 'Proxmox', 'virtualbox': 'VirtualBox'}
 
 
 @app.route('/equipos/<int:system_id>/vms')

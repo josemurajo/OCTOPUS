@@ -184,6 +184,54 @@ dos = vms.hyperv_desde_json(json.dumps([{"id": "a", "nombre": "A", "estado": "Of
 chk([v["estado"] for v in dos] == ["apagada", "apagada"] and vms.hyperv_desde_json("") == [], "Hyper-V: varias, y nada si no hay")
 chk(vms.etiqueta("Mi servidor, nuevo") == "Mi_servidor_nuevo", "nombres con espacios y comas valen como etiqueta")
 
+# ---------------------------------------------------------------- VirtualBox (registros de cada usuario + .vbox)
+USU = T / "usuarios"
+carpeta_vm = USU / "ana" / "VirtualBox VMs" / "Juegos Win10"
+(carpeta_vm / "Snapshots").mkdir(parents=True)
+vdi = carpeta_vm / "Juegos Win10.vdi"
+vdi.write_bytes(os.urandom(2 * 1024 * 1024))
+dif = carpeta_vm / "Snapshots" / "{dif}.vdi"
+dif.write_bytes(os.urandom(512 * 1024))
+fuera = T / "otro_disco" / "datos.vdi"
+fuera.parent.mkdir()
+fuera.write_bytes(os.urandom(256 * 1024))
+UUID = "1b2c3d4e-0000-1111-2222-333344445555"
+(carpeta_vm / "Juegos Win10.vbox").write_text(f"""<?xml version="1.0"?>
+<VirtualBox xmlns="http://www.virtualbox.org/" version="1.19-windows">
+  <Machine uuid="{{{UUID}}}" name="Juegos Win10" OSType="Windows10_64" snapshotFolder="Snapshots">
+    <MediaRegistry><HardDisks>
+      <HardDisk uuid="{{a}}" location="Juegos Win10.vdi" format="VDI" type="Normal">
+        <HardDisk uuid="{{b}}" location="Snapshots/{{dif}}.vdi" format="VDI"/>
+      </HardDisk>
+      <HardDisk uuid="{{c}}" location="{fuera}" format="VDI" type="Normal"/>
+    </HardDisks></MediaRegistry>
+  </Machine>
+</VirtualBox>""", encoding="utf-8")
+(USU / "ana" / ".VirtualBox").mkdir()
+(USU / "ana" / ".VirtualBox" / "VirtualBox.xml").write_text(f"""<?xml version="1.0"?>
+<VirtualBox xmlns="http://www.virtualbox.org/" version="1.12-windows"><Global><MachineRegistry>
+  <MachineEntry uuid="{{{UUID}}}" src="{carpeta_vm / 'Juegos Win10.vbox'}"/>
+  <MachineEntry uuid="{{9999}}" src="/no/existe.vbox"/>
+</MachineRegistry></Global></VirtualBox>""", encoding="utf-8")
+vb = vms._virtualbox_detectar(str(USU), en_marcha="")
+chk(len(vb) == 1 and vb[0]["nombre"] == "Juegos Win10" and vb[0]["hipervisor"] == "virtualbox"
+    and vb[0]["estado"] == "apagada", "VirtualBox: encuentra la máquina de la usuaria (sin abrir VirtualBox)", vb)
+chk(vb and str(fuera) in vb[0]["rutas"] and str(carpeta_vm) in vb[0]["rutas"],
+    "VirtualBox: copia la carpeta entera y también el disco que está fuera", vb and vb[0]["rutas"])
+encendida = vms._virtualbox_detectar(str(USU), en_marcha=f'"C:\\VirtualBoxVM.exe" --startvm {UUID}')
+chk(encendida and encendida[0]["estado"] == "encendida", "VirtualBox: sabe si está encendida")
+rv = vms.copiar(ctx, vb[0])
+chk(rv["status"] == "success", "VirtualBox: copia la máquina apagada", rv.get("message", ""))
+if vms.SYSTEM != "windows":
+    re_ = vms.copiar(ctx, encendida[0])
+    chk(re_["status"] == "error" and "apagada" in re_.get("message", ""),
+        "VirtualBox encendida en Linux/Mac: no hace una copia mala, avisa y lo intenta en la siguiente")
+rvr = vms.restaurar(ctx, rv["snapshot_id"][:8], "Juegos Win10", "virtualbox", destino=str(DEST))
+rec = {p.name: p for p in Path(rvr.get("carpeta", "/nada")).rglob("*") if p.is_file()}
+chk(rvr["status"] == "success" and "Juegos Win10.vdi" in rec and sha(rec["Juegos Win10.vdi"]) == sha(vdi)
+    and "datos.vdi" in rec and "Juegos Win10.vbox" in rec, "VirtualBox: recupera discos y .vbox idénticos")
+chk("Máquina → Añadir" in rvr.get("instrucciones", ""), "VirtualBox: explica cómo añadirla a VirtualBox")
+
 shutil.rmtree(T, ignore_errors=True)
 print("FALLOS:", F or "ninguno")
 sys.exit(1 if F else 0)

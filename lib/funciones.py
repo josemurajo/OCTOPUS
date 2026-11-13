@@ -103,11 +103,9 @@ FUNCIONES: list[dict] = [
                 "Mucha gente cree que Microsoft y Google ya guardan copia, y no es así."},
     {"clave": "copias_vm", "grupo": "copias", "nivel": "basico", "defecto": False, "en_pruebas": True,
      "nombre": "Copias de máquinas virtuales",
-     "explica": "En los equipos con máquinas virtuales (Hyper-V, KVM/libvirt o Proxmox) copia cada máquina ENTERA, "
-                "aunque esté encendida, para poder levantarla otra vez. Cada copia es completa, pero solo ocupa lo que "
-                "ha cambiado. Se activa equipo por equipo (ficha del equipo → Máquinas virtuales).",
-     "no_mac": True,
-     "motivo_mac": "En Mac no: Parallels y VMware Fusion no tienen una forma estándar de copiar una máquina encendida."},
+     "explica": "En los equipos con máquinas virtuales (Hyper-V, KVM/libvirt, Proxmox o VirtualBox) copia cada máquina "
+                "ENTERA para poder levantarla otra vez. Cada copia es completa, pero solo ocupa lo que ha cambiado. Se "
+                "activa equipo por equipo (ficha del equipo → Máquinas virtuales). En Mac, solo VirtualBox."},
 
     # ------------------------------------------------------------------------------------------- ataques
     {"clave": "incident_auto_response", "grupo": "ataques", "nivel": "basico", "defecto": True,

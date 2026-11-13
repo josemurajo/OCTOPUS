@@ -10,13 +10,11 @@ Lo tuyo, en orden. Todo es gratis.
 1. ✅ Correo de OCTOPUS puesto (octopuszerotouch@gmail.com) en `DATOS_DEL_AUTOR.txt` (22/10).
 2. ⚪ Token de Telegram: **José decide seguir con el actual** (22/10), aunque se vio en el chat. Riesgo asumido:
    quien lo tenga podría mandar mensajes con el bot. Se cambia cuando quieras (@BotFather → `/revoke`).
-3. 🔴 **Haz pública la imagen** (1 min): abre https://github.com/users/josemurajo/packages/container/octopus/settings,
-   baja hasta el final, pulsa *Change visibility* → **Public**, escribe `octopus` y confirma.
-4. 🔴 **Firma la versión 3.0.0** cuando te avise (1 min): doble clic en `FIRMAR_VERSION.bat`, frase de paso, y pegas
-   en el chat lo que te copia. Ver [PUBLICAR_VERSION.md](PUBLICAR_VERSION.md).
+3. ✅ Imagen para NAS pública (comprobado 13/11: se descarga sin cuenta).
+4. ✅ Versión 3.0.0 firmada y publicada (22/10).
 5. 🟠 **Descripción y temas del repositorio** (1 min): rueda ⚙ junto a «About» en GitHub.
 6. 🟠 **Antes de vender o anunciarlo**:
-   - que un asesor revise `legal/` (privacidad y licencia);
+   - asesor legal: José decide no hacerlo por ahora (13/11); lo mirará cuando la app esté terminada;
    - comprobar que la marca «OCTOPUS» está libre en la OEPM (https://www.oepm.es, consulta gratis).
 7. 🟢 **Cuando puedas**: la prueba en tu PC **sin dejar rastro**, con el Espacio aislado de Windows (tu Windows es Pro).
    Doble clic en `PROBAR_OCTOPUS.wsb`; se prueba solo en unos 15 minutos (incluye modo casa, no molestar y destinos). Ver `herramientas/sandbox/LEEME.md`.
@@ -29,12 +27,15 @@ Lo tuyo, en orden. Todo es gratis.
 - Las nuevas formas de uso: casa y empresa con máquina aparte.
 - Para las pruebas en el PC de José: el Espacio aislado de Windows (`PROBAR_OCTOPUS.wsb`), sin dejar rastro.
 
+**Hecho 13/11:** copias de máquinas de **VirtualBox** (Windows, Linux y Mac), leyendo los registros de cada usuario
+sin abrir VirtualBox. Viene «en pruebas» hasta probarlo con tus máquinas de VirtualBox (tienes las de vagrant).
+
 **Qué viene «en pruebas»** (está hecho, pero viene apagado hasta probarlo en algo real; se puede encender en Ajustes
 → Funciones, modo experto):
 
 | Función | Para quitarle el «en pruebas» necesito |
 |---|---|
-| Copias de máquinas virtuales | un Hyper-V o un Proxmox de verdad (Proxmox es gratis) |
+| Copias de máquinas virtuales | un Hyper-V, Proxmox o VirtualBox de verdad (tus VM de vagrant valen para VirtualBox) |
 | Copia de Microsoft 365 / Google | una cuenta gratis del Microsoft 365 Developer Program y una cuenta de Google |
 | Active Directory/LDAP, OIDC, RADIUS | el servidor de usuarios de una empresa de verdad (o uno de prueba) |
 | USB de rescate, imagen de disco, arranque por red, despliegue | un PC físico viejo |

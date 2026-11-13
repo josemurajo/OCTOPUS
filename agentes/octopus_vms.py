@@ -14,6 +14,10 @@ pero en el almacén solo ocupa lo que ha cambiado desde la anterior (restic guar
                           qemu-guest-agent), se copian los discos quietos y se vuelven a unir (blockcommit). Apagada: se
                           copian tal cual. También se guarda su definición (XML).
   Proxmox (Linux) ....... vzdump en modo instantánea, directo al almacén (no necesita sitio libre en el disco).
+  VirtualBox (Windows, Linux y Mac; lo más usado en casa) .. la carpeta entera de cada máquina (.vbox, discos y sus
+                          instantáneas). Apagada: copia limpia. Encendida: en Windows se lee con una instantánea VSS
+                          (como si se hubiera ido la luz: la máquina arranca, igual que tras un apagón); en Linux y Mac
+                          se espera a que esté apagada (avisa y lo intenta en la siguiente copia).
 
 Recuperar (restaurar): NUNCA toca la máquina original. Deja una copia aparte en una carpeta nueva y explica cómo
 arrancarla (en libvirt deja además un XML listo con otro nombre y otra MAC, para que no choque con la original).
@@ -38,7 +42,7 @@ from pathlib import Path
 
 SYSTEM = platform.system().lower()
 LIBVIRT_URI = os.environ.get("OCTOPUS_LIBVIRT_URI", "qemu:///system")
-HIPERVISORES = {"hyperv": "Hyper-V", "libvirt": "KVM / libvirt", "proxmox": "Proxmox"}
+HIPERVISORES = {"hyperv": "Hyper-V", "libvirt": "KVM / libvirt", "proxmox": "Proxmox", "virtualbox": "VirtualBox"}
 
 
 # ------------------------------------------------------------------------------------------------ utilidades
@@ -89,13 +93,112 @@ def _estado(txt) -> str:
 # ------------------------------------------------------------------------------------------------ detectar
 def detectar() -> list[dict]:
     """Las máquinas virtuales de este equipo: [{id, nombre, hipervisor, estado, discos, config, tamano}]."""
+    vms: list[dict] = []
     if SYSTEM == "windows":
-        return _hyperv_detectar()
-    if shutil.which("qm"):            # Proxmox (no usa libvirt)
-        return _proxmox_detectar()
-    if shutil.which("virsh"):
-        return _libvirt_detectar()
-    return []
+        vms += _hyperv_detectar()
+    elif shutil.which("qm"):          # Proxmox (no usa libvirt)
+        vms += _proxmox_detectar()
+    elif shutil.which("virsh"):
+        vms += _libvirt_detectar()
+    vms += _virtualbox_detectar()
+    return vms
+
+
+# ---- VirtualBox: cada persona tiene sus máquinas (el agente corre como sistema), así que se leen los registros de
+# VirtualBox de cada usuario del equipo (VirtualBox.xml) y la definición de cada máquina (.vbox): no hace falta que
+# VirtualBox esté abierto ni pedir nada a nadie.
+_VBOX_NS = "{http://www.virtualbox.org/}"
+
+
+def _vbox_registros(raiz_usuarios: str | None = None) -> list[Path]:
+    if raiz_usuarios is None:
+        raiz_usuarios = (os.environ.get("SystemDrive", "C:") + "\\Users") if SYSTEM == "windows" else \
+                        "/Users" if SYSTEM == "darwin" else "/home"
+    regs = []
+    try:
+        personas = [p for p in Path(raiz_usuarios).iterdir() if p.is_dir()]
+    except OSError:
+        return []
+    if SYSTEM == "linux" and Path("/root").is_dir():
+        personas.append(Path("/root"))
+    for p in personas:
+        for sub in (".VirtualBox/VirtualBox.xml", ".config/VirtualBox/VirtualBox.xml",
+                    "Library/VirtualBox/VirtualBox.xml"):
+            r = p / sub
+            try:
+                if r.is_file():
+                    regs.append(r)
+            except OSError:
+                pass
+    return regs
+
+
+def _vbox_en_marcha() -> str:
+    """Texto con las líneas de órdenes de las máquinas de VirtualBox en marcha (para saber cuáles están encendidas)."""
+    if SYSTEM == "windows":
+        r = _ps("Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^(VirtualBoxVM|VBoxHeadless)' } | "
+                "ForEach-Object { $_.CommandLine }", timeout=60)
+    else:
+        r = _run(["ps", "-ax", "-o", "command="], timeout=60)
+    return "\n".join(l for l in (r.stdout or "").splitlines() if re.search(r"VirtualBoxVM|VBoxHeadless", l))
+
+
+def vbox_maquina(ruta_vbox: str, en_marcha: str = "") -> dict | None:
+    """Lee un .vbox: nombre, id, discos (los de fuera de su carpeta también) y si está encendida."""
+    try:
+        raiz = ET.parse(ruta_vbox).getroot()
+    except (ET.ParseError, OSError):
+        return None
+    m = raiz.find(f"{_VBOX_NS}Machine")
+    if m is None:
+        m = raiz.find("Machine")
+    if m is None:
+        return None
+    vid = (m.get("uuid") or "").strip("{}")
+    nombre = m.get("name") or vid
+    carpeta = os.path.dirname(os.path.abspath(ruta_vbox))
+    discos = []
+    for hd in raiz.iter():
+        if hd.tag.endswith("HardDisk") and hd.get("location"):
+            loc = hd.get("location")
+            ruta = loc if os.path.isabs(loc) or re.match(r"^[A-Za-z]:[\\/]", loc) else os.path.join(carpeta, loc)
+            discos.append(os.path.normpath(ruta))
+    snap_dir = m.get("snapshotFolder") or "Snapshots"
+    snap_dir = snap_dir if os.path.isabs(snap_dir) else os.path.join(carpeta, snap_dir)
+    # lo de dentro de la carpeta de la máquina ya va en la carpeta; aparte, solo los discos que estén fuera
+    fuera = [d for d in dict.fromkeys(discos) if not os.path.abspath(d).startswith(carpeta + os.sep)]
+    if os.path.isdir(snap_dir) and not os.path.abspath(snap_dir).startswith(carpeta + os.sep):
+        fuera.append(snap_dir)
+    encendida = bool(en_marcha) and (vid.lower() in en_marcha.lower() or f'"{nombre}"' in en_marcha
+                                     or f" {nombre} " in f" {en_marcha} ")
+    rutas = [carpeta] + fuera
+    return {"id": vid, "nombre": nombre, "hipervisor": "virtualbox", "estado": "encendida" if encendida else "apagada",
+            "discos": [d for d in dict.fromkeys(discos)], "config": [carpeta] + [f for f in fuera if f not in discos],
+            "rutas": rutas, "tamano": _tam(rutas)}
+
+
+def _virtualbox_detectar(raiz_usuarios: str | None = None, en_marcha: str | None = None) -> list[dict]:
+    regs = _vbox_registros(raiz_usuarios)
+    if not regs:
+        return []
+    if en_marcha is None:
+        en_marcha = _vbox_en_marcha()
+    vms, vistas = [], set()
+    for reg in regs:
+        try:
+            raiz = ET.parse(reg).getroot()
+        except (ET.ParseError, OSError):
+            continue
+        base = reg.parent
+        for e in raiz.iter():
+            if e.tag.endswith("MachineEntry") and e.get("src"):
+                src = e.get("src")
+                ruta = src if os.path.isabs(src) or re.match(r"^[A-Za-z]:[\\/]", src) else str(base / src)
+                vm = vbox_maquina(ruta, en_marcha) if os.path.isfile(ruta) else None
+                if vm and vm["id"] not in vistas:
+                    vistas.add(vm["id"])
+                    vms.append(vm)
+    return vms
 
 
 _PS_DETECTAR = r"""
@@ -306,9 +409,24 @@ def _proxmox_copiar(ctx: dict, vm: dict) -> dict:
     return {"status": "success", "snapshot_id": snap, "tamano": vm.get("tamano", 0)}
 
 
+def _virtualbox_copiar(ctx: dict, vm: dict) -> dict:
+    rutas = vm.get("rutas") or vm["config"]
+    if vm["estado"] != "encendida":
+        return _restic_backup(ctx, vm, rutas)
+    if SYSTEM == "windows":
+        res = _restic_backup(ctx, vm, rutas, extra=["--use-fs-snapshot"])
+        if res.get("status") == "success":
+            res["aviso"] = ("Estaba encendida: se copió como si se hubiera ido la luz (arranca igual que tras un "
+                            "apagón). Para una copia perfecta, que esté apagada a la hora de la copia.")
+        return res
+    return {"status": "error", "message": "Estaba encendida y en este sistema solo se copia apagada (para que la "
+                                          "copia sea buena). Se intentará otra vez en la próxima copia."}
+
+
 def copiar(ctx: dict, vm: dict) -> dict:
     """Copia completa de UNA máquina. ctx = {bin, env, host, opts, dir} (lo prepara el agente)."""
-    fn = {"hyperv": _hyperv_copiar, "libvirt": _libvirt_copiar, "proxmox": _proxmox_copiar}.get(vm.get("hipervisor"))
+    fn = {"hyperv": _hyperv_copiar, "libvirt": _libvirt_copiar, "proxmox": _proxmox_copiar,
+          "virtualbox": _virtualbox_copiar}.get(vm.get("hipervisor"))
     if not fn:
         return {"status": "error", "message": "Hipervisor no soportado"}
     res = fn(ctx, vm)
@@ -418,6 +536,11 @@ def restaurar(ctx: dict, snapshot: str, nombre: str, hipervisor: str, destino: s
     elif hipervisor == "hyperv":
         res["instrucciones"] = ("En el Administrador de Hyper-V: Acción → Importar máquina virtual → elige la carpeta "
                                 f"{carpeta} → «Copiar la máquina virtual (crear un nuevo identificador único)».")
+    elif hipervisor == "virtualbox":
+        vbox = next((a for a in archivos if a.endswith(".vbox")), "")
+        res["instrucciones"] = ("En VirtualBox: Máquina → Añadir → elige " + (vbox or f"el archivo .vbox de {carpeta}") +
+                                ". Si la original sigue en la lista, quítala antes (botón derecho → Eliminar → «Solo "
+                                "quitar», sin borrar archivos) o VirtualBox dirá que ya existe.")
     elif hipervisor == "proxmox":
         vma = next((a for a in archivos if a.endswith(".vma")), "")
         res["instrucciones"] = f"Para crearla como máquina nueva: qmrestore {vma} <número libre, p. ej. 9001>"
