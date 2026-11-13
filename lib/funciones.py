@@ -207,8 +207,10 @@ FUNCIONES: list[dict] = [
                   ("dias", "Días que se guarda el historial", "int", 90, "experto", "", {"min": 7, "max": 365})]},
     {"clave": "usb_rescate", "grupo": "equipos", "nivel": "basico", "defecto": False, "en_pruebas": True,
      "nombre": "USB de rescate",
-     "explica": "Crear un pendrive que arranca un equipo que ya no enciende Windows o Linux y lo deja como estaba, "
-                "desde su copia completa. No sirve para Mac (Apple no deja arrancar otros sistemas en los Mac modernos).",
+     "explica": "Un pendrive para cuando un ordenador ya no arranca: con un código del panel se trae sus copias y "
+                "deja un Linux como estaba (desde su copia completa) o saca los archivos de cualquier equipo a un "
+                "disco USB. Para dejar un Windows como estaba se usa su «imagen de disco». No sirve para Mac (Apple no "
+                "deja arrancar otros sistemas en los Mac modernos).",
      "no_mac": True},
     {"clave": "imagen_disco", "grupo": "equipos", "nivel": "experto", "defecto": False, "en_pruebas": True,
      "nombre": "Copia «imagen de disco»",

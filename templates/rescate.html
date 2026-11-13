@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}USB de rescate · {{ s.hostname }}{% endblock %}
+{% block content %}
+{# USB de rescate: lib/admin_panel.py: equipo_rescate / api_rescate; el programa del pendrive: rescate/octopus_rescate.py #}
+<p class="small"><a href="{{ url_for('equipo', system_id=s.id) }}">← {{ s.hostname }}</a></p>
+<h1>USB de rescate para {{ s.hostname }}</h1>
+<p class="lead">Para cuando el ordenador <strong>ya no arranca</strong>. Arrancas desde un pendrive de OCTOPUS, escribes
+  un código que te damos aquí y él solo se trae las copias de este equipo.</p>
+
+{% if codigo %}
+<div class="card" role="status" style="text-align:center">
+  <p>Escribe esto en el ordenador que arranca con el pendrive:</p>
+  <p class="muted small">Dirección del servidor</p>
+  <p style="font-size:1.4em"><code>{{ servidor }}</code></p>
+  <p class="muted small">Código (vale una vez y {{ minutos }} minutos)</p>
+  <p style="font-size:2.2em; letter-spacing:.08em"><strong><code>{{ codigo }}</code></strong></p>
+  <p class="hint">No lo compartas: con él se llega a las copias de {{ s.hostname }}. Si no lo usas, caduca solo.</p>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>1. Haz el pendrive (una vez; sirve para todos los ordenadores)</h2>
+  <ol>
+    <li>Descarga el rescate de OCTOPUS: <a href="{{ iso }}" rel="noopener">octopus-rescate.iso</a> (gratis).</li>
+    <li>Ponlo en un pendrive de 2 GB o más con <strong>Rufus</strong> (Windows) o <strong>balenaEtcher</strong> (Windows,
+      Mac y Linux), los dos gratis. <em>Se borra lo que tenga el pendrive.</em></li>
+  </ol>
+</div>
+
+<div class="card">
+  <h2>2. Arranca el ordenador roto desde el pendrive</h2>
+  <ol>
+    <li>Pon el cable de red (el rescate necesita llegar al servidor).</li>
+    <li>Enciéndelo pulsando <strong>F12</strong>, F8, F11 o Esc (según la marca) y elige el pendrive.</li>
+    <li>Te pedirá la dirección del servidor y el código. Pídelo aquí:</li>
+  </ol>
+  {% if puede_recuperar() %}
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn btn-primary btn-big" type="submit">{{ 'Dar otro código' if codigo else 'Dar código' }}</button>
+  </form>
+  {% else %}<p class="hint">Tu usuario no puede recuperar equipos: pídeselo a quien administra OCTOPUS.</p>{% endif %}
+</div>
+
+<div class="card">
+  <h2>3. Qué puedes hacer desde el pendrive</h2>
+  <ul>
+    <li><strong>Sacar los archivos a un disco USB</strong> (cualquier ordenador): no borra nada.</li>
+    {% if s.os_family == 'windows' %}
+    <li><strong>Dejar el ordenador como estaba</strong>: en Windows se hace con su
+      <a href="{{ url_for('levantar', system_id=s.id, que='imagen_disco') }}">imagen de disco</a> y un USB de instalación de
+      Windows.</li>
+    {% else %}
+    <li><strong>Dejar el ordenador como estaba</strong>: borra su disco y pone su última <em>copia completa</em>, lista
+      para arrancar.
+      {% if not completas %}<br><span class="muted">Este equipo todavía no tiene ninguna copia completa: actívala en su ficha
+      («Copia completa del equipo») mientras funcione.</span>{% endif %}</li>
+    {% endif %}
+  </ul>
+</div>
+{% endblock %}

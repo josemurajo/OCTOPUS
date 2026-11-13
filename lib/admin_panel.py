@@ -174,7 +174,8 @@ def csrf_token():
 
 app.jinja_env.globals['csrf_token'] = csrf_token
 
-PUBLIC_ENDPOINTS = {'login', 'static', 'recover_password', 'reset_password', 'index', 'healthz'}
+PUBLIC_ENDPOINTS = {'login', 'static', 'recover_password', 'reset_password', 'index', 'healthz',
+                    'api_rescate'}   # el USB de rescate: con su código de un solo uso
 
 
 # ------------------------------------------------------------------ capas de seguridad (Ajustes -> Funciones)
@@ -264,7 +265,8 @@ def _aviso_acceso(user):
 @app.before_request
 def security_checks():
     # CSRF: todo POST debe traer el token de la sesion (campo oculto o cabecera)
-    if request.method == 'POST' and not request.path.startswith('/api/agente/'):
+    # (el agente y el USB de rescate no son navegadores: van con su clave o con su código de un solo uso)
+    if request.method == 'POST' and not request.path.startswith('/api/agente/') and request.path != '/api/rescate':
         sent = request.form.get('csrf_token') or request.headers.get('X-CSRF-Token', '')
         expected = session.get('_csrf', '')
         if not expected or not secrets.compare_digest(str(sent), str(expected)):
@@ -3731,7 +3733,88 @@ def levantar(system_id, que):
     f = next(x for x in _fun.FUNCIONES if x['clave'] == que)
     if que == 'imagen_disco':
         return redirect(url_for('equipo_imagen', system_id=system_id))
+    if que == 'usb_rescate':
+        return redirect(url_for('equipo_rescate', system_id=system_id))
     return render_template('levantar.html', s=row, f=f)
+
+
+# ------------------------------------------------------------------ USB de rescate (rescate/octopus_rescate.py)
+def _rescate_mod():
+    if os.path.join(BASE_DIR, 'rescate') not in sys.path:
+        sys.path.append(os.path.join(BASE_DIR, 'rescate'))
+    import octopus_rescate
+    return octopus_rescate
+
+
+def _rescate_tabla(c):
+    c.execute('CREATE TABLE IF NOT EXISTS rescate_codigos (id TEXT PRIMARY KEY, system_id INTEGER, '
+              'datos TEXT, expira REAL, usado INTEGER DEFAULT 0)')
+
+
+RESCATE_MINUTOS = 60
+RESCATE_ISO = 'https://github.com/josemurajo/OCTOPUS/releases/latest/download/octopus-rescate.iso'
+
+
+@app.route('/equipos/<int:system_id>/rescate', methods=['GET', 'POST'])
+@login_required
+def equipo_rescate(system_id):
+    """USB de rescate: cómo hacer el pendrive y el código de un solo uso para que llegue a las copias del equipo."""
+    row = _get_system(system_id)
+    if not row:
+        return redirect(url_for('equipos'))
+    ok, motivo = _fun.para_equipo('usb_rescate', row['os_family'] or '')
+    if not ok:
+        flash(motivo, 'error')
+        return redirect(url_for('equipo', system_id=system_id))
+    codigo = None
+    import alta_equipos
+    try:
+        servidor = alta_equipos.config_agente(row['hostname'], [], '').get('servidor', '')
+    except Exception:
+        servidor = request.host_url.rstrip('/')
+    if request.method == 'POST':
+        if not puede_recuperar():
+            abort(403)
+        try:
+            cfg = alta_equipos.config_agente(row['hostname'], [], '')
+        except Exception as e:
+            flash(f'No se puede dar el código: {e}', 'error')
+            return redirect(url_for('equipo_rescate', system_id=system_id))
+        for k in ('agent_token', 'bind_addresses', 'backup_paths', 'icono'):
+            cfg.pop(k, None)
+        cfg['os_family'] = row['os_family'] or ''
+        r = _rescate_mod()
+        codigo = r.nuevo_codigo()
+        with get_db_connection() as c:
+            _rescate_tabla(c)
+            c.execute('DELETE FROM rescate_codigos WHERE expira < ? OR system_id = ?', (time.time(), system_id))
+            c.execute('INSERT INTO rescate_codigos (id, system_id, datos, expira) VALUES (?, ?, ?, ?)',
+                      (r.identificador(codigo), system_id, r.cifrar(codigo, cfg), time.time() + RESCATE_MINUTOS * 60))
+        log_audit(session['user_id'], 'RESCATE_CODIGO', f'equipo={row["hostname"]}', request.remote_addr)
+    return render_template('rescate.html', s=row, codigo=codigo, servidor=servidor, minutos=RESCATE_MINUTOS,
+                           iso=RESCATE_ISO, completas=[c for c in agentes.estado_equipo(row).get('copias', [])
+                                                       if 'completa' in (c.get('tags') or [])])
+
+
+@app.route('/api/rescate', methods=['POST'])
+@limiter.limit("10 per minute")
+def api_rescate():
+    """El USB de rescate viene con el identificador de su código: se le da (cifrado con el código) y se gasta."""
+    ident = str((request.get_json(silent=True) or {}).get('id', ''))
+    if not _re_vm.fullmatch(r'[0-9a-f]{64}', ident):
+        return jsonify({'error': 'no'}), 400
+    with get_db_connection() as c:
+        _rescate_tabla(c)
+        fila = c.execute('SELECT system_id, datos FROM rescate_codigos WHERE id = ? AND usado = 0 AND expira > ?',
+                         (ident, time.time())).fetchone()
+        if not fila:
+            log_audit(None, 'RESCATE_RECHAZADO', '', request.remote_addr)
+            _seg_fallo('código del USB de rescate que no vale')
+            return jsonify({'error': 'no'}), 403
+        c.execute('UPDATE rescate_codigos SET usado = 1, datos = NULL WHERE id = ?', (ident,))
+    eq = _get_system(fila[0])
+    log_audit(None, 'RESCATE_USADO', f'equipo={eq["hostname"] if eq else fila[0]}', request.remote_addr)
+    return jsonify({'datos': fila[1]})
 
 
 @app.route('/equipos/<int:system_id>/imagen', methods=['GET', 'POST'])

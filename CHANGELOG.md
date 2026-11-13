@@ -11,6 +11,9 @@ instalan versiones con esa firma. Lo más nuevo, arriba.
 - **Trabajar dentro de una máquina virtual:** en «Máquinas virtuales» se puede marcar que un ordenador solo es para
   trabajar en su máquina virtual (se copia solo la máquina, no las carpetas del ordenador) y qué equipo es esa máquina
   por dentro, si también tiene OCTOPUS. El panel enseña las dos cosas juntas.
+- **USB de rescate:** para un ordenador que ya no arranca. Con un código de un solo uso del panel, el pendrive se
+  trae las copias del equipo y deja un Linux como estaba en su disco (con su arranque) o saca los archivos de cualquier
+  equipo a un disco USB. Viene «en pruebas».
 - **Imagen de disco de Windows**, para cuando el ordenador ni arranca: con la herramienta que trae Windows, en un
   disco USB o una carpeta de red, sola cada pocos días y sin molestar si estás jugando. Se recupera con un USB de
   instalación de Windows, sin OCTOPUS. Viene «en pruebas».
