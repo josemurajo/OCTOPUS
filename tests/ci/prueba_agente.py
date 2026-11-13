@@ -140,6 +140,41 @@ def completa(equipo: str, carpeta: str) -> int:
     return 1 if FALLOS else 0
 
 
+def pasar(equipo: str, datos: str, carpeta_nueva: str) -> int:
+    """«Pasar a un ordenador nuevo»: el mismo equipo hace de ordenador nuevo y trae su propia copia a otra carpeta.
+    Nunca sobrescribe; lo distinto queda al lado con «(recuperado)»; las carpetas del sistema no se tocan."""
+    import agentes
+    copias = agentes.copias_por_equipo(force=True)[0].get(equipo.lower(), [])
+    normal = [c for c in copias if "completa" not in (c.get("tags") or []) and "forense" not in (c.get("tags") or [])]
+    resultado(bool(normal), "hay una copia del equipo «viejo» de donde traer", len(normal))
+    if not normal:
+        return 1
+    snap = normal[0]["id"]
+    nueva = Path(carpeta_nueva)
+    par = {"origen": datos, "destino": str(nueva)}
+    r = pedir(equipo, "POST", "/webhook/traer-de-otro", {"snapshot": snap, "pares": [par]}, segundos=1800)
+    doc = nueva / "documento.txt"
+    resultado(r.get("status") == "success" and doc.is_file() and doc.read_text(encoding="utf-8") == "datos importantes",
+              "trae las carpetas de la copia al ordenador nuevo", r)
+    if os.name != "nt" and os.geteuid() != 0:   # lo ha creado el agente (root), como en un equipo de verdad
+        import subprocess
+        subprocess.run(["sudo", "-n", "tee", str(doc)], input="lo he cambiado en el nuevo", text=True,
+                       stdout=subprocess.DEVNULL, check=False)
+    else:
+        doc.write_text("lo he cambiado en el nuevo", encoding="utf-8")
+    r = pedir(equipo, "POST", "/webhook/traer-de-otro", {"snapshot": snap, "pares": [par]}, segundos=1800)
+    al_lado = nueva / "documento (recuperado).txt"
+    resultado(r.get("status") == "success" and doc.read_text(encoding="utf-8") == "lo he cambiado en el nuevo"
+              and al_lado.is_file(), "no sobrescribe: lo distinto queda al lado con «(recuperado)»", r)
+    sistema = "C:\\Windows\\Temp\\octopus" if os.name == "nt" else "/etc/octopus_prueba"
+    r = pedir(equipo, "POST", "/webhook/traer-de-otro", {"snapshot": snap, "pares": [{"origen": datos, "destino": sistema}]},
+              segundos=600)
+    resultado(r.get("status") == "error" and not Path(sistema, "documento.txt").exists(),
+              "no toca carpetas del sistema", r.get("message"))
+    print(f"\nRESUMEN: {'TODO CORRECTO' if not FALLOS else 'FALLOS: ' + ', '.join(FALLOS)}")
+    return 1 if FALLOS else 0
+
+
 def destino(equipo: str, datos: str, carpeta_destino: str) -> int:
     """Destinos de copia: el equipo copia DIRECTO a otra carpeta («además» y luego «en lugar de» el servidor),
     se recupera desde allí, y la clave de esas copias va en el kit."""
@@ -203,6 +238,8 @@ def destino(equipo: str, datos: str, carpeta_destino: str) -> int:
 
 if __name__ == "__main__":
     a = sys.argv[1:]
+    if len(a) == 4 and a[0] == "pasar":
+        sys.exit(pasar(a[1], a[2], a[3]))
     if len(a) == 4 and a[0] == "destino":
         sys.exit(destino(a[1], a[2], a[3]))
     if len(a) == 3 and a[0] == "completa":

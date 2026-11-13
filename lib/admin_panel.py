@@ -2590,6 +2590,85 @@ def restaurar_ruta(system_id):
     return redirect(volver)
 
 
+# ---------------------------------------------------------------- pasar todo a un ordenador nuevo
+_RE_PERSONA = re.compile(r'^(?P<pre>(?:[A-Za-z]:[\\/](?:Users|Usuarios)|/Users|/home)[\\/])(?P<persona>[^\\/]+)(?P<resto>.*)$')
+
+
+def propuesta_destino(origen, rutas_nuevo):
+    """Dónde poner en el ordenador nuevo cada carpeta del viejo: la misma ruta, pero con la persona de allí
+    (C:\\Users\\pepe\\Documents → C:\\Users\\pepe2\\Documents) si el nuevo tiene una sola persona en sus copias."""
+    personas = {m.group('persona') for r in rutas_nuevo for m in [_RE_PERSONA.match(r)] if m}
+    m = _RE_PERSONA.match(origen)
+    if m and len(personas) == 1:
+        return m.group('pre') + personas.pop() + m.group('resto')
+    return origen
+
+
+@app.route('/equipos/<int:system_id>/pasar', methods=['GET', 'POST'])
+@login_required
+def pasar_a_nuevo(system_id):
+    """«Ordenador nuevo o reinstalado»: traer lo de la copia de este equipo (el viejo) a otro (el nuevo)."""
+    viejo = _get_system(system_id)
+    if not viejo:
+        return redirect(url_for('restaurar'))
+    if not puede_recuperar():
+        flash('Tu usuario no tiene permiso para recuperar.', 'error')
+        return redirect(url_for('equipo', system_id=system_id))
+    est = dict(agentes.estado_equipo(viejo))
+    est['copias'] = _inc.marcar_copias(viejo['id'], est['copias'])
+    limpia = _inc.ultima_limpia(est['copias'])
+    with get_db_connection() as c:
+        otros = [r for r in c.execute('SELECT * FROM systems WHERE id != ? ORDER BY hostname', (system_id,)).fetchall()]
+    copia_id = request.values.get('copia') or (limpia['id'] if limpia else (est['copias'][0]['id'] if est['copias'] else ''))
+    copia = next((c for c in est['copias'] if c['id'] == copia_id), None)
+    nuevo = next((o for o in otros if str(o['id']) == request.values.get('nuevo', '')), None)
+    if request.method == 'POST' and copia and nuevo:
+        pares = []
+        for i, origen in enumerate(copia.get('paths') or []):
+            if request.form.get(f'usar_{i}') != 'on':
+                continue
+            destino = (request.form.get(f'destino_{i}') or '').strip()
+            if destino:
+                pares.append({'origen': origen, 'destino': destino})
+        if not pares:
+            flash('Marca al menos una carpeta para pasar.', 'error')
+            return redirect(url_for('pasar_a_nuevo', system_id=system_id, copia=copia_id, nuevo=nuevo['id']))
+        import ordenes as _ord
+        snap = copia['id']
+
+        def llamada():
+            return _ord.pedir(nuevo['hostname'], 'POST', '/webhook/traer-de-otro', {'snapshot': snap, 'pares': pares},
+                              24 * 3600)
+
+        def al_terminar(r):
+            texto = f'Traídos {r.get("traidos", 0)} archivos de {viejo["hostname"]}'
+            if r.get('al_lado'):
+                texto += f' ({r["al_lado"]} ya existían distintos: se han dejado al lado con «(recuperado)»)'
+            return texto + '.'
+
+        def al_acabar(sid, ok, r):
+            if ok:   # lo traído pasa a estar protegido en el ordenador nuevo
+                with get_db_connection() as c:
+                    fila = c.execute('SELECT notes FROM systems WHERE id = ?', (nuevo['id'],)).fetchone()
+                    notas = json.loads(fila['notes'] or '{}') if fila else {}
+                    notas['rutas'] = list(dict.fromkeys((notas.get('rutas') or []) + [p['destino'] for p in pares]))
+                    c.execute('UPDATE systems SET notes = ? WHERE id = ?', (json.dumps(notas), nuevo['id']))
+        agentes._lanzar(nuevo, 'recuperacion', f'Pasando lo de {viejo["hostname"]} (copia {snap}) a este ordenador',
+                        llamada, al_terminar, al_acabar)
+        log_audit(session['user_id'], 'PASAR_EQUIPO', f'{viejo["hostname"]} copia {snap} -> {nuevo["hostname"]}: '
+                  f'{len(pares)} carpetas', request.remote_addr)
+        flash(f'Pasando las carpetas a {nuevo["hostname"]}. Puedes seguir el progreso en su ficha. No se sobrescribe '
+              f'nada: si algo ya existe distinto, lo recuperado se deja al lado.', 'success')
+        return redirect(url_for('equipo', system_id=nuevo['id']))
+    filas = []
+    if copia:
+        rutas_nuevo = _rutas_de(nuevo) if nuevo else []
+        filas = [{'i': i, 'origen': p, 'destino': propuesta_destino(p, rutas_nuevo)} for i, p in enumerate(copia.get('paths') or [])]
+    return render_template('pasar.html', s=viejo, est=est, copia=copia, copia_id=copia_id, otros=otros, nuevo=nuevo,
+                           filas=filas, limpia=limpia,
+                           en_linea={o['id']: agentes.estado_equipo(o).get('online') for o in otros})
+
+
 @app.route('/equipos/nuevo', methods=['GET', 'POST'])
 @login_required
 def equipo_nuevo():

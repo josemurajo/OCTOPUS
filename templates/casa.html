@@ -103,6 +103,10 @@
 </div>
 {% endif %}
 
+{% if equipo %}<div class="card"><h2>¿Ordenador nuevo o reinstalado?</h2>
+  <p>Instala OCTOPUS en el nuevo y trae a él tus carpetas desde la copia de este:
+    <a class="btn" href="{{ url_for('pasar_a_nuevo', system_id=equipo.id) }}">Pasar a un ordenador nuevo</a></p></div>{% endif %}
+
 <p class="small muted">OCTOPUS está en modo casa: la copia se pone sola en «no molestar» si juegas o usas el PC a fondo,
   y vuelve a toda velocidad cuando lo dejas. ¿Es para una empresa? Cámbialo en <a href="{{ url_for('ajustes') }}">Ajustes</a>.</p>
 {% endblock %}

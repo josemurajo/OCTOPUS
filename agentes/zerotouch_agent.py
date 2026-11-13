@@ -1550,6 +1550,72 @@ def restaurar_archivo(cfg: dict, path_archivo: str, snapshot: str = "latest", de
     return {"status": "success", "file": original}
 
 
+_SISTEMA_PROHIBIDO = ("c:\\windows", "c:\\program files", "c:\\programdata", "/etc", "/usr", "/bin", "/sbin",
+                      "/boot", "/system", "/library", "/var/lib", "/lib")
+
+
+def _es_del_sistema(ruta: str) -> bool:
+    n = os.path.normcase(os.path.abspath(ruta)).lower()
+    sep = os.sep
+    for p in _SISTEMA_PROHIBIDO:
+        if (SYSTEM == "windows") != p.startswith("c:"):
+            continue
+        p = os.path.normcase(p).lower()
+        if n == p or n.startswith(p.rstrip(sep) + sep):
+            return True
+    return n in ("/", "c:\\")
+
+
+def traer_de_otro(cfg: dict, snapshot: str, pares: list) -> dict:
+    """«Pasar todo a un ordenador nuevo»: trae carpetas de una copia de OTRO equipo (el viejo, el roto) a este.
+    pares = [{"origen": ruta en el equipo viejo, "destino": dónde ponerla aquí}]. NUNCA sobrescribe nada: si aquí ya
+    hay un archivo distinto con el mismo nombre, el recuperado se deja al lado con « (recuperado)»."""
+    if not re.fullmatch(r"[0-9a-fA-F]{6,64}", str(snapshot or "")):
+        return {"status": "error", "message": "Copia no válida"}
+    if not pares:
+        return {"status": "error", "message": "No hay nada que traer"}
+    env = restic_env(cfg, central=True)
+    suspender_detector(3600)
+    traidos, al_lado, fallos = 0, 0, []
+    for par in pares[:50]:
+        origen, destino = str(par.get("origen") or ""), str(par.get("destino") or "")
+        if not origen or not destino or not os.path.isabs(destino):
+            fallos.append(f"{origen}: destino no válido")
+            continue
+        if _es_del_sistema(destino):
+            fallos.append(f"{destino}: es una carpeta del sistema, no se toca")
+            continue
+        dentro = snapshot_path(origen)
+        with tempfile.TemporaryDirectory(prefix="octopus_traer_") as tmp:
+            r = run_cmd([restic_bin(), "restore", snapshot, "--target", tmp, "--include", dentro], env=env,
+                        timeout=24 * 3600)
+            base = Path(tmp) / dentro.lstrip("/")
+            if r.returncode != 0 or not base.exists():
+                fallos.append(f"{origen}: " + ((r.stderr or r.stdout or "no está en esa copia").strip()[-200:]))
+                continue
+            archivos = [base] if base.is_file() else [Path(rr) / f for rr, _d, fs in os.walk(base) for f in fs]
+            for a in archivos:
+                rel = a.relative_to(base) if base.is_dir() else Path(a.name)
+                final = Path(destino) / rel if base.is_dir() else Path(destino)
+                final.parent.mkdir(parents=True, exist_ok=True)
+                if final.exists():
+                    try:
+                        igual = final.stat().st_size == a.stat().st_size and final.read_bytes() == a.read_bytes()
+                    except OSError:
+                        igual = False
+                    if igual:
+                        continue
+                    final = final.with_name(f"{final.stem} (recuperado){final.suffix}")
+                    al_lado += 1
+                shutil.copy2(a, final)
+                traidos += 1
+    aceptar_senuelos_actuales()
+    log(f"Traídos {traidos} archivos de la copia {snapshot} ({al_lado} al lado, {len(fallos)} fallos)")
+    if fallos and not traidos:
+        return {"status": "error", "message": "; ".join(fallos)[:800]}
+    return {"status": "success", "traidos": traidos, "al_lado": al_lado, "fallos": fallos}
+
+
 def despachar(cfg: dict, metodo: str, ruta: str, datos: dict | None = None) -> dict:
     """Ejecuta una orden (llegue por la cola del servidor o por el puerto local)."""
     datos = datos or {}
@@ -1631,6 +1697,8 @@ def despachar(cfg: dict, metodo: str, ruta: str, datos: dict | None = None) -> d
         return quitar_aviso()
     if ruta == "/webhook/restauracion":
         return restaurar_backup(cfg, datos.get("target", "/"), datos.get("snapshot", "latest"))
+    if ruta == "/webhook/traer-de-otro":
+        return traer_de_otro(cfg, str(datos.get("snapshot", "")), list(datos.get("pares") or []))
     if ruta == "/webhook/restaurar-archivo":
         archivo = datos.get("archivo") or datos.get("path")
         if not archivo:

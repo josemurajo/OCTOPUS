@@ -23,6 +23,7 @@
     </form>
     {% endif %}
     <a class="btn" href="{{ url_for('explorar', system_id=s.id) }}">Recuperar archivos</a>
+    <a class="btn" href="{{ url_for('pasar_a_nuevo', system_id=s.id) }}" title="Se ha roto, lo has cambiado o has reinstalado: trae sus carpetas a otro ordenador">Pasar a un ordenador nuevo</a>
     {% if puede_actuar() %}<a class="btn" href="{{ url_for('equipo_instalar', system_id=s.id) }}">Instalador</a>{% endif %}
   </div>
 </div>

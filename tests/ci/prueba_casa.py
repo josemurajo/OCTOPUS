@@ -78,6 +78,17 @@ def unidad():
                    "'windows', 'unknown', ?)", (casa.nombre_este_equipo(), json.dumps({"rutas": ["C:/x"]})))
     r = c.get("/casa")
     chk(r.status_code == 200, "«Tu ordenador» con el ordenador ya protegido", r.status_code)
+    # «Pasar a un ordenador nuevo»: la pantalla se abre y propone bien dónde poner cada carpeta
+    sid = a._este_equipo()["id"]
+    r = c.get(f"/equipos/{sid}/pasar")
+    chk(r.status_code == 200 and "Pasar lo de" in r.get_data(as_text=True), "pantalla «Pasar a un ordenador nuevo»",
+        r.status_code)
+    pd = a.propuesta_destino
+    chk(pd(r"C:\Users\pepe\Documents", [r"C:\Users\juan\Desktop"]) == r"C:\Users\juan\Documents"
+        and pd("/home/ana/Fotos", ["/home/luis/Documentos"]) == "/home/luis/Fotos"
+        and pd(r"C:\Users\pepe\Documents", [r"C:\Users\a\x", r"C:\Users\b\x"]) == r"C:\Users\pepe\Documents"
+        and pd(r"D:\Trabajo", [r"C:\Users\juan\Desktop"]) == r"D:\Trabajo",
+        "propone la misma carpeta con el usuario del ordenador nuevo (y si duda, la deja igual)")
     with a.get_db_connection() as cx:
         cx.execute("DELETE FROM systems")
 

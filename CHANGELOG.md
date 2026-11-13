@@ -3,6 +3,12 @@
 Cada versión publicada va firmada por José Murillo Rajo. Los servidores se actualizan solos (o desde el panel) y solo
 instalan versiones con esa firma. Lo más nuevo, arriba.
 
+## 3.1.0 - en preparación
+
+- **Pasar a un ordenador nuevo:** si se rompe, lo cambias o reinstalas Windows, instalas OCTOPUS en el nuevo y traes
+  tus carpetas desde la copia del viejo. Se cambia solo el nombre de usuario si es distinto, y no se sobrescribe nada.
+- **Copias de máquinas de VirtualBox** (Windows, Linux y Mac), sin abrir VirtualBox. Viene «en pruebas».
+
 ## 3.0.0 - 2026-10-22 (primera versión para empresas)
 
 **Copias**

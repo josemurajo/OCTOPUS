@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Pasar a un ordenador nuevo{% endblock %}
+{% block content %}
+{# «Ordenador nuevo o reinstalado»: lib/admin_panel.py: pasar_a_nuevo; el agente: traer_de_otro #}
+<p><a href="{{ url_for('equipo', system_id=s.id) }}">← {{ s.hostname }}</a></p>
+<h1>Pasar lo de {{ s.hostname }} a otro ordenador</h1>
+<p class="lead">¿Se ha roto, lo has cambiado por uno nuevo o has reinstalado Windows? Instala OCTOPUS en el ordenador
+  nuevo (Añadir {{ 'ordenador' if modo_casa() else 'equipo' }}) y aquí traes a él tus carpetas desde la copia del viejo.
+  <strong>No se sobrescribe nada</strong>: si algo ya existe distinto, lo recuperado se deja al lado.</p>
+
+<form method="get" class="card">
+  <div class="field"><label for="copia">De qué copia</label>
+    <select id="copia" name="copia" onchange="this.form.submit()" style="max-width:420px">
+      {% for c in est.copias %}<option value="{{ c.id }}" {{ 'selected' if c.id == copia_id }}>
+        {{ (c.time | fecha) if c.time else c.id }}{{ ' (la última limpia, recomendada)' if limpia and c.id == limpia.id }}{{ ' (hecha durante un ataque: mejor no)' if c.sospechosa }}</option>
+      {% else %}<option value="">Este equipo no tiene copias</option>{% endfor %}
+    </select></div>
+  <div class="field"><label for="nuevo">A qué ordenador</label>
+    <select id="nuevo" name="nuevo" onchange="this.form.submit()" style="max-width:420px">
+      <option value="">— elige el ordenador nuevo —</option>
+      {% for o in otros %}<option value="{{ o.id }}" {{ 'selected' if nuevo and o.id == nuevo.id }}>
+        {{ o.hostname }}{{ '' if en_linea[o.id] else ' (apagado o sin conexión)' }}</option>{% endfor %}
+    </select>
+    {% if not otros %}<p class="hint">Primero instala OCTOPUS en el ordenador nuevo: <a href="{{ url_for('equipo_nuevo') }}">Añadir</a>.</p>{% endif %}
+  </div>
+</form>
+
+{% if copia and nuevo %}
+<form method="post" class="card">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="copia" value="{{ copia_id }}"><input type="hidden" name="nuevo" value="{{ nuevo.id }}">
+  <h2>Qué carpetas pasar y dónde ponerlas en {{ nuevo.hostname }}</h2>
+  {% for f in filas %}
+  <div class="field" style="display:grid; grid-template-columns:auto 1fr; gap:6px 10px; align-items:center">
+    <input type="checkbox" name="usar_{{ f.i }}" id="usar_{{ f.i }}" checked style="width:20px;height:20px">
+    <label for="usar_{{ f.i }}" style="font-weight:400"><code>{{ f.origen }}</code></label>
+    <span class="muted small">→</span>
+    <input name="destino_{{ f.i }}" value="{{ f.destino }}" aria-label="Dónde ponerla en {{ nuevo.hostname }}">
+  </div>
+  {% endfor %}
+  <p class="hint">Si en el ordenador nuevo tu usuario tiene otro nombre, ya está cambiado; revísalo por si acaso.</p>
+  {% if puede_recuperar() %}<button class="btn btn-primary btn-big" type="submit" {{ 'disabled' if not en_linea[nuevo.id] }}>
+    Pasar a {{ nuevo.hostname }}</button>
+  {% if not en_linea[nuevo.id] %}<p class="hint">Enciende {{ nuevo.hostname }} y espera a que salga conectado.</p>{% endif %}{% endif %}
+</form>
+{% endif %}
+{% endblock %}
