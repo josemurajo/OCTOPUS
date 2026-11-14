@@ -11,6 +11,9 @@ instalan versiones con esa firma. Lo más nuevo, arriba.
 - **Trabajar dentro de una máquina virtual:** en «Máquinas virtuales» se puede marcar que un ordenador solo es para
   trabajar en su máquina virtual (se copia solo la máquina, no las carpetas del ordenador) y qué equipo es esa máquina
   por dentro, si también tiene OCTOPUS. El panel enseña las dos cosas juntas.
+- **Desplegar en varios equipos** (Linux): se prepara un ordenador modelo y, con un solo código, se copia a muchos
+  a la vez (por red o con el pendrive). Cada uno sale con su nombre, su identidad y su propio OCTOPUS, y aparece solo
+  en el panel. Viene «en pruebas».
 - **Arranque por red** (servidor Linux): se enciende con un botón en Equipos. Un ordenador arranca el rescate de
   OCTOPUS pulsando F12 → «red», sin pendrive y sabiendo ya dónde está el servidor. No cambia nada de la red (el
   router sigue dando las direcciones). PCs modernos (también con «Arranque seguro») y antiguos. Viene «en pruebas».

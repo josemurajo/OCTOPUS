@@ -113,6 +113,40 @@ def unidad():
     with a.get_db_connection() as cx:
         quedan = cx.execute("SELECT COUNT(*) FROM rescate_codigos WHERE datos IS NOT NULL AND usado = 1").fetchone()[0]
     chk(quedan == 0, "lo usado no se guarda")
+    # desplegar en varios equipos: un código para toda la tanda; cada ordenador sale con su nombre y su clave
+    import datetime as _dt
+    with a.get_db_connection() as cx:
+        cx.execute("UPDATE systems SET notes = ? WHERE id = ?", (json.dumps({"rutas": ["/home"]}), sid))
+    a._copia_completa_mas_nueva = lambda row: {"id": "abcd1234", "time": _dt.datetime(2026, 11, 1, 10, 0)}
+    chk(cl.get("/despliegue").status_code == 302, "despliegue: apagado, no se abre")
+    a.config_manager.set_config("despliegue_masa", True)
+    h = cl.get("/despliegue").get_data(as_text=True)
+    chk("PC-LINUX" in h and "Dar código del despliegue" in h, "pantalla del despliegue con los equipos Linux")
+    h = cl.post("/despliegue", data={"csrf_token": tok(h), "ref": str(sid), "prefijo": "aula 1", "cuantos": "2",
+                                     "horas": "8"}).get_data(as_text=True)
+    m = re.search(r"<code>([A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4})</code>", h)
+    chk(bool(m), "da el código de la tanda", h[-600:])
+    cod = m.group(1) if m else "AAAA-AAAA-AAAA"
+    nombres = []
+    for mac in ("52:54:00:12:3f:2a", "52:54:00:aa:bb:cc"):
+        rr = usb.post("/api/rescate", json={"id": r.identificador(cod), "mac": mac})
+        dd = r.descifrar(cod, rr.get_json()["datos"]) if rr.status_code == 200 else {}
+        nuevo = (dd.get("despliegue") or {}).get("nuevo") or {}
+        nombres.append(nuevo.get("hostname"))
+        ok_tok = bool(nuevo.get("agente", {}).get("agent_token")) and a._ordenes.autenticar(
+            nuevo.get("hostname"), nuevo.get("agente", {}).get("agent_token")) is not None
+        chk(dd.get("despliegue", {}).get("copia") == "abcd1234" and dd.get("hostname") == "PC-LINUX" and ok_tok
+            and nuevo.get("agente", {}).get("backup_paths") == ["/home"],
+            f"el ordenador {mac} recibe el sistema del modelo y su propia clave de OCTOPUS", dd)
+    chk(nombres == ["AULA1-3F2A", "AULA1-BBCC"], "cada uno con su nombre", nombres)
+    with a.get_db_connection() as cx:
+        altas = [x[0] for x in cx.execute("SELECT hostname FROM systems WHERE hostname LIKE 'AULA1-%'")]
+    chk(sorted(altas) == ["AULA1-3F2A", "AULA1-BBCC"], "aparecen solos en el panel", altas)
+    chk(usb.post("/api/rescate", json={"id": r.identificador(cod), "mac": "52:54:00:00:00:01"}).status_code == 403,
+        "pasado el máximo de la tanda, no vale")
+    h = cl.get("/despliegue").get_data(as_text=True)
+    chk("2 de 2" in h and "AULA1-3F2A" in h, "se ve cómo va la tanda")
+
     # arranque por red: la pantalla (aquí no hay Docker: tiene que decirlo claro)
     chk(cl.get("/arranque-red").status_code == 302, "arranque por red: apagado, no se abre")
     a.config_manager.set_config("arranque_red", True)
@@ -177,6 +211,28 @@ def disco(fuente, arrancar=False):
             chk(False, "un disco que no existe: no")
         except RuntimeError:
             chk(True, "un disco que no existe: no")
+    finally:
+        subprocess.run(["losetup", "-d", loop])
+    # despliegue: la misma copia como OTRO ordenador
+    viejas = {f.name: f.read_bytes() for f in Path(fuente, "etc/ssh").glob("ssh_host_*_key")}
+    loop = _sh("losetup", "--show", "-f", "-P", str(imagen)).stdout.strip()
+    try:
+        r.restaurar_linux(cfg, lista[0]["id"], loop, nuevo={"hostname": "AULA-3F2A",
+                                                            "agente": {"hostname": "AULA-3F2A", "agent_token": "suyo"}})
+        m = tempfile.mkdtemp()
+        _sh("mount", r.particion(loop, 3), m)
+        try:
+            chk(Path(m, "etc/hostname").read_text().strip() == "AULA-3F2A" and "AULA-3F2A" in Path(m, "etc/hosts").read_text()
+                and "PC-LINUX" not in Path(m, "etc/hosts").read_text(), "despliegue: nombre nuevo")
+            chk(Path(m, "etc/machine-id").read_text() == "", "despliegue: identidad de máquina nueva (se crea al arrancar)")
+            nuevas = {f.name: f.read_bytes() for f in Path(m, "etc/ssh").glob("ssh_host_*_key")}
+            chk(nuevas and all(nuevas.get(k) != v for k, v in viejas.items()), "despliegue: claves SSH propias",
+                list(nuevas))
+            chk(json.loads(Path(m, "etc/octopus/config.json").read_text())["agent_token"] == "suyo"
+                and not Path(m, "var/lib/octopus/ultima_copia.txt").exists(), "despliegue: su propio OCTOPUS")
+            chk(Path(m, "etc/octopus-prueba").read_text().strip() == "soy el original", "despliegue: con todo lo del modelo")
+        finally:
+            subprocess.run(["umount", m])
     finally:
         subprocess.run(["losetup", "-d", loop])
     sacado = r.sacar_archivos(cfg, lista[0]["id"], str(tmp / "usb"))

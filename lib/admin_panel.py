@@ -3830,6 +3830,9 @@ def api_rescate():
     ident = str((request.get_json(silent=True) or {}).get('id', ''))
     if not _re_vm.fullmatch(r'[0-9a-f]{64}', ident):
         return jsonify({'error': 'no'}), 400
+    desp = _despliegue_pedido(ident, str((request.get_json(silent=True) or {}).get('mac', '')))
+    if desp:
+        return desp
     with get_db_connection() as c:
         _rescate_tabla(c)
         fila = c.execute('SELECT system_id, datos FROM rescate_codigos WHERE id = ? AND usado = 0 AND expira > ?',
@@ -3842,6 +3845,113 @@ def api_rescate():
     eq = _get_system(fila[0])
     log_audit(None, 'RESCATE_USADO', f'equipo={eq["hostname"] if eq else fila[0]}', request.remote_addr)
     return jsonify({'datos': fila[1]})
+
+
+# ------------------------------------------------- Desplegar el mismo sistema en muchos equipos (rescate + arranque por red)
+def _despliegue_tabla(c):
+    c.execute('CREATE TABLE IF NOT EXISTS despliegues (id TEXT PRIMARY KEY, ref_id INTEGER, copia TEXT, fecha TEXT, '
+              'prefijo TEXT, maximo INTEGER, usados INTEGER DEFAULT 0, expira REAL, clave BLOB, creado REAL, '
+              'equipos TEXT DEFAULT \'[]\')')
+
+
+def _copia_completa_mas_nueva(row):
+    cs = [c for c in agentes.estado_equipo(row).get('copias', []) if 'completa' in (c.get('tags') or [])]
+    return cs[0] if cs else None   # ya vienen de la más nueva a la más vieja
+
+
+def _nombre_desplegado(prefijo, mac, usados):
+    m = _re_vm.sub(r'[^0-9a-fA-F]', '', mac or '')
+    base = f"{prefijo}-{m[-4:].upper()}" if len(m) >= 4 else f"{prefijo}-{usados + 1:02d}"
+    return base[:60]
+
+
+def _despliegue_pedido(ident, mac):
+    """Un ordenador arranca el rescate con el código de un despliegue: se le da de alta como equipo nuevo y se le
+    manda (cifrado con el código) de dónde sacar el sistema y su propia configuración de OCTOPUS."""
+    with get_db_connection() as c:
+        _despliegue_tabla(c)
+        d = c.execute('SELECT * FROM despliegues WHERE id = ? AND expira > ?', (ident, time.time())).fetchone()
+        if not d:
+            return None
+        if d['usados'] >= d['maximo']:
+            log_audit(None, 'DESPLIEGUE_LLENO', f'referencia={d["ref_id"]}', request.remote_addr)
+            return jsonify({'error': 'lleno'}), 403
+        ref = c.execute('SELECT * FROM systems WHERE id = ?', (d['ref_id'],)).fetchone()
+        if not ref:
+            return jsonify({'error': 'no'}), 403
+        nombre = _nombre_desplegado(d['prefijo'], mac, d['usados'])
+        rutas = agentes.notas_equipo(ref).get('rutas') or []
+        if not c.execute('SELECT 1 FROM systems WHERE lower(hostname) = lower(?)', (nombre,)).fetchone():
+            c.execute("INSERT INTO systems (hostname, ip_address, os_family, status, notes) VALUES (?, '', 'linux', "
+                      "'unknown', ?)", (nombre, json.dumps({'rutas': rutas, 'desplegado_de': ref['hostname']})))
+        equipos = json.loads(d['equipos'] or '[]')
+        if nombre not in equipos:
+            equipos.append(nombre)
+        c.execute('UPDATE despliegues SET usados = usados + 1, equipos = ? WHERE id = ?', (json.dumps(equipos), ident))
+    import alta_equipos
+    base = alta_equipos.config_agente(ref['hostname'], [], '')
+    for k in ('agent_token', 'bind_addresses', 'backup_paths', 'icono'):
+        base.pop(k, None)
+    base['os_family'] = 'linux'
+    base['despliegue'] = {'copia': d['copia'], 'fecha': d['fecha'], 'nuevo': {
+        'hostname': nombre, 'agente': alta_equipos.config_agente(nombre, rutas, _ordenes.nuevo_token(nombre))}}
+    r = _rescate_mod()
+    log_audit(None, 'DESPLIEGUE_EQUIPO', f'{ref["hostname"]} -> {nombre}', request.remote_addr)
+    return jsonify({'datos': r.cifrar_con_clave(bytes(d['clave']), base)})
+
+
+@app.route('/despliegue', methods=['GET', 'POST'])
+@login_required
+def despliegue():
+    """Llevar el sistema de un equipo de referencia (Linux, con copia completa) a muchos ordenadores a la vez."""
+    if not _fun.activa('despliegue_masa'):
+        flash('Desplegar en varios equipos está apagado (Ajustes → Funciones).', 'info')
+        return redirect(url_for('equipos'))
+    r = _rescate_mod()
+    codigo = None
+    with get_db_connection() as c:
+        _despliegue_tabla(c)
+        linux = c.execute("SELECT * FROM systems WHERE os_family = 'linux' ORDER BY hostname").fetchall()
+    if request.method == 'POST':
+        if not puede_recuperar():
+            abort(403)
+        if request.form.get('accion') == 'cancelar':
+            with get_db_connection() as c:
+                c.execute('UPDATE despliegues SET expira = 0 WHERE id = ?', (request.form.get('id', ''),))
+            return redirect(url_for('despliegue'))
+        ref = next((x for x in linux if str(x['id']) == request.form.get('ref')), None)
+        completa = _copia_completa_mas_nueva(ref) if ref else None
+        prefijo = _re_vm.sub(r'[^A-Za-z0-9]', '', request.form.get('prefijo') or 'PC')[:20].upper() or 'PC'
+        try:
+            maximo = max(1, min(500, int(request.form.get('cuantos') or 10)))
+            horas = max(1, min(72, int(request.form.get('horas') or 8)))
+        except ValueError:
+            maximo, horas = 10, 8
+        if not ref:
+            flash('Elige el equipo de referencia.', 'error')
+        elif not completa:
+            flash(f'{ref["hostname"]} no tiene ninguna copia completa: actívala en su ficha y espera a que se haga.',
+                  'error')
+        else:
+            codigo = r.nuevo_codigo()
+            with get_db_connection() as c:
+                c.execute('INSERT INTO despliegues (id, ref_id, copia, fecha, prefijo, maximo, expira, clave, creado) '
+                          'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                          (r.identificador(codigo), ref['id'], completa['id'],
+                           completa['time'].strftime('%d/%m/%Y %H:%M') if completa.get('time') else '', prefijo, maximo,
+                           time.time() + horas * 3600, r.clave(codigo), time.time()))
+            log_audit(session['user_id'], 'DESPLIEGUE_CODIGO', f'referencia={ref["hostname"]} maximo={maximo}',
+                      request.remote_addr)
+    with get_db_connection() as c:
+        activos = c.execute('SELECT d.*, s.hostname AS ref FROM despliegues d LEFT JOIN systems s ON s.id = d.ref_id '
+                            'WHERE d.expira > ? ORDER BY d.creado DESC', (time.time(),)).fetchall()
+    import alta_equipos
+    try:
+        servidor = alta_equipos.config_agente('x', [], '').get('servidor', '')
+    except Exception:
+        servidor = request.host_url.rstrip('/')
+    return render_template('despliegue.html', linux=linux, codigo=codigo, servidor=servidor,
+                           activos=[dict(a, equipos=json.loads(a['equipos'] or '[]')) for a in activos])
 
 
 @app.route('/equipos/<int:system_id>/imagen', methods=['GET', 'POST'])

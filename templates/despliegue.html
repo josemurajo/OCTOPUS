@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Desplegar en varios equipos{% endblock %}
+{% block content %}
+{# Despliegue: lib/admin_panel.py: despliegue / _despliegue_pedido; en el ordenador: rescate/octopus_rescate.py #}
+<p class="small"><a href="{{ url_for('equipos') }}">← Equipos</a></p>
+<h1>Desplegar el mismo sistema en varios equipos</h1>
+<p class="lead">Preparas <strong>un</strong> ordenador como quieres que queden todos (programas, ajustes) y OCTOPUS lo
+  copia a los demás. Cada uno sale con su propio nombre y aparece solo en el panel, ya protegido.</p>
+<p class="hint">Por ahora, de Linux (el de referencia necesita una <em>copia completa</em>). Windows, más adelante.
+  En Mac no se puede: Apple solo lo permite con su gestión de dispositivos (MDM).</p>
+
+{% if codigo %}
+<div class="card" role="status" style="text-align:center">
+  <p>En cada ordenador, arranca el rescate (por red con F12, o con el pendrive) y escribe:</p>
+  <p class="muted small">Dirección del servidor</p><p style="font-size:1.3em"><code>{{ servidor }}</code></p>
+  <p class="muted small">Código del despliegue (vale para todos los ordenadores de esta tanda)</p>
+  <p style="font-size:2.2em; letter-spacing:.08em"><strong><code>{{ codigo }}</code></strong></p>
+  <p class="hint">Cada ordenador pregunta una vez «¿Seguro?» antes de borrar su disco. Apúntalo: no se vuelve a enseñar.</p>
+</div>
+{% endif %}
+
+{% if puede_recuperar() %}
+<form method="post" class="card">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <h2>Nueva tanda</h2>
+  <div class="field"><label for="ref">Ordenador de referencia (el modelo)</label>
+    <select id="ref" name="ref" style="max-width:360px">
+      <option value="">— elige —</option>
+      {% for x in linux %}<option value="{{ x.id }}">{{ x.hostname }}</option>{% endfor %}
+    </select>
+    {% if not linux %}<p class="hint">No hay ningún equipo Linux. Instala OCTOPUS en el ordenador modelo y activa su
+      «copia completa».</p>{% endif %}</div>
+  <div class="field"><label for="prefijo">Nombre de los nuevos (empieza por)</label>
+    <input id="prefijo" name="prefijo" value="PC" maxlength="20" style="max-width:160px">
+    <p class="hint">Cada uno se llamará así más 4 letras de su tarjeta de red, por ejemplo <code>AULA-3F2A</code>.</p></div>
+  <div class="field"><label for="cuantos">Cuántos ordenadores como mucho</label>
+    <input id="cuantos" name="cuantos" type="number" min="1" max="500" value="10" style="max-width:100px"></div>
+  <div class="field"><label for="horas">El código vale durante (horas)</label>
+    <input id="horas" name="horas" type="number" min="1" max="72" value="8" style="max-width:100px"></div>
+  <button class="btn btn-primary btn-big" type="submit">Dar código del despliegue</button>
+  <p class="hint">Para no ir con pendrives: enciende el <a href="{{ url_for('arranque_red') }}">arranque por red</a>.</p>
+</form>
+{% endif %}
+
+{% if activos %}
+<div class="card">
+  <h2>Tandas en marcha</h2>
+  <table><thead><tr><th>Modelo</th><th>Copia</th><th>Hechos</th><th>Equipos</th><th></th></tr></thead><tbody>
+  {% for a in activos %}<tr>
+    <td>{{ a.ref or '?' }}</td><td>{{ a.fecha }}</td><td>{{ a.usados }} de {{ a.maximo }}</td>
+    <td class="small">{{ a.equipos | join(', ') }}</td>
+    <td>{% if puede_recuperar() %}<form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="id" value="{{ a.id }}"><button class="btn btn-small" name="accion" value="cancelar">Terminar</button>
+    </form>{% endif %}</td></tr>{% endfor %}
+  </tbody></table>
+</div>
+{% endif %}
+{% endblock %}

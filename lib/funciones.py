@@ -224,9 +224,10 @@ FUNCIONES: list[dict] = [
                 "recuperarlos o instalarlos. Necesita un servidor Linux.", "disponible": _pxe_disponible, "no_mac": True},
     {"clave": "despliegue_masa", "grupo": "equipos", "nivel": "experto", "defecto": False, "en_pruebas": True,
      "nombre": "Desplegar el mismo sistema en muchos equipos",
-     "explica": "Llevar una instalación de referencia (Windows preparado con sysprep, o Linux) a muchos equipos a la vez "
-                "por la red. En Mac no se puede: Apple solo lo permite con su gestión de dispositivos (MDM).",
-     "requiere": "arranque_red", "no_mac": True},
+     "explica": "Preparar un ordenador modelo y copiarlo a muchos a la vez (con el arranque por red o el USB de "
+                "rescate): cada uno sale con su nombre y aparece solo en el panel. Por ahora de Linux; Windows, más "
+                "adelante. En Mac no se puede: Apple solo lo permite con su gestión de dispositivos (MDM).",
+     "requiere": "usb_rescate", "no_mac": True},
 ]
 
 MOTIVO_MAC = ("No disponible en Mac: Apple no permite clonar ni arrancar por red los Mac modernos (chip Apple o T2). "

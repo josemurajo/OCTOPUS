@@ -7,7 +7,7 @@ set -euo pipefail
 RAIZ="$1"
 if [ ! -x "$RAIZ/usr/sbin/grub-install" ]; then
   debootstrap --variant=minbase \
-    --include=linux-image-amd64,grub-efi-amd64-bin,grub-pc-bin,grub2-common,initramfs-tools,systemd-sysv,udev \
+    --include=linux-image-amd64,grub-efi-amd64-bin,grub-pc-bin,grub2-common,initramfs-tools,systemd-sysv,udev,openssh-client \
     bookworm "$RAIZ" http://deb.debian.org/debian
 fi
 echo "soy el original" > "$RAIZ/etc/octopus-prueba"
@@ -25,5 +25,12 @@ EOF
 # el fstab del ordenador original (otro disco, que el rescate cambiará)
 printf 'UUID=00000000-1111-2222-3333-444444444444 / ext4 errors=remount-ro 0 1\n/swapfile none swap sw 0 0\n' \
   > "$RAIZ/etc/fstab"
+# lo que hace que un ordenador sea «ese» y no otro (el despliegue tiene que cambiarlo en cada copia)
+printf '127.0.0.1\tlocalhost\n127.0.1.1\tPC-LINUX\n' > "$RAIZ/etc/hosts"
+echo "0123456789abcdef0123456789abcdef" > "$RAIZ/etc/machine-id"
+rm -f "$RAIZ"/etc/ssh/ssh_host_*; mkdir -p "$RAIZ/etc/ssh"; chroot "$RAIZ" ssh-keygen -A >/dev/null
+mkdir -p "$RAIZ/var/lib/octopus" "$RAIZ/etc/octopus"
+echo "ayer" > "$RAIZ/var/lib/octopus/ultima_copia.txt"
+echo '{"hostname": "PC-LINUX", "agent_token": "el-del-modelo"}' > "$RAIZ/etc/octopus/config.json"
 install -m 755 "$(command -v restic)" "$RAIZ/usr/local/bin/restic"
 echo "Listo: $RAIZ"

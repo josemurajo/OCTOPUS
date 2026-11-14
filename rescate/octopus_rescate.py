@@ -18,6 +18,7 @@ Uso con menús: `octopus_rescate.py`.  Sin menús (lo usan las pruebas):
   octopus_rescate.py copias  CONFIG.json [--completas]
   octopus_rescate.py restaurar CONFIG.json COPIA /dev/DISCO --si-borrar-todo
   octopus_rescate.py sacar   CONFIG.json COPIA CARPETA
+  octopus_rescate.py desplegar CONFIG.json COPIA /dev/DISCO NUEVO.json --si-borrar-todo
 """
 from __future__ import annotations
 
@@ -62,17 +63,36 @@ def identificador(codigo: str) -> str:
     return _derivar(codigo, b"id").hex()
 
 
-def cifrar(codigo: str, datos: dict) -> str:
+def clave(codigo: str) -> bytes:
+    """La clave con la que viaja lo que manda el servidor (sale del código; el código no viaja nunca)."""
+    return _derivar(codigo, b"clave")
+
+
+def cifrar_con_clave(k: bytes, datos: dict) -> str:
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
     nonce = os.urandom(12)
-    return base64.b64encode(nonce + AESGCM(_derivar(codigo, b"clave")).encrypt(
-        nonce, json.dumps(datos).encode(), b"octopus-rescate")).decode()
+    return base64.b64encode(nonce + AESGCM(k).encrypt(nonce, json.dumps(datos).encode(), b"octopus-rescate")).decode()
+
+
+def cifrar(codigo: str, datos: dict) -> str:
+    return cifrar_con_clave(clave(codigo), datos)
 
 
 def descifrar(codigo: str, texto: str) -> dict:
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
     raw = base64.b64decode(texto)
     return json.loads(AESGCM(_derivar(codigo, b"clave")).decrypt(raw[:12], raw[12:], b"octopus-rescate"))
+
+
+def mi_mac() -> str:
+    """La dirección física de la tarjeta de red por cable (sirve para darle nombre a un ordenador desplegado)."""
+    for t in sorted(Path("/sys/class/net").glob("*")):
+        if t.name != "lo" and not (t / "wireless").exists():
+            try:
+                return (t / "address").read_text().strip()
+            except OSError:
+                pass
+    return ""
 
 
 def pedir_config(servidor: str, codigo: str, timeout: int = 30) -> dict:
@@ -85,7 +105,8 @@ def pedir_config(servidor: str, codigo: str, timeout: int = 30) -> dict:
         url = "https://" + url
     ctx = ssl.create_default_context()
     ctx.check_hostname, ctx.verify_mode = False, ssl.CERT_NONE
-    req = urllib.request.Request(url + "/api/rescate", data=json.dumps({"id": identificador(codigo)}).encode(),
+    req = urllib.request.Request(url + "/api/rescate", data=json.dumps({"id": identificador(codigo),
+                                                                      "mac": mi_mac()}).encode(),
                                  headers={"Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=timeout, context=ctx) as r:
@@ -254,7 +275,7 @@ def poner_arranque(raiz: str, disco: str, avisar=print) -> list[str]:
     return hechos
 
 
-def restaurar_linux(cfg: dict, copia: str, disco: str, avisar=print) -> dict:
+def restaurar_linux(cfg: dict, copia: str, disco: str, avisar=print, nuevo: dict | None = None) -> dict:
     """BORRA el disco y pone en él la copia completa de un Linux, lista para arrancar."""
     if not os.path.exists(disco):
         raise RuntimeError(f"No existe el disco {disco}")
@@ -311,6 +332,8 @@ def restaurar_linux(cfg: dict, copia: str, disco: str, avisar=print) -> dict:
             montar("--bind", f"/{d}", os.path.join(raiz, d))
         if os.path.isdir("/sys/firmware/efi/efivars"):
             montar("--bind", "/sys/firmware/efi/efivars", os.path.join(raiz, "sys/firmware/efi/efivars"))
+        if nuevo:
+            personalizar(raiz, nuevo, avisar)
         hechos = poner_arranque(raiz, disco, avisar)
         aviso = "Algunos archivos no se pudieron leer de la copia." if r.returncode == 3 else ""
         return {"status": "success", "disco": disco, "arranque": hechos, "aviso": aviso}
@@ -322,6 +345,47 @@ def restaurar_linux(cfg: dict, copia: str, disco: str, avisar=print) -> dict:
             os.rmdir(raiz)
         except OSError:
             pass
+
+
+def personalizar(raiz: str, nuevo: dict, avisar=print) -> None:
+    """Despliegue: la copia de un equipo «de referencia» pasa a ser OTRO ordenador. Nombre nuevo, identidad nueva
+    (machine-id, claves SSH) y su propio OCTOPUS (se da de alta solo en el panel con su clave)."""
+    r = Path(raiz)
+    nombre = nuevo["hostname"]
+    viejo = (r / "etc/hostname").read_text().strip() if (r / "etc/hostname").exists() else ""
+    (r / "etc/hostname").write_text(nombre + "\n")
+    hosts = r / "etc/hosts"
+    if hosts.exists() and viejo:
+        hosts.write_text(re.sub(rf"(?<![\w.-]){re.escape(viejo)}(?![\w.-])", nombre, hosts.read_text()))
+    # identidad de la máquina: vacía = systemd crea una nueva al arrancar
+    (r / "etc/machine-id").write_text("")
+    dbus = r / "var/lib/dbus/machine-id"
+    if dbus.exists() and not dbus.is_symlink():
+        dbus.unlink()
+    # claves SSH propias (si no, todos los clones tendrían la misma y se podrían suplantar entre ellos)
+    claves = list((r / "etc/ssh").glob("ssh_host_*")) if (r / "etc/ssh").is_dir() else []
+    for f in claves:
+        f.unlink()
+    if claves and _existe_en(raiz, "ssh-keygen"):
+        _chroot(raiz, ["ssh-keygen", "-A"])
+    # su propio agente de OCTOPUS: configuración nueva, y fuera lo que recordaba el equipo de referencia
+    if nuevo.get("agente"):
+        d = r / "etc/octopus"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "config.json").write_text(json.dumps(nuevo["agente"], indent=1))
+        os.chmod(d / "config.json", 0o600)
+        estado = r / "var/lib/octopus"
+        if estado.is_dir():
+            for f in estado.iterdir():
+                if f.is_file():
+                    f.unlink()
+    avisar(f"Este ordenador se llamará {nombre}.")
+
+
+def disco_principal() -> str:
+    """El disco interno más grande (para desplegar sin tener que elegir)."""
+    ds = [d for d in discos() if not d["usb"]]
+    return max(ds, key=lambda d: d["tamano"])["ruta"] if ds else ""
 
 
 def sacar_archivos(cfg: dict, copia: str, carpeta: str, avisar=print) -> dict:
@@ -408,6 +472,8 @@ def con_menus() -> int:
             cfg = pedir_config(servidor, codigo)
         except Exception as exc:
             m.aviso(str(exc))
+    if cfg.get("despliegue"):
+        return desplegar_con_menus(m, cfg)
     que = m.elegir(f"Equipo: {cfg['hostname']}. ¿Qué quieres hacer?",
                    [("levantar", "Dejar este ordenador como estaba (borra su disco)"),
                     ("sacar", "Sacar los archivos a un disco USB (no borra nada)")])
@@ -464,6 +530,26 @@ def con_menus() -> int:
     return 0
 
 
+def desplegar_con_menus(m, cfg) -> int:
+    dep = cfg["despliegue"]
+    disco = disco_principal()
+    if not disco:
+        m.aviso("No encuentro ningún disco interno en este ordenador.")
+        return 1
+    tam = next((d for d in discos() if d["ruta"] == disco), {}).get("tamano", 0)
+    if not m.si(f"Instalar «{cfg['hostname']}» (copia del {dep.get('fecha', '')}) en este ordenador.\n\n"
+                f"Se llamará {dep['nuevo']['hostname']}.\nSe BORRARÁ TODO el disco {disco} ({_gb(tam)}).\n\n¿Seguro?"):
+        return 1
+    try:
+        r = restaurar_linux(cfg, dep["copia"], disco, avisar=print, nuevo=dep["nuevo"])
+    except Exception as exc:
+        m.aviso(f"No ha salido bien: {exc}")
+        return 1
+    m.aviso(f"Listo: {dep['nuevo']['hostname']} instalado. Quita el pendrive (o desconecta el arranque por red) y "
+            "reinicia. Aparecerá solo en el panel." + (f"\n\nAviso: {r['aviso']}" if r.get("aviso") else ""))
+    return 0
+
+
 def _particion_grande(disco: str) -> str:
     r = json.loads(_run(["lsblk", "-J", "-b", "-o", "PATH,SIZE,TYPE,FSTYPE", disco]).stdout)
     partes = [p for d in r.get("blockdevices", []) for p in (d.get("children") or []) if p.get("fstype")]
@@ -487,6 +573,9 @@ def main(argv: list[str]) -> int:
         print(json.dumps(copias(cfg, completas="--completas" in args), indent=1))
     elif orden == "restaurar" and len(args) >= 3 and "--si-borrar-todo" in args:
         print(json.dumps(restaurar_linux(cfg, args[1], args[2])))
+    elif orden == "desplegar" and len(args) >= 4 and "--si-borrar-todo" in args:
+        nuevo = json.loads(Path(args[3]).read_text(encoding="utf-8"))
+        print(json.dumps(restaurar_linux(cfg, args[1], args[2], nuevo=nuevo)))
     elif orden == "sacar" and len(args) == 3:
         print(json.dumps(sacar_archivos(cfg, args[1], args[2])))
     else:
