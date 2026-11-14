@@ -14,12 +14,12 @@ T="$(mktemp -d)"
 trap 'umount -lq "$T/raiz/proc" "$T/raiz/sys" "$T/raiz/dev" 2>/dev/null || true' EXIT
 R="$T/raiz"
 
-debootstrap --variant=minbase bookworm "$R" http://deb.debian.org/debian
+debootstrap --variant=minbase trixie "$R" http://deb.debian.org/debian
 mount -t proc proc "$R/proc"; mount --bind /sys "$R/sys"; mount --bind /dev "$R/dev"
-echo "deb http://deb.debian.org/debian bookworm main non-free-firmware" > "$R/etc/apt/sources.list"
+echo "deb http://deb.debian.org/debian trixie main non-free-firmware" > "$R/etc/apt/sources.list"
 chroot "$R" apt-get update -qq
 DEBIAN_FRONTEND=noninteractive chroot "$R" apt-get install -y -qq --no-install-recommends \
-  linux-image-amd64 live-boot systemd-sysv udev kmod iproute2 isc-dhcp-client ca-certificates \
+  linux-image-amd64 live-boot systemd-sysv udev kmod iproute2 dhcpcd-base ca-certificates \
   python3 python3-cryptography whiptail gdisk parted dosfstools e2fsprogs util-linux ntfs-3g exfatprogs \
   firmware-linux-free firmware-realtek firmware-misc-nonfree shim-signed grub-efi-amd64-signed \
   locales keyboard-configuration console-setup less nano pciutils usbutils busybox >/dev/null
@@ -41,7 +41,7 @@ Description=OCTOPUS rescate: red por cable
 After=systemd-udev-settle.service
 [Service]
 Type=oneshot
-ExecStart=/bin/sh -c 'for i in /sys/class/net/*; do n=$(basename $i); [ "$n" = lo ] && continue; ip link set "$n" up; dhclient -nw "$n"; done'
+ExecStart=/bin/sh -c 'for i in /sys/class/net/*; do n=$(basename $i); [ "$n" = lo ] && continue; ip link set "$n" up; dhcpcd -b -q "$n"; done'
 RemainAfterExit=yes
 [Install]
 WantedBy=multi-user.target
@@ -109,11 +109,10 @@ printf 'search --file --set=root /.disk/info\nset prefix=($root)/boot/grub\nconf
 mcopy -i "$EFI" "$T/stub.cfg" ::/EFI/debian/grub.cfg
 mcopy -i "$EFI" "$T/stub.cfg" ::/EFI/BOOT/grub.cfg
 # Arranque por red (lo usa el servidor, install/pxe): shim y el GRUB firmado para red (UEFI, también con arranque
-# seguro) y GRUB para BIOS antiguas. El servidor añade su grub.cfg con su dirección.
+# seguro). El GRUB para BIOS antiguas y el grub.cfg con su dirección los pone el propio servidor.
 install -d "$I/pxe"
 cp "$R/usr/lib/shim/shimx64.efi.signed" "$I/pxe/bootx64.efi"
 cp "$R/usr/lib/grub/x86_64-efi-signed/grubnetx64.efi.signed" "$I/pxe/grubx64.efi"
-grub-mknetdir --net-directory="$I/pxe" --subdir=grub -d /usr/lib/grub/i386-pc >/dev/null
 # BIOS antigua
 grub-mkimage -O i386-pc-eltorito -p /boot/grub -o "$I/boot/grub/eltorito.img" \
   biosdisk iso9660 part_msdos part_gpt normal configfile linux search search_fs_file serial terminal echo test true \

@@ -76,6 +76,15 @@ def preparar(iso: Path, ip: str, puerto_panel: str, puerto_http: str) -> None:
                         "-extract", "/live", str(TFTP / "live")], check=True, capture_output=True)
         subprocess.run(["chmod", "-R", "u+w,a+rX", str(TFTP)], check=True)
         marca.write_text(huella)
+    # GRUB para BIOS antiguas, con la dirección de este servidor dentro: con «proxy DHCP» el PC no sabría de dónde
+    # sacar el resto (preguntaría al router)
+    bios = TFTP / "grub" / "i386-pc"
+    if bios.exists():
+        shutil.rmtree(bios)
+    shutil.copytree("/usr/lib/grub/i386-pc", bios)
+    subprocess.run(["grub-mkimage", "-O", "i386-pc-pxe", "-p", f"(tftp,{ip})/grub", "-o", str(bios / "core.0"),
+                    "pxe", "tftp", "normal", "configfile", "linux", "echo", "test", "serial", "terminal"],
+                   check=True, capture_output=True)
     menu = f"""set timeout=5
 if serial --unit=0 --speed=115200; then
   terminal_input console serial
