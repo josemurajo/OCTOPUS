@@ -71,7 +71,7 @@ table.procs .mini > i { display: block; height: 100%; width: 0; background: var(
   <div id="m-avisos"></div>
   <div class="card" id="explica-card" style="display:none"><h2>¿Por qué va lento? <small>lo que vemos ahora mismo</small></h2>
     <ul id="explica" style="margin:0"></ul></div>
-  <form method="post" action="{{ url_for('monitorizacion_correcto', system_id=s.id) }}" id="correcto" style="display:none; margin:-6px 0 14px">
+  <form method="post" action="{{ url_for('monitorizacion_correcto', system_id=s.id) }}" id="correcto" style="display:none; margin:-6px 0 14px" data-confirm="Los administradores y las piezas que tiene ahora este equipo pasarán a ser lo normal. Si alguien sin permiso se hizo administrador, se quedaría así." data-si="Sí, es correcto">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <button class="btn btn-small" type="submit">Es correcto: los administradores y las piezas de ahora son los buenos</button></form>
 

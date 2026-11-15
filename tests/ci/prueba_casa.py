@@ -160,6 +160,24 @@ def unidad():
     sin = [f"{c} ({v['accion']})" for c, v in av.CATALOGO.items() if v.get("accion") and not (
         v["accion"] in a._aa.POLITICA and (f"'{v['accion']}'" in fuente or v["accion"] in av.ACCIONES_SERVIDOR))]
     chk(not sin, "cada «Solucionar» tiene su arreglo y su regla (solo o con permiso)", sin)
+    # «¿Seguro?» antes de lo importante (un clic sin querer no hace nada)
+    import re as _re
+    T = Path(__file__).resolve().parents[2] / "templates"
+    deben = {"incidente.html": "Responder ahora", "despliegue.html": "Dar código del despliegue", "rescate.html": "Dar código",
+             "explorar.html": ">Recuperar<", "asistente.html": "Recuperar", "arranque_red.html": "encender",
+             "pasar.html": "Pasar a", "equipo_nuevo.html": "Conectar e instalar", "casa.html": "Proteger este ordenador",
+             "_aviso.html": "Solucionar", "usuarios.html": "usuario_cambiar", "monitor_equipo.html": "Es correcto"}
+    faltan = []
+    for f, txt in deben.items():
+        h = (T / f).read_text(encoding="utf-8")
+        forms = [m.group(0) for m in _re.finditer(r"<form\b.*?</form>", h, _re.S) if txt in m.group(0)]
+        if not forms or not all("data-confirm" in x for x in forms):
+            faltan.append(f)
+    chk(not faltan, "lo importante pregunta «¿Seguro?» antes", faltan)
+    b_ = (T / "base.html").read_text(encoding="utf-8")
+    chk("[data-r=\"no\"]').focus()" in b_ and "Escape" in b_, "en la ventana de «¿Seguro?», el botón elegido es «No»")
+    chk("data-confirm-original" in (T / "explorar.html").read_text(encoding="utf-8"),
+        "recuperar sustituyendo avisa de que se pierden los cambios")
     peligrosos = [k for k, v in a._aa.POLITICA.items() if v.get("riesgo") and v.get("auto")]
     chk(not peligrosos, "lo que tiene riesgo nunca se hace solo: pide permiso", peligrosos)
     con_arreglo = {c for c, v in av.CATALOGO.items() if v.get("accion")}

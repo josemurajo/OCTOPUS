@@ -41,7 +41,7 @@
   {% if e.encontrados %}
   <p class="muted small" style="margin-bottom:10px">Marca los que quieras proteger, revisa su nombre y su sistema, y ponlos en un grupo.
     Los equipos del mismo grupo comparten usuario y contraseña en el paso siguiente (si cada uno tiene una distinta, ponle a cada uno su propio grupo).</p>
-  <form method="post" action="{{ url_for('buscar_resultado', eid=e.id) }}">
+  <form method="post" action="{{ url_for('buscar_resultado', eid=e.id) }}" data-confirm="Se va a instalar OCTOPUS en los equipos marcados." data-si="Sí, seguir">
     <datalist id="grupos">{% for g in grupos %}<option value="{{ g }}">{% endfor %}</datalist>
     <table>
       <thead><tr><th></th><th>Equipo</th><th>Sistema</th><th>Grupo</th><th>Estado</th></tr></thead>

@@ -315,16 +315,22 @@ def mensaje_resultado(a: dict, ok: bool, detalle: str, clave: str, panel: str = 
                   f"Resultado: {detalle or 'correcto'}.",
                   "No tienes que hacer nada."]
     else:
-        lineas = [f"❌ No se ha podido arreglar solo: {cab}",
-                  f"Qué ha intentado OCTOPUS: {como}.",
-                  f"Qué ha pasado: {detalle or 'falló'}."]
+        # «No he podido por esto, ha pasado esto, y tienes que arreglarlo así»
+        lineas = [f"❌ No he podido arreglarlo solo: {cab}",
+                  f"Qué he intentado: {como}.",
+                  f"Por qué no he podido: {detalle or 'falló sin dar motivo'}."]
+        causas = a.get("causas") or []
+        if causas:
+            lineas.append("Por qué suele pasar: " + " / ".join(causas))
+        lineas.append("Cómo lo arreglas tú:")
+        lineas += _pasos(a)
         if rendido(clave):
-            lineas.append("Ya no lo intentará más solo. Qué hacer:")
-            lineas += _pasos(a)
+            lineas.append("Ya no lo intentaré más solo (lo he probado varias veces).")
             if panel:
-                lineas.append(f"Para intentarlo otra vez: {panel}/avisos → «Solucionar: {a.get('boton', 'Solucionar')}».")
+                lineas.append(f"Cuando lo hayas arreglado, o para probar otra vez: {panel}/avisos → «Solucionar: "
+                              f"{a.get('boton', 'Solucionar')}».")
         else:
             espera = politica(a.get("accion")).get("cada", 3600)
-            lineas.append(f"Lo volverá a intentar solo dentro de {max(1, round(espera / 3600))} h. Si tienes prisa, "
-                          f"pulsa «Solucionar» en {panel + '/avisos' if panel else 'el panel, apartado Avisos'}.")
+            lineas.append(f"Mientras, lo volveré a intentar solo dentro de {max(1, round(espera / 3600))} h. Si tienes "
+                          f"prisa, pulsa «Solucionar» en {panel + '/avisos' if panel else 'el panel, apartado Avisos'}.")
     return "\n".join(lineas)

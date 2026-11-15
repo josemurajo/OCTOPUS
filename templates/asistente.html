@@ -51,7 +51,8 @@
 <div class="card">
   <h2>2. ¿De cuándo quieres «{{ ruta.replace('\\', '/').rstrip('/').split('/')[-1] }}»?</h2>
   <p class="muted small mono" style="margin-bottom:10px">{{ ruta }}</p>
-  <form method="post" action="{{ url_for('restaurar_ruta', system_id=s.id) }}">
+  <form method="post" action="{{ url_for('restaurar_ruta', system_id=s.id) }}" data-confirm="Se trae de la copia y se deja AL LADO de lo que tienes ahora (no se borra nada)." data-si="Sí, recuperar"
+        data-confirm-original="Lo que hay ahora en el equipo se SUSTITUYE por la versión de la copia. Los cambios hechos después de esa copia se perderán." data-si-original="Sí, sustituir">
     <input type="hidden" name="ruta" value="{{ ruta }}">
     <input type="hidden" name="volver" value="{{ url_for('asistente_recuperar', equipo=s.id) }}">
     <table>

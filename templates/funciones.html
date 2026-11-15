@@ -98,7 +98,7 @@
 {% if bloqueadas and puede_actuar() %}
 <div class="card"><h2>Direcciones bloqueadas</h2>
   {% for b in bloqueadas %}
-  <form method="post" action="{{ url_for('quitar_bloqueo') }}" style="margin:6px 0">
+  <form method="post" action="{{ url_for('quitar_bloqueo') }}" style="margin:6px 0" data-confirm="Se quita el bloqueo: a partir de ahora se podrá cambiar sin la doble aprobación." data-si="Sí, desbloquear">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="ip" value="{{ b.ip }}">
     {{ b.ip }} — {{ b.fallos }} intentos, hasta {{ b.hasta }} <button class="btn" type="submit">Desbloquear</button>
   </form>{% endfor %}

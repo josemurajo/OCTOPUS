@@ -168,6 +168,14 @@ pre.box { background: #0f172a; color: #e2e8f0; padding: 14px; border-radius: 10p
 .etiqueta-auto.permiso { background:var(--warn-soft); color:var(--warn); }
 .etiqueta-auto.mal { background:var(--bad-soft); color:var(--bad); }
 </style>
+<style>
+.seguro-fondo { position: fixed; inset: 0; background: rgba(15, 23, 42, .45); display: flex; align-items: center;
+                justify-content: center; z-index: 1000; padding: 16px; }
+.seguro { background: var(--card, #fff); color: var(--text, #111); border-radius: 12px; max-width: 460px; width: 100%;
+          padding: 20px 22px; box-shadow: 0 20px 50px rgba(0,0,0,.25); }
+.seguro h2 { margin: 0 0 8px; font-size: 20px; } .seguro p { margin: 0 0 16px; line-height: 1.45; }
+.seguro-botones { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+</style>
 </head>
 <body>
 {% if session.get('user_id') %}
@@ -207,10 +215,39 @@ pre.box { background: #0f172a; color: #e2e8f0; padding: 14px; border-radius: 10p
     if ((f.method || '').toLowerCase() === 'post' && !f.querySelector('input[name="csrf_token"]')) {
       var i = document.createElement('input'); i.type = 'hidden'; i.name = 'csrf_token'; i.value = t; f.appendChild(i);
     }
-    if (f.dataset.confirm) {
-      f.addEventListener('submit', function (e) { if (!confirm(f.dataset.confirm)) { e.preventDefault(); } });
-    }
+    // «¿Seguro?» antes de hacer algo importante: en el formulario (data-confirm) o en un botón concreto
+    f.addEventListener('submit', function (e) {
+      var b = e.submitter, texto = (b && b.dataset.confirm) || f.dataset.confirm, si = (b && b.dataset.si) || f.dataset.si;
+      if (f.dataset.confirmOriginal && f.elements.destino && f.elements.destino.value === 'original') {
+        texto = f.dataset.confirmOriginal; si = f.dataset.siOriginal || si; }
+      if (!texto || f.dataset.confirmado === '1') { f.dataset.confirmado = ''; return; }
+      e.preventDefault();
+      preguntar(texto, si, function () {
+        f.dataset.confirmado = '1';
+        if (b && b.name) { var h = document.createElement('input'); h.type = 'hidden'; h.name = b.name; h.value = b.value; f.appendChild(h); }
+        f.requestSubmit ? f.requestSubmit() : f.submit();
+      });
+    });
   });
+  // la ventana de «¿Seguro?»: el botón que se elige solo es «No» (un Intro sin querer no hace nada)
+  function preguntar(texto, si, hazlo) {
+    var fondo = document.createElement('div'); fondo.className = 'seguro-fondo';
+    fondo.innerHTML = '<div class="seguro" role="alertdialog" aria-modal="true" aria-labelledby="seguro-t" aria-describedby="seguro-x">' +
+      '<h2 id="seguro-t">¿Seguro?</h2><p id="seguro-x"></p><div class="seguro-botones">' +
+      '<button type="button" class="btn" data-r="no">No, déjalo</button>' +
+      '<button type="button" class="btn btn-primary" data-r="si"></button></div></div>';
+    fondo.querySelector('#seguro-x').textContent = texto;
+    fondo.querySelector('[data-r="si"]').textContent = si || 'Sí, hazlo';
+    var antes = document.activeElement;
+    function cerrar(ok) { fondo.remove(); document.removeEventListener('keydown', tecla); if (antes) antes.focus(); if (ok) hazlo(); }
+    function tecla(e) { if (e.key === 'Escape') cerrar(false); }
+    fondo.addEventListener('click', function (e) { if (e.target === fondo) cerrar(false);
+      var r = e.target.closest && e.target.closest('[data-r]'); if (r) cerrar(r.dataset.r === 'si'); });
+    document.addEventListener('keydown', tecla);
+    document.body.appendChild(fondo);
+    fondo.querySelector('[data-r="no"]').focus();
+  }
+  window.octopusPreguntar = preguntar;
   var origFetch = window.fetch;
   window.fetch = function (url, opts) {
     opts = opts || {}; opts.headers = opts.headers || {};

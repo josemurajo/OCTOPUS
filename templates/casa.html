@@ -49,7 +49,7 @@
       {% if fase == 'error' %}<div class="notice problema">No se pudo instalar: {{ estado.proteger.error }}. Vuelve a
         intentarlo; si sigue fallando, usa «Enviar sugerencia o problema» (abajo del todo).</div>{% endif %}
       <p>Se copiarán las carpetas importantes de las personas de este ordenador:</p>
-      <form method="post" action="{{ url_for('casa_proteger') }}">
+      <form method="post" action="{{ url_for('casa_proteger') }}" data-confirm="Se instala OCTOPUS en este ordenador y empieza a hacer copias solo (sin molestar si juegas)." data-si="Sí, protegerlo">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         {% if carpetas %}
         <ul class="carpetas" style="list-style:none; padding-left:0">
@@ -79,7 +79,7 @@
       rompe, lo pierdes todo a la vez. Conecta un disco USB (o elige otro disco) y pásalas allí.</div>
     {% endif %}
     {% if puede_actuar() %}
-    <form method="post" action="{{ url_for('casa_disco') }}">
+    <form method="post" action="{{ url_for('casa_disco') }}" data-confirm="Las copias se pasan a ese disco y a partir de ahora se guardan ahí. Mientras se pasan, no lo desconectes." data-si="Sí, aquí">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="discos">
         {% for d in discos %}

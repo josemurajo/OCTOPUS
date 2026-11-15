@@ -12,7 +12,7 @@
   {% if sys.os_family == 'macos' %}<p class="hint">En el Mac tiene que estar activado «Ajustes → General → Compartir → Sesión remota».</p>{% endif %}
   {% if sys.os_family == 'windows' %}<p class="hint">En Windows tiene que estar activado el «Servidor OpenSSH» (Configuración → Sistema →
     Características opcionales) y el usuario debe ser administrador. Si no, usa el instalador de doble clic de abajo.</p>{% endif %}
-  <form method="post" action="{{ url_for('equipo_instalar_remoto', system_id=sys.id) }}" autocomplete="off">
+  <form method="post" action="{{ url_for('equipo_instalar_remoto', system_id=sys.id) }}" autocomplete="off" data-confirm="Se entra en ese equipo con el usuario y la contraseña que has puesto y se instala OCTOPUS (la contraseña no se guarda)." data-si="Sí, instalar">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="field"><label for="r_ip">Dirección IP del equipo</label>
       <input type="text" id="r_ip" name="ip" required value="{{ sys.ip_address or '' }}" placeholder="192.168.1.25"></div>

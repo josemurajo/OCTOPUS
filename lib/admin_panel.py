@@ -1556,6 +1556,7 @@ def _aviso(codigo, equipo=None, sid=None, soluciones=None, **datos):
     a['rendido'] = a['auto'] and _aa.rendido(f'{codigo}:{sid or ""}')
     # para las pantallas que solo enseñan un texto corto
     a['que_hacer'] = ' '.join(a['pasos'][:2])
+    a['como'] = _aa.politica(a.get('accion')).get('como', '')
     return a
 
 

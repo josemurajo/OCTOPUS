@@ -35,7 +35,7 @@
     <li>Te pedirá la dirección del servidor y el código. Pídelo aquí:</li>
   </ol>
   {% if puede_recuperar() %}
-  <form method="post">
+  <form method="post" data-confirm="Con este código, durante una hora, un pendrive de rescate puede llegar a las copias de este equipo. No lo compartas." data-si="Sí, dar el código">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <button class="btn btn-primary btn-big" type="submit">{{ 'Dar otro código' if codigo else 'Dar código' }}</button>
   </form>

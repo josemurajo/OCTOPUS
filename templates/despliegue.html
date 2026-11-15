@@ -20,7 +20,7 @@
 {% endif %}
 
 {% if puede_recuperar() %}
-<form method="post" class="card">
+<form method="post" class="card" data-confirm="Con este código, cada ordenador que arranque el rescate podrá BORRAR su disco y poner el sistema del modelo (preguntando antes en cada uno)." data-si="Sí, dar el código">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <h2>Nueva tanda</h2>
   <div class="field"><label for="ref">Ordenador de referencia (el modelo)</label>
@@ -49,7 +49,7 @@
   {% for a in activos %}<tr>
     <td>{{ a.ref or '?' }}</td><td>{{ a.fecha }}</td><td>{{ a.usados }} de {{ a.maximo }}</td>
     <td class="small">{{ a.equipos | join(', ') }}</td>
-    <td>{% if puede_recuperar() %}<form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <td>{% if puede_recuperar() %}<form method="post" data-confirm="El código de esta tanda dejará de valer: los ordenadores que falten ya no podrán usarlo." data-si="Sí, terminar"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="id" value="{{ a.id }}"><button class="btn btn-small" name="accion" value="cancelar">Terminar</button>
     </form>{% endif %}</td></tr>{% endfor %}
   </tbody></table>

@@ -48,7 +48,7 @@
     {% for a in aprobaciones %}<tr>
       <td><strong>{{ a.resumen }}</strong><br><span class="muted">pedido por {{ a.pedido_nombre }} · {{ a.creado }} · caduca {{ a.caduca }}</span></td>
       <td style="white-space:nowrap">
-        <form method="post" action="{{ url_for('decidir_aprobacion', aid=a.id) }}" style="display:inline">
+        <form method="post" action="{{ url_for('decidir_aprobacion', aid=a.id) }}" style="display:inline" data-confirm="Vas a aprobar lo que ha pedido otra persona. Se hará en cuanto apruebes." data-si="Sí, aprobar">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           {% if a.pedido_por != session.get('user_id') %}<button class="btn btn-primary" name="decision" value="aprobar">Aprobar</button>{% endif %}
           <button class="btn" name="decision" value="rechazar">{{ 'Cancelar' if a.pedido_por == session.get('user_id') else 'Rechazar' }}</button>
@@ -88,7 +88,7 @@
        else 'para los equipos de una empresa, con todas las opciones.' }}
     {% if modo_casa() %}<a href="{{ url_for('casa_inicio') }}">Tu ordenador y el disco de las copias →</a>{% endif %}</p>
   {% if puede_actuar() %}
-  <form method="post" action="{{ url_for('cambiar_modo') }}">
+  <form method="post" action="{{ url_for('cambiar_modo') }}" data-confirm="Cambia cómo se ve y se maneja todo el panel (casa o empresa). Tus copias no se tocan." data-si="Sí, cambiar">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="modo" value="{{ 'empresa' if modo_casa() else 'casa' }}">
     <button class="btn" type="submit">Cambiar a modo {{ 'empresa' if modo_casa() else 'casa' }}</button>

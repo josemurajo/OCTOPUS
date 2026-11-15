@@ -28,7 +28,7 @@
 </form>
 
 {% if puede_actuar() and im.destino %}
-<form method="post" class="card">
+<form method="post" class="card" data-confirm="La imagen tarda una hora o más y usa el disco a fondo (si estás jugando, espera a que termines)." data-si="Sí, hacerla">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="accion" value="ahora">
   <button class="btn btn-big" type="submit" {{ 'disabled' if not info or not info.disponible }}>Hacer una imagen ahora</button>
   <p class="hint">Tarda una hora o más. Se puede seguir usando el ordenador.</p>

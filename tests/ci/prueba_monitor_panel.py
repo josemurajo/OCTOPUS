@@ -125,8 +125,7 @@ chk("raro_addin.dll" in t and "complemento" in t and "juego.exe" in t and "contr
 mensajes, arreglos = [], []
 _orig = (a._mandar_mensajes, a._avisos, a._equipos_con_estado, a._ejecutar_arreglo)
 a._mandar_mensajes = lambda m: mensajes.extend(m)
-aviso_copia = {"codigo": "OCT-EQ-04", "id": sid, "equipo": "PORTATIL-ANA", "titulo": "La última copia falló", "accion": "copia_equipo",
-               "riesgo": None, "nivel": "problema", "por_que": "", "causas": [], "pasos": [], "detalle": ""}
+aviso_copia = dict(a._av.ficha("OCT-EQ-04", equipo="PORTATIL-ANA"), id=sid, equipo="PORTATIL-ANA", riesgo=None, detalle="")
 a._avisos = lambda lista: [dict(aviso_copia)]
 a._equipos_con_estado = lambda *x, **k: [{"sys": {"id": sid}, "est": {"online": True}}]
 a._ejecutar_arreglo = lambda cod, acc, row, uid, usr, al_terminar=None: arreglos.append(al_terminar)
@@ -140,6 +139,8 @@ a._autoarreglo_ciclo()
 if arreglos:
     arreglos[0](False, "la copia volvió a fallar")
 chk(len(mensajes) == 1 and "volvió a fallar" in str(mensajes), "si vuelve a fallar, entonces sí se avisa (una vez)", mensajes)
+txt_m = str(mensajes)
+chk("Por qué no he podido" in txt_m and "Cómo lo arreglas tú" in txt_m, "y dice por qué no ha podido y cómo arreglarlo", txt_m)
 a._autoarreglo_ciclo()
 chk(len(mensajes) == 1, "y no se repite el mensaje", len(mensajes))
 a._mandar_mensajes, a._avisos, a._equipos_con_estado, a._ejecutar_arreglo = _orig

@@ -5,7 +5,7 @@
 <h1>Añadir un equipo</h1>
 <p class="lead">Dinos qué equipo es y cómo llegar a él. OCTOPUS se instala solo y el equipo queda protegido como los demás.</p>
 <div class="card" style="max-width:720px">
-  <form method="post" id="form-equipo" autocomplete="off">
+  <form method="post" id="form-equipo" autocomplete="off" data-confirm="Se entra en ese equipo con el usuario y la contraseña que has puesto y se instala OCTOPUS (la contraseña no se guarda)." data-si="Sí, instalar">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="field"><label for="os_family">¿Qué sistema tiene?</label>
       <select id="os_family" name="os_family">

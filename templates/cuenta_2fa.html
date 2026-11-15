@@ -72,7 +72,8 @@
                                       ('nuevos', 'Sacar códigos de emergencia nuevos', 'Si has gastado o perdido los del papel. Los anteriores dejan de valer.'),
                                       ('desactivar', 'Desactivar', 'Entrar solo con la contraseña (menos seguro).')] %}
   {% if not (accion == 'desactivar' and obligatoria) %}
-  <form method="post" action="{{ url_for('cuenta_2fa') }}" autocomplete="off" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:10px 0">
+  <form method="post" action="{{ url_for('cuenta_2fa') }}" autocomplete="off" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:10px 0"
+        data-confirm="{{ titulo }}: {{ explica }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="accion" value="{{ accion }}">
     <strong style="min-width:240px">{{ titulo }}</strong>
     <input type="text" name="codigo" inputmode="numeric" placeholder="código" required style="max-width:140px" aria-label="Código para {{ titulo }}">
@@ -80,7 +81,7 @@
     <span class="small muted" style="flex-basis:100%">{{ explica }}</span>
   </form>{% endif %}
   {% endfor %}
-  <form method="post" action="{{ url_for('cuenta_2fa') }}" style="margin-top:14px">
+  <form method="post" action="{{ url_for('cuenta_2fa') }}" style="margin-top:14px" data-confirm="Todos los navegadores donde marcaste «recordar» tendrán que pedir otra vez el código del móvil." data-si="Sí, olvidarlos">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="accion" value="olvidar">
     <button class="btn" type="submit">Olvidar los navegadores recordados</button>
     <span class="small muted">Todos los navegadores volverán a pedir el código (por si te dejaste uno recordado en otro sitio).</span>

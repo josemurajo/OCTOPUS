@@ -114,7 +114,7 @@ GRANT ALL PRIVILEGES ON *.* TO 'octopus'@'localhost';<button class="btn btn-smal
   </form>
   {% if con_clave and puede_actuar() %}
   <p class="hint" style="margin-top:12px">Usuarios guardados para:
-    {% for mo in con_clave %}<form method="post" action="{{ url_for('equipo_bd_accion', system_id=s.id) }}" style="display:inline">
+    {% for mo in con_clave %}<form method="post" action="{{ url_for('equipo_bd_accion', system_id=s.id) }}" style="display:inline" data-confirm="Se borra el usuario y la contraseña guardados de esa base de datos: sus copias dejarán de hacerse hasta que los pongas otra vez." data-si="Sí, borrar">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="accion" value="credenciales">
       <input type="hidden" name="motor" value="{{ mo }}"><input type="hidden" name="borrar" value="1">
       {{ MOTORES.get(mo, mo) }} <button class="btn btn-small" type="submit">Borrar</button></form>{% endfor %}</p>

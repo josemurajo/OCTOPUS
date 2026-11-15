@@ -67,7 +67,7 @@
 
 {% if puede_recuperar() %}
 <dialog id="dlg">
-  <form method="post" action="{{ url_for('restaurar_ruta', system_id=s.id) }}">
+  <form method="post" action="{{ url_for('restaurar_ruta', system_id=s.id) }}" data-confirm="Se trae de la copia y se deja AL LADO de lo que tienes ahora (no se borra nada)." data-si="Sí, recuperar" data-confirm-original="Lo que hay ahora en el equipo se SUSTITUYE por la versión de la copia. Los cambios hechos después de esa copia se perderán." data-si-original="Sí, sustituir">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="copia" value="{{ copia }}">
     <input type="hidden" name="carpeta" value="{{ ruta }}">

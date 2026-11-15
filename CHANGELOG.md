@@ -30,6 +30,12 @@ instalan versiones con esa firma. Lo más nuevo, arriba.
 - **«Solucionar» también en lo nuevo:** repetir la copia completa, la de bases de datos, la de máquinas virtuales, la
   imagen de disco, la de la nube y el arranque por red (solos, sin riesgo); encender el cortafuegos y reiniciar un
   equipo que lleva semanas sin reiniciarse (con permiso); «Es correcto» para administradores y piezas nuevas.
+- **«¿Seguro?» antes de lo importante:** una ventana que explica qué va a pasar (aislar un equipo, recuperar
+  sustituyendo, dar un código de rescate o de despliegue, instalar, «Solucionar»…). El botón que se elige solo es
+  «No», así que un clic o un Intro sin querer no hace nada. Al recuperar, si se elige sustituir, avisa de que se
+  pierden los cambios posteriores.
+- **Cuando OCTOPUS no puede arreglar algo solo, lo dice claro:** qué ha intentado, por qué no ha podido, por qué
+  suele pasar y cómo arreglarlo tú.
 - README con todo lo de la 3.1.0.
 
 ## 3.1.0 - 2026-11-15 (rescate, arranque por red y despliegue)

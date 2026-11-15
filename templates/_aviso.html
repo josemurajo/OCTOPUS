@@ -19,7 +19,7 @@
   <div class="aviso-acciones">
     {% if a.accion and puede_actuar() %}
     <form method="post" action="{{ url_for('avisos_solucionar') }}" style="display:inline-flex; gap:10px; align-items:center; flex-wrap:wrap"
-          {% if a.riesgo %}data-confirm="{{ a.riesgo }} ¿Seguro que quieres seguir?"{% endif %}>
+          data-confirm="{{ (a.riesgo ~ ' ') if a.riesgo }}Se va a {{ a.como or (a.boton | lower) }}." data-si="Sí, {{ a.boton[:1] | lower }}{{ a.boton[1:] }}">
       <input type="hidden" name="codigo" value="{{ a.codigo }}">
       {% if a.id %}<input type="hidden" name="system_id" value="{{ a.id }}">{% endif %}
       <input type="hidden" name="volver" value="{{ volver }}">
@@ -33,8 +33,8 @@
   </div>
   {% if a.ultimo_intento %}
   <p class="small muted" style="margin-top:6px">Último intento ({{ a.ultimo_intento.fecha | hace }}):
-    {% if a.ultimo_intento.estado == 'en_curso' %}en marcha…{% elif a.ultimo_intento.estado == 'ok' %}<span style="color:var(--ok)">hecho</span>{% else %}<span style="color:var(--bad)">no se arregló</span>{% endif %}
-    — {{ a.ultimo_intento.detalle }}</p>
+    {% if a.ultimo_intento.estado == 'en_curso' %}en marcha…{% elif a.ultimo_intento.estado == 'ok' %}<span style="color:var(--ok)">hecho</span>{% else %}<span style="color:var(--bad)">no he podido arreglarlo</span>{% endif %}
+    — {{ a.ultimo_intento.detalle }}{% if a.ultimo_intento.estado == 'error' %}. Arriba tienes por qué suele pasar y cómo arreglarlo.{% endif %}</p>
   {% endif %}
 </div>
 {% endmacro %}

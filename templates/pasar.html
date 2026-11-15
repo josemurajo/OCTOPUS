@@ -26,7 +26,7 @@
 </form>
 
 {% if copia and nuevo %}
-<form method="post" class="card">
+<form method="post" class="card" data-confirm="Se traen las carpetas marcadas al ordenador nuevo. No se sobrescribe nada: si algo ya existe distinto, lo recuperado se deja al lado." data-si="Sí, pasarlas">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <input type="hidden" name="copia" value="{{ copia_id }}"><input type="hidden" name="nuevo" value="{{ nuevo.id }}">
   <h2>Qué carpetas pasar y dónde ponerlas en {{ nuevo.hostname }}</h2>

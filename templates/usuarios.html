@@ -25,7 +25,8 @@
       <td>
         {% if u.role == 'supremo' or u.id == session.get('user_id') or (u.origen and u.origen != 'local') %}{{ NOMBRE_ROL.get(u.role, u.role) }}
         {% else %}
-        <form method="post" action="{{ url_for('usuario_cambiar', uid=u.id) }}" style="display:flex; gap:6px">
+        <form method="post" action="{{ url_for('usuario_cambiar', uid=u.id) }}" style="display:flex; gap:6px"
+              data-confirm="Cambia lo que {{ u.username }} puede hacer en OCTOPUS." data-si="Sí, cambiar">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="accion" value="rol">
           <select name="role" style="min-width:210px" aria-label="Papel de {{ u.username }}">{% for r, n, _ in roles %}<option value="{{ r }}" {{ 'selected' if u.role == r }}>{{ n }}</option>{% endfor %}</select>
           <button class="btn btn-small" type="submit">Cambiar</button>

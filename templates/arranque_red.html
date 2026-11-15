@@ -20,8 +20,8 @@
   {% if puede_actuar() and not est.haciendo %}
   <form method="post" style="display:inline">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    {% if est.encendido %}<button class="btn" name="accion" value="apagar" type="submit">Apagar</button>
-    {% else %}<button class="btn btn-primary btn-big" name="accion" value="encender" type="submit">Encender</button>{% endif %}
+    {% if est.encendido %}<button class="btn" name="accion" value="apagar" type="submit" data-confirm="Los ordenadores ya no podrán arrancar el rescate por red (con el pendrive sí)." data-si="Sí, apagar">Apagar</button>
+    {% else %}<button class="btn btn-primary btn-big" name="accion" value="encender" type="submit" data-confirm="Los ordenadores de esta red que arranquen por red (F12) verán el rescate de OCTOPUS. No cambia nada del router." data-si="Sí, encender">Encender</button>{% endif %}
   </form>{% endif %}
 </div>
 
