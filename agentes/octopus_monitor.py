@@ -11,9 +11,14 @@ OCTOPUS - Monitorizacion del equipo (va junto al agente; solo Python, sin instal
 Recoge el uso de todo el equipo para el apartado «Monitorizacion» del panel:
   - rapido (cada pocos segundos): CPU total y por nucleo, memoria y swap, discos (espacio), lectura/escritura de disco,
     red (bajada/subida), temperaturas y ventiladores, bateria, procesos que mas gastan, tiempo encendido, usuarios.
+  - rapido tambien: la tarjeta grafica (uso, temperatura, memoria; NVIDIA en todos, AMD/Intel en Linux, uso en Windows).
   - lento (cada 10 min o mas): salud de los discos (SMART: desgaste, horas, temperatura, sectores malos), inventario
     (fabricante, modelo, numero de serie, BIOS, procesador, grafica, sistema), actualizaciones pendientes, antivirus,
-    servicios parados y si hace falta reiniciar.
+    servicios parados y si hace falta reiniciar; cortafuegos, disco cifrado (BitLocker/FileVault/LUKS), pantallazos
+    y reinicios inesperados, programas que se cuelgan, intentos de contrasena fallidos, administradores, programas
+    instalados y programas que se abren solos al encender.
+  - Internet (cada 5 min): si responde y cuanto tarda; cortes de las ultimas 24 h; velocidad una vez al dia si el
+    servidor lo pide (unos 10 MB).
 
 Uso suelto (para probar):  python octopus_monitor.py        -> imprime una muestra en JSON
 """
@@ -219,6 +224,7 @@ class _Linux:
         d["n_procesos"] = len(procs)
         d["uptime_s"] = int(_num(_leer("/proc/uptime").split(" ")[0], 0) or 0)
         d["usuarios"] = sorted({l.split()[0] for l in _run(["who"], 5).splitlines() if l.strip()})
+        d["gpu"] = _gpus_nvidia() or _gpus_linux_sysfs()
         self.prev_t = ahora
         return d
 
@@ -257,7 +263,69 @@ class _Linux:
             d["servicios_caidos"] = caidos[:30]
         clam = shutil.which("clamscan") or shutil.which("clamd")
         d["antivirus"] = {"nombre": "ClamAV" if clam else "", "activo": bool(clam), "aplica": False}
+        d.update(_linux_extra())
         return d
+
+
+def _linux_extra() -> dict:
+    d: dict = {}
+    # cortafuegos
+    fw = None
+    if shutil.which("ufw"):
+        fw = "Status: active" in _run(["ufw", "status"], 10)
+    if not fw and shutil.which("firewall-cmd"):
+        fw = _run(["firewall-cmd", "--state"], 10).strip() == "running" or fw
+    if not fw and shutil.which("nft"):
+        r = _run(["nft", "list", "ruleset"], 10)
+        fw = ("hook input" in r and ("drop" in r or "reject" in r)) or fw
+    d["cortafuegos"] = {"activo": fw}
+    # disco cifrado (LUKS)
+    raiz = _run(["findmnt", "-n", "-o", "SOURCE", "/"], 5).strip()
+    cif = None
+    if raiz.startswith("/dev/"):
+        cif = "crypt" in _run(["lsblk", "-n", "-s", "-o", "TYPE", raiz], 5).split()
+    d["cifrado"] = {"que": "LUKS", "activo": cif}
+    # intentos de contraseña fallidos (24 h)
+    if shutil.which("journalctl"):
+        txt = _run(["journalctl", "-S", "-24h", "-o", "cat", "-q", "--no-pager", "SYSLOG_FACILITY=10", "SYSLOG_FACILITY=4"], 30)
+        d["accesos_fallidos"] = {"ultimas_24h": len(re.findall(r"Failed password|authentication failure|FAILED LOGIN|Invalid user", txt))}
+    # administradores
+    adm = set()
+    for g in ("sudo", "wheel", "admin"):
+        p = _run(["getent", "group", g], 5).strip().split(":")
+        if len(p) >= 4 and p[3]:
+            adm.update(x for x in p[3].split(",") if x)
+    d["administradores"] = sorted(adm)
+    # programas instalados
+    if shutil.which("dpkg-query"):
+        out = _run(["dpkg-query", "-W", "-f=${binary:Package}\t${Version}\n"], 60)
+    elif shutil.which("rpm"):
+        out = _run(["rpm", "-qa", "--qf", "%{NAME}\t%{VERSION}\n"], 60)
+    else:
+        out = ""
+    progs = [l.split("\t", 1) for l in out.splitlines() if l.strip()]
+    d["programas_total"] = len(progs)
+    d["programas"] = [{"n": p[0], "v": p[1] if len(p) > 1 else ""} for p in sorted(progs)[:2500]]
+    # programas que se abren solos al entrar (escritorio)
+    ini = []
+    for f in list(Path("/etc/xdg/autostart").glob("*.desktop")) + list(Path("/home").glob("*/.config/autostart/*.desktop")):
+        nombre = next((l.split("=", 1)[1] for l in _leer(f).splitlines() if l.startswith("Name=")), f.stem)
+        oculto = any(l.strip() in ("Hidden=true", "X-GNOME-Autostart-enabled=false") for l in _leer(f).splitlines())
+        if not oculto:
+            ini.append({"n": nombre, "donde": "todos" if str(f).startswith("/etc") else f.parts[2]})
+    d["inicio"] = ini[:60]
+    # reinicios inesperados (apagados de golpe) y programas que se cuelgan, últimos 7 días
+    if shutil.which("last"):
+        d["fallos"] = {"reinicios": len([l for l in _run(["last", "-x", "-s", "-7days"], 10).splitlines() if "crash" in l]),
+                       "pantallazos": None}
+    if shutil.which("coredumpctl"):
+        cu: dict = {}
+        for l in _run(["coredumpctl", "list", "--since=-7d", "--no-legend", "--no-pager"], 20).splitlines():
+            exe = l.split()[-1] if l.split() else ""
+            if exe and exe != "-":
+                cu[Path(exe).name] = cu.get(Path(exe).name, 0) + 1
+        d["cuelgues"] = [{"programa": k, "veces": v} for k, v in sorted(cu.items(), key=lambda x: -x[1])[:8]]
+    return d
 
 
 def _ram_total_linux() -> int:
@@ -283,6 +351,93 @@ def _ips() -> list[str]:
     except OSError:
         pass
     return sorted(ips)
+
+
+# =============================================================================================== COMUN
+def _nvidia_smi() -> str | None:
+    cands = [shutil.which("nvidia-smi")]
+    if SISTEMA == "windows":
+        cands += [os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "nvidia-smi.exe"),
+                  r"C:\Program Files\NVIDIA Corporation\NVSMI\nvidia-smi.exe"]
+    return next((c for c in cands if c and os.path.exists(c)), None)
+
+
+def _gpus_nvidia() -> list[dict]:
+    exe = _nvidia_smi()
+    if not exe:
+        return []
+    out = _run([exe, "--query-gpu=name,utilization.gpu,temperature.gpu,memory.used,memory.total,fan.speed,power.draw",
+                "--format=csv,noheader,nounits"], 8)
+    gpus = []
+    for l in out.splitlines():
+        p = [x.strip() for x in l.split(",")]
+        if len(p) >= 5 and p[0]:
+            gpus.append({"nombre": p[0], "uso": _num(p[1]), "temp": _num(p[2]),
+                         "vram_usada": (_num(p[3], 0) or 0) * 1048576, "vram_total": (_num(p[4], 0) or 0) * 1048576,
+                         "ventilador": _num(p[5]) if len(p) > 5 else None, "vatios": _num(p[6]) if len(p) > 6 else None})
+    return gpus
+
+
+def _gpus_linux_sysfs() -> list[dict]:
+    """AMD (y algunas Intel) en Linux, leyendo lo que da el propio controlador."""
+    gpus = []
+    for card in sorted(Path("/sys/class/drm").glob("card[0-9]")):
+        dev = card / "device"
+        uso = _num(_leer(dev / "gpu_busy_percent"))
+        if uso is None:
+            continue
+        temp = None
+        for h in dev.glob("hwmon/hwmon*/temp1_input"):
+            v = _num(_leer(h))
+            if v:
+                temp = round(v / 1000, 1)
+        vu, vt = _num(_leer(dev / "mem_info_vram_used")), _num(_leer(dev / "mem_info_vram_total"))
+        gpus.append({"nombre": f"Gráfica {card.name[4:]}", "uso": uso, "temp": temp, "vram_usada": vu, "vram_total": vt})
+    return gpus
+
+
+_INTERNET = (("1.1.1.1", 443), ("8.8.8.8", 443), ("9.9.9.9", 443))
+
+
+def comprobar_internet(timeout: float = 3) -> tuple[bool, float | None]:
+    """¿Hay Internet? Y cuánto tarda en responder (milisegundos), sin ping (no hace falta ser administrador)."""
+    mejor = None
+    for host in _INTERNET:
+        t = time.perf_counter()
+        try:
+            with socket.create_connection(host, timeout=timeout):
+                ms = (time.perf_counter() - t) * 1000
+                mejor = ms if mejor is None else min(mejor, ms)
+                if ms < 60:
+                    break
+        except OSError:
+            continue
+    return mejor is not None, (round(mejor, 1) if mejor is not None else None)
+
+
+def medir_velocidad(bytes_: int = 10_000_000, timeout: float = 60) -> float | None:
+    """Velocidad de bajada en Mbit/s descargando un archivo de prueba (Cloudflare, gratis)."""
+    import urllib.request
+    try:
+        t = time.perf_counter()
+        n = 0
+        with urllib.request.urlopen(f"https://speed.cloudflare.com/__down?bytes={bytes_}", timeout=timeout) as r:
+            while True:
+                b = r.read(262144)
+                if not b:
+                    break
+                n += len(b)
+        dt = time.perf_counter() - t
+        return round(n * 8 / dt / 1e6, 1) if dt > 0 and n > 1_000_000 else None
+    except Exception:
+        return None
+
+
+def _hace_dias(ruta: Path, dias: int) -> bool:
+    try:
+        return time.time() - ruta.stat().st_mtime < dias * 86400
+    except OSError:
+        return False
 
 
 def _top(procs: list[dict], n: int = 12) -> list[dict]:
@@ -394,6 +549,8 @@ if($b){
   $o.bateria=@{ porcentaje=[double]$b.EstimatedChargeRemaining; cargando=[bool]$st.Charging; enchufado=[bool]$st.PowerOnline; minutos=$min;
     salud_pct=$(if($full -and $des){[math]::Round(100*$full/$des,1)}else{$null}); ciclos=$(if($cyc){[int]$cyc}else{$null}); modelo=$b.Name; estado=[string]$b.BatteryStatus }
 }
+$g=@(Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine|?{$_.Name -match 'engtype_3D'})
+if($g.Count){ $o.gpu_uso=[math]::Min(100,[double](($g|measure UtilizationPercentage -Sum).Sum)) }
 $u=(Get-CimInstance Win32_ComputerSystem).UserName
 $o.usuarios=@($(if($u){$u}))
 $o | ConvertTo-Json -Depth 5 -Compress
@@ -426,6 +583,24 @@ $o.antivirus=@{ nombre=$(if($av.Count){$av -join ', '}elseif($mp){'Microsoft Def
   firmas=$(if($mp.AntivirusSignatureLastUpdated){$mp.AntivirusSignatureLastUpdated.ToString('s')}else{$null}); aplica=$true }
 $ign='gupdate|edgeupdate|sppsvc|RemoteRegistry|MapsBroker|TrustedInstaller|wuauserv|BITS|tiledatamodelsvc|gpsvc|sedsvc|WbioSrvc|CDPSvc|ShellHWDetection|UsoSvc|DoSvc|clr_optimization|stisvc|Intel|GoogleUpdater|WMPNetworkSvc|edgeupdatem|NetTcpPortSharing|DiagTrack|RtkAudio|uhssvc|wscsvc|SysMain'
 $o.servicios_caidos=@(Get-CimInstance Win32_Service -Filter "StartMode='Auto' AND State<>'Running'"|?{$_.Name -notmatch $ign -and -not $_.DelayedAutoStart}|%{$_.DisplayName}|select -First 30)
+$fw=@(Get-NetFirewallProfile|%{@{perfil="$($_.Name)"; activo=[bool]$_.Enabled}})
+$o.cortafuegos=@{ activo=$(if($fw.Count){-not [bool]($fw|?{-not $_.activo})}else{$null}); apagados=@($fw|?{-not $_.activo}|%{$_.perfil}) }
+$bl=Get-BitLockerVolume -MountPoint $env:SystemDrive
+$o.cifrado=@{ que='BitLocker'; activo=$(if($bl){"$($bl.ProtectionStatus)" -eq 'On'}else{$null}) }
+$desde=(Get-Date).AddDays(-7)
+$rs=@(Get-WinEvent -FilterHashtable @{LogName='System'; Id=41,6008; StartTime=$desde} -MaxEvents 50)
+$bs=@(Get-WinEvent -FilterHashtable @{LogName='System'; ProviderName='Microsoft-Windows-WER-SystemErrorReporting'; Id=1001; StartTime=$desde} -MaxEvents 50)
+$o.fallos=@{ reinicios=[int]$rs.Count; pantallazos=[int]$bs.Count }
+$ap=@(Get-WinEvent -FilterHashtable @{LogName='Application'; Id=1000,1002; StartTime=$desde} -MaxEvents 300)
+$o.cuelgues=@($ap|%{ if($_.Properties.Count){"$($_.Properties[0].Value)"} }|?{$_}|group|sort Count -Desc|select -First 8|%{@{programa=$_.Name; veces=[int]$_.Count}})
+$lf=@(Get-WinEvent -FilterHashtable @{LogName='Security'; Id=4625; StartTime=(Get-Date).AddDays(-1)} -MaxEvents 1000)
+$o.accesos_fallidos=@{ ultimas_24h=[int]$lf.Count }
+$o.administradores=@(Get-LocalGroupMember -SID 'S-1-5-32-544'|%{"$($_.Name)"})
+$k='HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
+$pg=@(Get-ItemProperty $k|?{$_.DisplayName -and -not $_.SystemComponent}|sort DisplayName -Unique)
+$o.programas_total=$pg.Count
+$o.programas=@($pg|select -First 800|%{@{n="$($_.DisplayName)"; v="$($_.DisplayVersion)"; e="$($_.Publisher)"}})
+$o.inicio=@(Get-CimInstance Win32_StartupCommand|select -First 60|%{@{n="$($_.Name)"; donde="$($_.Location)"}})
 $rb=(Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired') -or (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending')
 $o.actualizaciones=@{ reinicio=[bool]$rb }
 $o | ConvertTo-Json -Depth 6 -Compress
@@ -459,12 +634,15 @@ class _Windows:
             d.setdefault(k, [])
         d["ventiladores"] = []
         d["procesos"] = _top(d.get("procesos") or [])
+        d["gpu"] = _gpus_nvidia() or ([{"nombre": "Gráfica", "uso": d["gpu_uso"]}] if d.get("gpu_uso") is not None else [])
+        d.pop("gpu_uso", None)
         return d
 
     def lento(self) -> dict:
-        d = self._ps(_PS_LENTO, 120)
-        if isinstance(d.get("discos_salud"), dict):
-            d["discos_salud"] = [d["discos_salud"]]
+        d = self._ps(_PS_LENTO, 180)
+        for k in ("discos_salud", "cuelgues", "administradores", "programas", "inicio"):
+            if isinstance(d.get(k), (dict, str)):
+                d[k] = [d[k]]
         # buscar actualizaciones tarda (a veces un minuto): como mucho cada 6 horas
         if time.time() - self.act["cuando"] > 6 * 3600:
             a = self._ps(_PS_ACTUALIZACIONES, 300)
@@ -610,6 +788,36 @@ class _Mac:
         fw = _run(["/usr/libexec/ApplicationFirewall/socketfilterfw", "--getglobalstate"], 10)
         d["actualizaciones"] = {"pendientes": self.act.get("pendientes"), "seguridad": None, "reinicio": False}
         d["antivirus"] = {"nombre": "XProtect (de Apple)", "activo": True, "aplica": False, "cortafuegos": "enabled" in fw.lower()}
+        d["cortafuegos"] = {"activo": "enabled" in fw.lower() if fw.strip() else None}
+        fv = _run(["fdesetup", "status"], 10)
+        d["cifrado"] = {"que": "FileVault", "activo": ("FileVault is On" in fv) if fv.strip() else None}
+        gm = _run(["dscl", ".", "-read", "/Groups/admin", "GroupMembership"], 10)
+        d["administradores"] = sorted(x for x in gm.replace("GroupMembership:", "").split() if x and x != "root")
+        import plistlib
+        progs = []
+        for app in sorted(Path("/Applications").glob("*.app"))[:600]:
+            v = ""
+            try:
+                v = str(plistlib.loads((app / "Contents" / "Info.plist").read_bytes()).get("CFBundleShortVersionString", ""))
+            except Exception:
+                pass
+            progs.append({"n": app.stem, "v": v})
+        d["programas"], d["programas_total"] = progs, len(progs)
+        ini = []
+        for f in list(Path("/Library/LaunchAgents").glob("*.plist")) + list(Path("/Users").glob("*/Library/LaunchAgents/*.plist")):
+            ini.append({"n": f.stem, "donde": "todos" if str(f).startswith("/Library") else f.parts[2]})
+        d["inicio"] = ini[:60]
+        informes = list(Path("/Library/Logs/DiagnosticReports").glob("*")) + \
+            list(Path("/Users").glob("*/Library/Logs/DiagnosticReports/*"))
+        recientes = [f for f in informes if _hace_dias(f, 7)]
+        d["fallos"] = {"reinicios": None, "pantallazos": len([f for f in recientes if f.suffix == ".panic" or
+                                                             f.name.startswith(("Kernel", "panic"))])}
+        cu: dict = {}
+        for f in recientes:
+            if f.suffix in (".crash", ".ips", ".hang") and not f.name.startswith(("Kernel", "panic")):
+                prog = re.split(r"[-_]\d{4}", f.stem)[0]
+                cu[prog] = cu.get(prog, 0) + 1
+        d["cuelgues"] = [{"programa": k, "veces": v} for k, v in sorted(cu.items(), key=lambda x: -x[1])[:8]]
         return d
 
 
@@ -618,8 +826,16 @@ class Monitor:
     """Una instancia por agente: guarda lo necesario para calcular velocidades entre una muestra y la siguiente."""
     LENTO_CADA = 600
 
+    INTERNET_CADA = 300
+    VELOCIDAD_CADA = 86400
+
     def __init__(self):
         self.imp = {"linux": _Linux, "windows": _Windows, "darwin": _Mac}.get(SISTEMA, _Linux)()
+        self.medir_velocidad = False        # lo pide el servidor (Ajustes → Funciones → Monitorización)
+        self.inet: list = []                # (t, ok, ms) de las últimas 24 h
+        self.ultimo_inet = 0.0
+        self.velocidad: dict = {}
+        self._inet_hilo = None
         self.ultimo_lento = 0.0
         self.lento_cache: dict = {}
         self._lock = threading.Lock()
@@ -633,7 +849,33 @@ class Monitor:
         except Exception as exc:  # nunca tumbar al agente por la monitorizacion
             self.lento_cache = {**self.lento_cache, "error": str(exc)[:200]}
 
+    def _internet(self):
+        ok, ms = comprobar_internet()
+        ahora = time.time()
+        self.inet = [x for x in self.inet if ahora - x[0] < 86400] + [(ahora, ok, ms)]
+        if ok and self.medir_velocidad and ahora - self.velocidad.get("t", 0) > self.VELOCIDAD_CADA:
+            v = medir_velocidad()
+            if v is not None:
+                self.velocidad = {"mbps": v, "t": ahora}
+
+    def resumen_internet(self) -> dict | None:
+        if not self.inet:
+            return None
+        oks = [x[2] for x in self.inet if x[1] and x[2] is not None]
+        cortes = sum(1 for a, b in zip(self.inet, self.inet[1:]) if a[1] and not b[1])
+        if self.inet and not self.inet[0][1]:
+            cortes += 1
+        oks.sort()
+        return {"ok": self.inet[-1][1], "ms": self.inet[-1][2], "ms_mediana": oks[len(oks) // 2] if oks else None,
+                "cortes_24h": cortes, "comprobaciones": len(self.inet),
+                "sin_internet_min": round(sum(1 for x in self.inet if not x[1]) * self.INTERNET_CADA / 60),
+                "velocidad_mbps": self.velocidad.get("mbps"), "velocidad_t": self.velocidad.get("t")}
+
     def muestra(self) -> dict:
+        if time.time() - self.ultimo_inet > self.INTERNET_CADA and not (self._inet_hilo and self._inet_hilo.is_alive()):
+            self.ultimo_inet = time.time()
+            self._inet_hilo = threading.Thread(target=self._internet, daemon=True)
+            self._inet_hilo.start()
         with self._lock:
             try:
                 d = self.imp.rapido()
@@ -648,6 +890,9 @@ class Monitor:
             self._lento_hilo.start()
         if self.lento_cache:
             d["lento"] = self.lento_cache
+        inet = self.resumen_internet()
+        if inet:
+            d["internet"] = inet
         return d
 
 

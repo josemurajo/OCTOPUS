@@ -197,14 +197,19 @@ FUNCIONES: list[dict] = [
      "explica": "Botón para encontrar los equipos de la red y protegerlos en grupo."},
     {"clave": "monitorizacion", "grupo": "equipos", "nivel": "basico", "defecto": False,
      "nombre": "Monitorización de equipos",
-     "explica": "Ver en directo el uso de cada equipo (procesador, memoria, discos, red, temperatura, batería, procesos) y la "
-                "salud de sus discos, con historial y avisos. Solo en los equipos donde se active (Monitorización → Activar). "
-                "Si el equipo lo usa un trabajador, hay que informarle antes (ver «Legal y privacidad»).",
+     "explica": "Ver en directo el uso de cada equipo (procesador, memoria, tarjeta gráfica, discos, red, temperatura, "
+                "batería, procesos) y la salud de sus discos, con historial y avisos: por qué va lento, pantallazos, "
+                "programas que se cuelgan, cortafuegos, cifrado, intentos de contraseña, administradores nuevos, piezas "
+                "cambiadas, programas instalados y si Internet va bien. Solo en los equipos donde se active "
+                "(Monitorización → Activar); el propio servidor de OCTOPUS se vigila siempre. Si el equipo lo usa un "
+                "trabajador, hay que informarle antes (ver «Legal y privacidad»).",
      "opciones": [("procesos", "Ver los programas abiertos", "eleccion", "si", "basico", "",
                    {"valores": [("si", "Sí (ayuda a ver qué está gastando el equipo)"), ("no", "No, nunca se guardan")]}),
                   ("usuarios", "Ver quién tiene la sesión iniciada", "eleccion", "no", "basico", "",
                    {"valores": [("no", "No, nunca se guarda (recomendado)"), ("si", "Sí")]}),
-                  ("dias", "Días que se guarda el historial", "int", 90, "experto", "", {"min": 7, "max": 365})]},
+                  ("dias", "Días que se guarda el historial", "int", 90, "experto", "", {"min": 7, "max": 365}),
+                  ("velocidad", "Medir la velocidad de Internet una vez al día", "eleccion", "si", "basico", "",
+                   {"valores": [("si", "Sí (gasta unos 10 MB al día por equipo)"), ("no", "No")]})]},
     {"clave": "usb_rescate", "grupo": "equipos", "nivel": "basico", "defecto": False, "en_pruebas": True,
      "nombre": "USB de rescate",
      "explica": "Un pendrive para cuando un ordenador ya no arranca: con un código del panel se trae sus copias y "

@@ -12,6 +12,16 @@ instalan versiones con esa firma. Lo más nuevo, arriba.
   de rescate, despliegue y entrar en el panel.
 - **Guía de todos los avisos**, con buscador: en el panel (Avisos → «Ver todos los avisos posibles») y en
   [SOLUCIONES.md](SOLUCIONES.md).
+- **Monitorización mucho más completa** (casa y empresa):
+  - **«¿Por qué va lento?»** explicado en frases («Chrome está usando 6 GB de memoria», «lleva 40 días sin reiniciarse»…).
+  - **Tarjeta gráfica:** uso, temperatura y memoria (NVIDIA en todos los sistemas; AMD/Intel en Linux; uso en Windows).
+  - **Estabilidad:** pantallazos, apagados de golpe y programas que se cuelgan.
+  - **Seguridad:** cortafuegos apagado, portátil sin cifrar, muchos intentos de contraseña, administradores nuevos y
+    piezas cambiadas (con botón «Es correcto»).
+  - **Internet:** si funciona, cuánto tarda, cortes de las últimas 24 h y velocidad una vez al día.
+  - **Programas instalados** (con buscador) y **programas que se abren solos al encender**.
+  - **El propio servidor de OCTOPUS también se monitoriza**, sin instalar nada.
+  - 10 avisos nuevos, cada uno con por qué suele pasar y cómo se arregla.
 - README con todo lo de la 3.1.0.
 
 ## 3.1.0 - 2026-11-15 (rescate, arranque por red y despliegue)

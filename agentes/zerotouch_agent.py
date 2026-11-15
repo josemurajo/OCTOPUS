@@ -1899,6 +1899,8 @@ def monitor_loop() -> None:
                 datos = {"t": time.time(), "inactivo": True}
             r = _https(cfg, "/api/agente/metricas", datos, timeout=20)
             activa = bool(r.get("activa"))
+            if mon is not None:
+                mon.medir_velocidad = bool(r.get("velocidad"))
             espera = max(2, min(600, int(r.get("intervalo") or (60 if activa else 300))))
             if nuevo:     # recien activada: la segunda muestra enseguida (las velocidades necesitan dos)
                 espera = 2

@@ -52,6 +52,9 @@ jobs:
       - name: Copias de máquinas virtuales (hipervisores simulados, copias y recuperación de verdad con restic)
         if: matrix.so != 'windows'
         run: python tests/ci/prueba_vms.py
+      - name: Monitorización en el panel (avisos nuevos, por qué va lento, el propio servidor)
+        if: runner.os == 'Linux'
+        run: python tests/ci/prueba_monitor_panel.py
       - name: Imagen de disco (destinos y avisos; la de verdad va en el trabajo de Windows)
         run: python tests/ci/prueba_imagen.py
 

@@ -377,6 +377,154 @@ En el panel, este aviso tiene el botón **«Solucionar»**.
 1. En el equipo: Seguridad de Windows → Protección antivirus → activar «Protección en tiempo real».
 2. Si lo ha desactivado un programa que no conoces, pide ayuda.
 
+### OCT-MON-10 · La tarjeta gráfica de [equipo] se está calentando mucho
+
+**Qué pasa / por qué importa:** El calor mantenido hace que los juegos y programas vayan a tirones y acorta la vida de la tarjeta.
+
+**Por qué suele pasar:**
+
+- Polvo en los ventiladores, poca ventilación en la caja o juegos muy exigentes durante horas.
+
+**Cómo se arregla:**
+
+1. Limpia el polvo de la tarjeta y de los ventiladores de la caja.
+2. Comprueba que la caja tiene aire: que no esté pegada a la pared ni encerrada en un mueble.
+3. Si estás jugando, baja un poco los gráficos o limita los FPS en el juego.
+
+### OCT-MON-11 · [equipo] se ha apagado de golpe o ha tenido pantallazos
+
+**Qué pasa / por qué importa:** Cada apagado de golpe puede dañar archivos abiertos, y suele ser señal de un problema que irá a más.
+
+**Por qué suele pasar:**
+
+- Cortes de luz o apagados del botón.
+- Controladores (sobre todo de la gráfica) con fallos.
+- Calor, memoria o fuente de alimentación con problemas.
+
+**Cómo se arregla:**
+
+1. Si coincide con un corte de luz o con alguien apagándolo del botón, no hay que hacer nada.
+2. Si no: instala las actualizaciones de Windows y de los controladores (sobre todo los de la gráfica).
+3. Si sigue pasando, revisa la temperatura (en esta misma pantalla) y la memoria del equipo con un técnico.
+
+### OCT-MON-12 · Un programa de [equipo] se cierra o se cuelga muy a menudo
+
+**Qué pasa / por qué importa:** Se pierde trabajo cada vez, y a veces es el aviso de que algo está dañado.
+
+**Por qué suele pasar:**
+
+- Una versión del programa con fallos, un complemento que no va bien o archivos del programa dañados.
+
+**Cómo se arregla:**
+
+1. Actualiza ese programa a la última versión.
+2. Si sigue igual, desinstálalo y vuelve a instalarlo.
+
+### OCT-MON-13 · El cortafuegos de [equipo] está apagado
+
+**Qué pasa / por qué importa:** El cortafuegos impide que otros equipos de la red entren en este. Apagado, es mucho más fácil atacarlo.
+
+**Por qué suele pasar:**
+
+- Alguien lo apagó para que funcionara un programa o un juego en red.
+- Otro programa de seguridad lo sustituyó.
+- Un virus lo apagó.
+
+**Cómo se arregla:**
+
+1. Windows: Seguridad de Windows → Firewall y protección de red → activa los tres perfiles.
+2. Mac: Ajustes del Sistema → Red → Cortafuegos → activar.
+3. Linux: sudo ufw enable (o el cortafuegos que use tu sistema).
+4. Si lo apagó un programa que no conoces, pide ayuda.
+
+### OCT-MON-14 · El portátil [equipo] no tiene el disco cifrado
+
+**Qué pasa / por qué importa:** Si lo pierdes o te lo roban, cualquiera puede sacar el disco y leer todos los archivos.
+
+**Por qué suele pasar:**
+
+- El cifrado no viene activado de fábrica en muchos portátiles.
+- Windows Home no trae BitLocker.
+
+**Cómo se arregla:**
+
+1. Windows Pro: busca «BitLocker» → «Activar BitLocker». Guarda la clave de recuperación fuera del portátil.
+2. Windows Home: Configuración → Privacidad y seguridad → «Cifrado del dispositivo» (si aparece).
+3. Mac: Ajustes del Sistema → Privacidad y seguridad → FileVault → activar.
+4. Linux: el cifrado se elige al instalar el sistema; si no lo tiene, pide ayuda.
+
+### OCT-MON-15 · Muchos intentos de contraseña fallidos en [equipo]
+
+**Qué pasa / por qué importa:** Puede ser alguien probando contraseñas para entrar (a mano o con un programa).
+
+**Por qué suele pasar:**
+
+- Alguien probando contraseñas (a mano o con un programa, sobre todo si el equipo se ve desde Internet).
+- Un programa o una unidad de red con una contraseña vieja guardada.
+
+**Cómo se arregla:**
+
+1. Pregunta a quien usa el equipo si se ha equivocado muchas veces (o si un programa guarda una contraseña vieja).
+2. Si no: cambia la contraseña de ese usuario por una larga, y revisa si el equipo está abierto a Internet.
+
+### OCT-MON-16 · Hay administradores nuevos en [equipo]
+
+**Qué pasa / por qué importa:** Un administrador puede hacer de todo en el equipo. Los atacantes crean uno para quedarse dentro.
+
+**Por qué suele pasar:**
+
+- Alguien de la empresa dio permisos de administrador a otra persona.
+- Un programa de instalación creó una cuenta.
+- Un atacante creó una cuenta para quedarse dentro.
+
+**Cómo se arregla:**
+
+1. Si lo has creado tú o alguien de confianza, pulsa «Es correcto» en la monitorización de ese equipo.
+2. Si no sabes quién es: quítale los permisos (Windows: Administración de equipos → Usuarios y grupos) y avisa a un técnico.
+
+### OCT-MON-17 · [equipo] lleva semanas sin reiniciarse
+
+**Qué pasa / por qué importa:** Muchas actualizaciones de seguridad no se aplican hasta reiniciar, y el equipo se va volviendo lento.
+
+**Por qué suele pasar:**
+
+- Se suspende o se bloquea en vez de apagarlo.
+- Las actualizaciones pidiendo reinicio se van aplazando.
+
+**Cómo se arregla:**
+
+1. Reinícialo cuando no moleste (guarda antes lo que tengas abierto).
+
+### OCT-MON-18 · Han cambiado piezas de [equipo]
+
+**Qué pasa / por qué importa:** Si nadie lo ha hecho a propósito, puede que alguien haya quitado memoria o un disco (con tus datos).
+
+**Por qué suele pasar:**
+
+- Se amplió la memoria, se cambió un disco o se reparó el equipo.
+- Alguien se llevó una pieza.
+
+**Cómo se arregla:**
+
+1. Si se ha ampliado o reparado el equipo, pulsa «Es correcto» en la monitorización de ese equipo.
+2. Si no: revisa el equipo por dentro y pregunta quién lo ha tocado.
+
+### OCT-MON-19 · Internet va mal en [equipo]
+
+**Qué pasa / por qué importa:** Con cortes o lentitud fallan las webs, las videollamadas, los juegos en línea y las copias.
+
+**Por qué suele pasar:**
+
+- Wifi lejos del router o con interferencias.
+- El router necesita reiniciarse.
+- Un problema de la compañía de Internet.
+
+**Cómo se arregla:**
+
+1. Si va por wifi, prueba más cerca del router o con cable.
+2. Reinicia el router (apagar, esperar 30 segundos y encender).
+3. Si pasa en todos los equipos a la vez, llama a tu compañía de Internet con estos datos.
+
 ## Ataques
 
 ### OCT-SEN-01 · Alguien ha tocado un archivo señuelo en [equipo]

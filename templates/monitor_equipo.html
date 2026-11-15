@@ -62,13 +62,18 @@ table.procs .mini > i { display: block; height: 100%; width: 0; background: var(
 </style>
 
 <div class="mon" id="mon">
-  <p class="small"><a href="{{ url_for('monitorizacion') }}">← Monitorización</a> · <a href="{{ url_for('equipo', system_id=s.id) }}">Ficha de {{ s.hostname }}</a></p>
+  <p class="small"><a href="{{ url_for('monitorizacion') }}">← Monitorización</a>{% if not s.servidor %} · <a href="{{ url_for('equipo', system_id=s.id) }}">Ficha de {{ s.hostname }}</a>{% else %} · es el ordenador donde está instalado OCTOPUS{% endif %}</p>
   <div class="mon-cab">
     <div><h1>{{ s.hostname }}</h1>
       <div class="muted small" id="m-cab">Esperando los primeros datos del equipo…</div></div>
     <div class="estado"><span class="punto" id="m-punto"></span><span id="m-estado">conectando…</span></div>
   </div>
   <div id="m-avisos"></div>
+  <div class="card" id="explica-card" style="display:none"><h2>¿Por qué va lento? <small>lo que vemos ahora mismo</small></h2>
+    <ul id="explica" style="margin:0"></ul></div>
+  <form method="post" action="{{ url_for('monitorizacion_correcto', system_id=s.id) }}" id="correcto" style="display:none; margin:-6px 0 14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn btn-small" type="submit">Es correcto: los administradores y las piezas de ahora son los buenos</button></form>
 
   <div class="tiles" id="m-tiles">
     <div class="tile"><div class="et">Procesador <span id="t-cpu-mhz"></span></div><div class="val" id="t-cpu">–</div><div class="sub" id="t-cpu-sub">&nbsp;</div><canvas id="g-cpu"></canvas></div>
@@ -76,6 +81,7 @@ table.procs .mini > i { display: block; height: 100%; width: 0; background: var(
     <div class="tile"><div class="et" title="Lo que lee y escribe en disco por segundo">Disco</div><div class="val" id="t-io">–</div><div class="sub" id="t-io-sub">&nbsp;</div><canvas id="g-io"></canvas></div>
     <div class="tile"><div class="et" title="Lo que baja (↓) y sube (↑) por segundo">Red <span>↓ bajada</span></div><div class="val" id="t-red">–</div><div class="sub" id="t-red-sub">&nbsp;</div><canvas id="g-red"></canvas></div>
     <div class="tile"><div class="et" title="La temperatura más alta del equipo">Temperatura</div><div class="val" id="t-temp">–</div><div class="sub" id="t-temp-sub">&nbsp;</div><canvas id="g-temp"></canvas></div>
+    <div class="tile" id="t-gpu-tile" style="display:none"><div class="et">Tarjeta gráfica <span id="t-gpu-n"></span></div><div class="val" id="t-gpu">–</div><div class="sub" id="t-gpu-sub">&nbsp;</div><canvas id="g-gpu"></canvas></div>
     <div class="tile"><div class="et">Batería</div><div class="val" id="t-bat">–</div><div class="sub" id="t-bat-sub">&nbsp;</div>
       <div class="barra" style="margin-top:auto"><i id="t-bat-b"></i></div></div>
   </div>
@@ -110,8 +116,20 @@ table.procs .mini > i { display: block; height: 100%; width: 0; background: var(
   </div>
 
   <div class="cols">
+    <div class="card"><h2>Estabilidad <small>últimos 7 días</small></h2><dl class="kv2" id="est"><dt class="muted">–</dt><dd></dd></dl></div>
+    <div class="card"><h2>Internet</h2><dl class="kv2" id="inet"><dt class="muted">Se comprueba cada 5 minutos…</dt><dd></dd></dl></div>
+  </div>
+
+  <div class="cols">
     <div class="card"><h2>Seguridad y mantenimiento</h2><dl class="kv2" id="seg"><dt class="muted">–</dt><dd></dd></dl></div>
     <div class="card"><h2>El equipo</h2><dl class="kv2" id="inv"><dt class="muted">–</dt><dd></dd></dl></div>
+  </div>
+
+  <div class="cols">
+    <div class="card"><h2>Se abren solos al encender <small id="ini-n"></small></h2><div id="ini" class="small"><span class="muted">–</span></div></div>
+    <div class="card"><h2>Programas instalados <small id="prog-n"></small></h2>
+      <input id="prog-q" placeholder="Buscar un programa…" aria-label="Buscar un programa" style="margin-bottom:8px">
+      <div id="prog" class="small" style="max-height:260px; overflow:auto"><span class="muted">–</span></div></div>
   </div>
 
   <div class="card"><h2>Historial <span class="rangos" id="rangos">
@@ -123,6 +141,7 @@ table.procs .mini > i { display: block; height: 100%; width: 0; background: var(
       <div class="grafica"><div class="et">Red (bajada y subida)<span id="h-red"></span></div><canvas id="h-g-red"></canvas></div>
       <div class="grafica"><div class="et">Disco más lleno (%)<span id="h-disco"></span></div><canvas id="h-g-disco"></canvas></div>
       <div class="grafica"><div class="et">Batería (%)<span id="h-bat"></span></div><canvas id="h-g-bat"></canvas></div>
+      <div class="grafica" id="h-gpu-box" style="display:none"><div class="et">Tarjeta gráfica (uso % y °C)<span id="h-gpu"></span></div><canvas id="h-g-gpu"></canvas></div>
     </div>
     <p class="small muted" style="margin-top:8px">Cada punto es el máximo de ese rato, para que no se escapen los picos.</p></div>
 </div>
@@ -155,7 +174,7 @@ table.procs .mini > i { display: block; height: 100%; width: 0; background: var(
   function barra(i, p, a, b) { ancho(i, p); const n = nivel(p, a, b); cls(i.parentNode, 'barra ' + n); }
 
   // ---------------------------------------------------------------- mini graficas (canvas: redibujar no mueve nada)
-  const serie = { cpu: [], ram: [], io: [], red: [], red2: [], temp: [] };
+  const serie = { cpu: [], ram: [], io: [], red: [], red2: [], temp: [], gpu: [] };
   const MAXP = 60;
   function lienzo(c) { const r = window.devicePixelRatio || 1, w = c.clientWidth, h = c.clientHeight;
     if (c.width !== Math.round(w * r) || c.height !== Math.round(h * r)) { c.width = Math.round(w * r); c.height = Math.round(h * r); }
@@ -326,9 +345,64 @@ table.procs .mini > i { display: block; height: 100%; width: 0; background: var(
         .filter(x => x[1] != null && x[1] !== '' && x[1] !== 'undefined');
       const h = f.map(x => `<dt>${x[0]}</dt><dd>${esc(String(x[1]))}</dd>`).join(''); const e = $('inv'); if (e.dataset.h !== h) { e.innerHTML = h; e.dataset.h = h; }
     }
+    extra(r, d, L);
     if (d.procesos) { procesos(d.procesos); txt('pr-n', d.n_procesos || d.procesos.length); }
     else if (d.procesos_ocultos && !$('pr-body').dataset.oculto) { $('pr-body').dataset.oculto = 1;
       $('pr-body').innerHTML = '<tr><td colspan="4" class="muted small">No se guardan los programas abiertos (Ajustes → Funciones → Monitorización).</td></tr>'; }
+  }
+  // ---------------------------------------------------------------- lo nuevo: gráfica, por qué va lento, estabilidad, Internet, programas
+  function poner(id, h) { const e = $(id); if (e && e.dataset.h !== h) { e.innerHTML = h; e.dataset.h = h; } }
+  let progs = [];
+  $('prog-q').addEventListener('input', () => pintarProgs());
+  function pintarProgs() { const q = $('prog-q').value.trim().toLowerCase();
+    const l = progs.filter(p => !q || (p.n + ' ' + (p.e || '')).toLowerCase().includes(q)).slice(0, 300);
+    poner('prog', l.length ? l.map(p => `<div style="display:flex; justify-content:space-between; gap:8px; border-top:1px solid var(--line); padding:3px 0"><span>${esc(p.n)}</span><span class="muted">${esc(p.v || '')}</span></div>`).join('') : '<span class="muted">Nada con ese nombre.</span>'); }
+  function extra(r, d, L) {
+    // por qué va lento
+    const ex = r.explica || []; $('explica-card').style.display = ex.length ? '' : 'none';
+    poner('explica', ex.map(x => `<li>${esc(x)}</li>`).join(''));
+    // «es correcto» si hay aviso de administradores nuevos o piezas cambiadas
+    $('correcto').style.display = (r.avisos || []).some(a => a.codigo === 'OCT-MON-16' || a.codigo === 'OCT-MON-18') ? '' : 'none';
+    // tarjeta gráfica
+    const g = (d.gpu || [])[0];
+    $('t-gpu-tile').style.display = g ? '' : 'none';
+    if (g) { if (g.uso != null) { txt('t-gpu', pct(g.uso)); cls('t-gpu', 'val ' + nivel(g.uso, 90, 101)); empuja('gpu', g.uso); }
+      txt('t-gpu-n', g.temp != null ? nf0.format(g.temp) + ' °C' : '');
+      txt('t-gpu-sub', [g.nombre, g.vram_total ? 'memoria ' + bytes(g.vram_usada) + ' de ' + bytes(g.vram_total) : ''].filter(Boolean).join(' · '));
+      spark('g-gpu', serie.gpu, 100, '#b5179e'); }
+    // estabilidad
+    const fa = L.fallos || {}, cu = L.cuelgues || [];
+    if (L.inventario) poner('est', [
+      ['Pantallazos', fa.pantallazos == null ? 'No se puede saber en este sistema' : fa.pantallazos ? `<span class="chip bad">${fa.pantallazos}</span>` : 'Ninguno'],
+      ['Apagados de golpe', fa.reinicios == null ? 'No se puede saber en este sistema' : fa.reinicios ? `<span class="chip warn">${fa.reinicios}</span>` : 'Ninguno'],
+      ['Programas que se cuelgan', cu.length ? cu.slice(0, 5).map(x => `${esc(x.programa)} <span class="muted">(${x.veces})</span>`).join(', ') : 'Ninguno'],
+      ['Sin reiniciar', d.uptime_s != null ? dur(d.uptime_s) + (d.uptime_s > 30 * 86400 ? ' <span class="chip warn">reinícialo</span>' : '') : '–']
+    ].map(f => `<dt>${f[0]}</dt><dd>${f[1]}</dd>`).join(''));
+    // internet
+    const i = d.internet;
+    if (i) poner('inet', [
+      ['Ahora', i.ok ? '<span class="chip ok">Funciona</span>' : '<span class="chip bad">Sin Internet</span>'],
+      ['Tarda en responder', i.ms_mediana != null ? nf0.format(i.ms_mediana) + ' ms' + (i.ms_mediana >= 200 ? ' <span class="chip warn">lento</span>' : i.ms_mediana < 40 ? ' (muy bien)' : '') : '–'],
+      ['Cortes (24 h)', i.cortes_24h ? `<span class="chip ${i.cortes_24h >= 3 ? 'bad' : 'warn'}">${i.cortes_24h}</span>` + (i.sin_internet_min ? ` · unos ${i.sin_internet_min} min sin Internet` : '') : 'Ninguno'],
+      ['Velocidad de bajada', i.velocidad_mbps != null ? nf0.format(i.velocidad_mbps) + ' Mbit/s <span class="muted">(medida ' + dur(r.ahora - i.velocidad_t) + ' antes)</span>' : 'Se mide una vez al día']
+    ].map(f => `<dt>${f[0]}</dt><dd>${f[1]}</dd>`).join(''));
+    // programas al encender y programas instalados
+    if (L.inventario) { const ini = L.inicio || []; txt('ini-n', ini.length ? ini.length + ' programas' : '');
+      poner('ini', ini.length ? ini.map(x => `<div style="border-top:1px solid var(--line); padding:3px 0">${esc(x.n)} <span class="muted">${esc(x.donde || '')}</span></div>`).join('') +
+        (ini.length >= 15 ? '<p class="muted" style="margin-top:6px">Son muchos: quitar los que no hagan falta hace que encienda y vaya más rápido (Windows: Administrador de tareas → Inicio).</p>' : '')
+        : '<span class="muted">Ninguno (o este sistema no lo dice).</span>');
+      const p = L.programas || []; if (p.length !== progs.length) { progs = p; pintarProgs(); }
+      txt('prog-n', L.programas_total ? L.programas_total + ' programas' : ''); }
+    // seguridad: lo nuevo, al final de su tarjeta
+    if (L.inventario) { const fw = L.cortafuegos || {}, ci = L.cifrado || {}, af = L.accesos_fallidos, adm = L.administradores;
+      const mas = [
+        ['Cortafuegos', fw.activo == null ? null : fw.activo ? 'Activado' : `<span class="chip bad">Apagado</span> ${esc((fw.apagados || []).join(', '))}`],
+        ['Disco cifrado', ci.activo == null ? null : ci.activo ? `Sí (${esc(ci.que || '')})` : `<span class="chip warn">No</span> ${esc(ci.que || '')}`],
+        ['Contraseñas mal (24 h)', af ? (af.ultimas_24h >= 20 ? `<span class="chip bad">${af.ultimas_24h}</span>` : af.ultimas_24h) : null],
+        ['Administradores', adm ? esc(adm.join(', ') || 'ninguno') : null]].filter(f => f[1] != null);
+      const e = $('seg'); const h = mas.map(f => `<dt>${f[0]}</dt><dd>${f[1]}</dd>`).join('');
+      if (e.dataset.mas !== h || (h && !e.querySelector('[data-mas]'))) { e.querySelectorAll('[data-mas]').forEach(x => x.remove());
+        e.insertAdjacentHTML('beforeend', h.replace(/<dt>/g, '<dt data-mas="1">').replace(/<dd>/g, '<dd data-mas="1">')); e.dataset.mas = h; } }
   }
   function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]); }
 
@@ -366,6 +440,10 @@ table.procs .mini > i { display: block; height: 100%; width: 0; background: var(
     grafica('h-g-red', ts, hh.rx, C.accent, 0, hh.tx, '#e07b39', vel); txt('h-red', maxv(hh.rx) != null ? 'máx. ↓' + vel(maxv(hh.rx)) : 'sin datos');
     grafica('h-g-disco', ts, hh.disco, '#0f8b8d', 100); txt('h-disco', ult(hh.disco) != null ? 'ahora ' + pct(ult(hh.disco)) : 'sin datos');
     grafica('h-g-bat', ts, hh.bateria, C.ok, 100); txt('h-bat', ult(hh.bateria) != null ? 'ahora ' + pct(ult(hh.bateria)) : 'sin batería');
+    const hayGpu = (hh.gpu || []).some(v => v != null) || (hh.gtemp || []).some(v => v != null);
+    $('h-gpu-box').style.display = hayGpu ? '' : 'none';
+    if (hayGpu) { grafica('h-g-gpu', ts, hh.gpu || [], '#b5179e', 100, hh.gtemp || [], C.bad);
+      txt('h-gpu', maxv(hh.gtemp || []) != null ? 'máx. ' + nf0.format(maxv(hh.gtemp)) + ' °C' : (maxv(hh.gpu || []) != null ? 'máx. ' + pct(maxv(hh.gpu)) : '')); }
   }
 
   // ---------------------------------------------------------------- bucle (se para si la pestaña no se ve)

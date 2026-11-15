@@ -1586,7 +1586,10 @@ def _avisos(lista):
             avisos.append(_aviso('OCT-EQ-06', nombre, sid, sol))
     try:   # monitorización (solo equipos con ella activada)
         for m in _mon.avisos():
-            avisos.append(_aviso(m['codigo'], m['hostname'], m['system_id'], sol, detalle=m['detalle']))
+            a_m = _aviso(m['codigo'], m['hostname'], m['system_id'], sol, detalle=m['detalle'])
+            if m['system_id'] == _mon.SERVIDOR:      # el propio servidor no tiene ficha: va a su monitorización
+                a_m['enlace'] = url_for('monitorizacion_equipo', system_id=_mon.SERVIDOR)
+            avisos.append(a_m)
     except Exception:
         pass
     # Avisos generales (no de un equipo concreto): id=None
@@ -3257,7 +3260,70 @@ def api_agente_metricas():
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({'error': 'datos no validos'}), 400
-    return jsonify(_mon.recibir(row['id'], data))
+    r = _mon.recibir(row['id'], data)
+    r['velocidad'] = _velocidad_internet()
+    return jsonify(r)
+
+
+def _velocidad_internet():
+    try:
+        return _fun.opcion('monitorizacion', 'velocidad') == 'si'
+    except Exception:
+        return False
+
+
+# ------------------------------------------------------------------ Monitorización del propio servidor (sin agente)
+_srv_mon = {'iniciado': False, 'mon': None}
+_srv_mon_lock = threading.Lock()
+
+
+def _servidor_monitor_bucle():
+    """El servidor de OCTOPUS también se vigila (system_id 0): mismo recolector que los agentes, desde aquí.
+    En Docker ve el procesador, la memoria y la temperatura del ordenador, y el disco donde están las copias."""
+    if os.path.join(BASE_DIR, 'agentes') not in sys.path:
+        sys.path.append(os.path.join(BASE_DIR, 'agentes'))
+    try:
+        import octopus_monitor
+    except Exception:
+        return
+    while True:
+        time.sleep(_servidor_monitor_una_vez(octopus_monitor))
+
+
+def _servidor_monitor_una_vez(octopus_monitor):
+    """Una muestra del propio servidor. Devuelve cuántos segundos esperar a la siguiente."""
+    espera = 60
+    try:
+        if _fun.activa('monitorizacion'):
+            if _mon.estado(_mon.SERVIDOR) == 'desinstalada':
+                _mon.activar(_mon.SERVIDOR, True, 'automático (es el propio servidor)')
+            if _mon.activa(_mon.SERVIDOR):
+                _srv_mon['mon'] = _srv_mon['mon'] or octopus_monitor.Monitor()
+                _srv_mon['mon'].medir_velocidad = _velocidad_internet()
+                r = _mon.recibir(_mon.SERVIDOR, _srv_mon['mon'].muestra())
+                espera = max(2, int(r.get('intervalo') or 60))
+        else:
+            _srv_mon['mon'] = None
+    except Exception:
+        espera = 120
+    return espera
+
+
+@app.before_request
+def _iniciar_monitor_servidor():
+    if _srv_mon['iniciado'] or os.environ.get('OCTOPUS_MONITOR_SERVIDOR', 'si').lower() in ('no', '0', 'false'):
+        return
+    with _srv_mon_lock:
+        if not _srv_mon['iniciado']:
+            _srv_mon['iniciado'] = True
+            threading.Thread(target=_servidor_monitor_bucle, daemon=True, name='monitor-servidor').start()
+
+
+def _fila_monitor(system_id):
+    """El equipo (o el propio servidor, id 0) para las pantallas de monitorización."""
+    if system_id == _mon.SERVIDOR:
+        return {'id': 0, 'hostname': _mon.NOMBRE_SERVIDOR, 'os_family': '', 'servidor': True}
+    return _get_system(system_id)
 
 
 # ------------------------------------------------------------------ Monitorización
@@ -3273,8 +3339,9 @@ def monitorizacion():
         return render_template('monitorizacion.html', apagada=True, equipos=[], sin=[], pausados=[], avisos=[])
     est = _mon.estados()
     equipos = _monitorizables()
+    servidor = [_fila_monitor(_mon.SERVIDOR)] if est.get(_mon.SERVIDOR) == 'activa' else []
     return render_template('monitorizacion.html', apagada=False,
-                           equipos=[e for e in equipos if est.get(e['id']) == 'activa'],
+                           equipos=servidor + [e for e in equipos if est.get(e['id']) == 'activa'],
                            pausados=[e for e in equipos if est.get(e['id']) == 'pausada'],
                            sin=[e for e in equipos if e['id'] not in est], avisos=_mon.avisos())
 
@@ -3340,7 +3407,7 @@ def monitorizacion_funcion():
 @app.route('/monitorizacion/<int:system_id>')
 @login_required
 def monitorizacion_equipo(system_id):
-    row = _get_system(system_id)
+    row = _fila_monitor(system_id)
     if not row or not _fun.activa('monitorizacion'):
         return redirect(url_for('monitorizacion'))
     if not _mon.activa(system_id):
@@ -3358,11 +3425,26 @@ def api_monitor(system_id):
         return jsonify({'error': 'no activa'}), 404
     _mon.mirar(system_id)
     d = _mon.ultimo(system_id) or {}
-    out = {'datos': d, 'ahora': datetime.now().timestamp(),
-           'avisos': [_aviso(a['codigo'], None, system_id, None, detalle=a['detalle']) for a in _mon.avisos(system_id)]}
+    out = {'datos': d, 'ahora': datetime.now().timestamp(), 'explica': _mon.explicar(d),
+           'avisos': [_aviso(a['codigo'], a['hostname'], system_id, None, detalle=a['detalle']) for a in _mon.avisos(system_id)]}
     if request.args.get('horas'):
         out['historial'] = _mon.historial(system_id, min(24 * 90, max(0.25, request.args.get('horas', type=float) or 1)))
     return jsonify(out)
+
+
+@app.route('/monitorizacion/<int:system_id>/correcto', methods=['POST'])
+@login_required
+@role_required('admin', 'supremo')
+def monitorizacion_correcto(system_id):
+    """«Es correcto»: los administradores y las piezas que tiene ahora el equipo son las buenas."""
+    row = _fila_monitor(system_id)
+    if not row:
+        return redirect(url_for('monitorizacion'))
+    _mon.aceptar_cambios(system_id)
+    log_audit(session['user_id'], 'MONITOR_CORRECTO', f'{row["hostname"]}: administradores y piezas dadas por buenas',
+              request.remote_addr)
+    flash(f'Hecho: lo que tiene ahora {row["hostname"]} es lo normal. Se avisará si vuelve a cambiar.', 'success')
+    return redirect(url_for('monitorizacion_equipo', system_id=system_id))
 
 
 @app.route('/api/monitor/resumen')

@@ -13,7 +13,12 @@ OCTOPUS - Monitorizacion de equipos (servidor): guarda lo que mandan los agentes
   - Mientras alguien mira la pantalla de un equipo, el agente manda cada 3 segundos; si no, cada minuto.
   - Historial: un punto por minuto durante 2 dias y un punto cada 15 minutos durante 90 dias.
   - Avisos (con codigo y que hacer): disco que falla o muy gastado, disco casi lleno, temperatura alta mantenida,
-    bateria muy gastada, memoria o procesador al limite mucho rato, equipo que ya no manda datos.
+    bateria muy gastada, memoria o procesador al limite mucho rato, equipo que ya no manda datos, grafica caliente,
+    pantallazos/reinicios inesperados, programas que se cuelgan, cortafuegos apagado, portatil sin cifrar, muchos
+    intentos de contraseña, administradores nuevos, piezas cambiadas, semanas sin reiniciar e Internet que falla.
+  - El propio servidor de OCTOPUS se monitoriza tambien (system_id 0, «Servidor OCTOPUS»), sin agente: lo recoge el
+    panel (lib/admin_panel.py: _servidor_monitor_bucle).
+  - explicar(): «¿por qué va lento?» en frases sencillas.
 """
 from __future__ import annotations
 
@@ -22,6 +27,8 @@ import sqlite3
 import threading
 import time
 
+SERVIDOR = 0                   # el propio servidor de OCTOPUS (no está en la tabla de equipos)
+NOMBRE_SERVIDOR = "Servidor OCTOPUS"
 INTERVALO_VIVO = 3
 INTERVALO_NORMAL = 60
 VIVO_DURA = 90                 # segundos que dura el «en vivo» tras la ultima vez que alguien miro
@@ -43,7 +50,12 @@ def init(db_file: str) -> None:
                                                  PRIMARY KEY (system_id, nivel, t));
         CREATE TABLE IF NOT EXISTS monitor_avisos (system_id INTEGER, codigo TEXT, detalle TEXT, desde REAL, visto REAL,
                                                    PRIMARY KEY (system_id, codigo));
+        CREATE TABLE IF NOT EXISTS monitor_base (system_id INTEGER, clave TEXT, valor TEXT, PRIMARY KEY (system_id, clave));
         """)
+        cols = {f[1] for f in c.execute("PRAGMA table_info(monitor_hist)")}
+        for col in ("gpu", "gtemp"):
+            if col not in cols:
+                c.execute(f"ALTER TABLE monitor_hist ADD COLUMN {col} REAL")
 
 
 def _db():
@@ -83,7 +95,7 @@ def estados() -> dict[int, str]:
 def desinstalar(system_id: int) -> None:
     """Quita la monitorización de este equipo y BORRA todo lo que se había guardado de él."""
     with _db() as c:
-        for t in ("monitor_equipos", "monitor_ultimo", "monitor_hist", "monitor_avisos"):
+        for t in ("monitor_equipos", "monitor_ultimo", "monitor_hist", "monitor_avisos", "monitor_base"):
             c.execute(f"DELETE FROM {t} WHERE system_id = ?", (system_id,))
     with _lock:
         _vivo.pop(system_id, None)
@@ -118,7 +130,9 @@ def _resumen(d: dict) -> dict:
             "temp": max(temps) if temps else None,
             "rx": (d.get("red") or {}).get("rx_bs"), "tx": (d.get("red") or {}).get("tx_bs"),
             "io": (io.get("lectura_bs") or 0) + (io.get("escritura_bs") or 0) + (io.get("total_bs") or 0) if io else None,
-            "bateria": (d.get("bateria") or {}).get("porcentaje")}
+            "bateria": (d.get("bateria") or {}).get("porcentaje"),
+            "gpu": max((g["uso"] for g in d.get("gpu") or [] if isinstance(g.get("uso"), (int, float))), default=None),
+            "gtemp": max((g["temp"] for g in d.get("gpu") or [] if isinstance(g.get("temp"), (int, float))), default=None)}
 
 
 def _privacidad() -> tuple[bool, bool, int]:
@@ -168,8 +182,8 @@ def recibir(system_id: int, d: dict) -> dict:
                 c.execute(f"UPDATE monitor_hist SET {', '.join(k + ' = ?' for k in vals)} WHERE system_id = ? AND nivel = ? AND t = ?",
                           (*vals.values(), system_id, nivel, t))
             else:
-                c.execute("INSERT INTO monitor_hist (system_id, t, nivel, cpu, ram, disco, temp, rx, tx, io, bateria) "
-                          "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", (system_id, t, nivel, *r.values()))
+                c.execute(f"INSERT INTO monitor_hist (system_id, t, nivel, {', '.join(r)}) "
+                          f"VALUES (?, ?, ?, {', '.join('?' for _ in r)})", (system_id, t, nivel, *r.values()))
         c.execute("DELETE FROM monitor_hist WHERE system_id = ? AND ((nivel = 1 AND t < ?) OR (nivel = 15 AND t < ?))",
                   (system_id, ahora - 2 * 86400, ahora - dias * 86400))
     evaluar(system_id)
@@ -194,7 +208,7 @@ def historial(system_id: int, horas: float) -> dict:
     with _db() as c:
         filas = c.execute("SELECT * FROM monitor_hist WHERE system_id = ? AND nivel = ? AND t >= ? ORDER BY t",
                           (system_id, nivel, desde)).fetchall()
-    campos = ("cpu", "ram", "disco", "temp", "rx", "tx", "io", "bateria")
+    campos = ("cpu", "ram", "disco", "temp", "rx", "tx", "io", "bateria", "gpu", "gtemp")
     return {"t": [f["t"] for f in filas], **{k: [f[k] for f in filas] for k in campos}, "paso": 60 * nivel}
 
 
@@ -244,6 +258,131 @@ def evaluar(system_id: int) -> None:
         (_abrir(c, system_id, "OCT-MON-09", av.get("nombre") or "") if av.get("aplica") and av.get("tiempo_real") is False
          else _cerrar(c, system_id, "OCT-MON-09"))
         _cerrar(c, system_id, "OCT-MON-08")
+        _evaluar_mas(c, system_id, d, lento)
+
+
+def _si(c, sid, codigo, cond, detalle=""):
+    _abrir(c, sid, codigo, detalle) if cond else _cerrar(c, sid, codigo)
+
+
+def _base(c, sid, clave, valor):
+    """Lo que había la primera vez (o la última vez que alguien dijo «es correcto»). Devuelve (antes, es_nuevo)."""
+    f = c.execute("SELECT valor FROM monitor_base WHERE system_id = ? AND clave = ?", (sid, clave)).fetchone()
+    if f is None:
+        c.execute("INSERT INTO monitor_base (system_id, clave, valor) VALUES (?, ?, ?)", (sid, clave, json.dumps(valor)))
+        return valor, True
+    return json.loads(f["valor"]), False
+
+
+def piezas(lento: dict) -> dict:
+    """Las piezas del equipo que no deberían cambiar solas (para saber si alguien ha quitado o cambiado algo)."""
+    inv = lento.get("inventario") or {}
+    return {"procesador": inv.get("cpu") or "", "memoria_gb": round((inv.get("ram_total") or 0) / 1024 ** 3),
+            "discos": sorted(f"{x.get('modelo') or ''} {x.get('serie') or ''}".strip()
+                             for x in lento.get("discos_salud") or [] if x.get("serie") or x.get("modelo")),
+            "placa": inv.get("placa") or "", "serie": inv.get("serie") or ""}
+
+
+def _evaluar_mas(c, sid, d, lento):
+    _si(c, sid, "OCT-MON-10", _sostenido(c, sid, "gtemp", 88, 10), "más de 88 °C durante 10 minutos")
+    fa = lento.get("fallos") or {}
+    n_fallos = (fa.get("reinicios") or 0) + (fa.get("pantallazos") or 0)
+    _si(c, sid, "OCT-MON-11", n_fallos > 0, ", ".join(x for x in (
+        f"{fa.get('pantallazos')} pantallazo(s)" if fa.get("pantallazos") else "",
+        f"{fa.get('reinicios')} apagado(s) de golpe" if fa.get("reinicios") else "") if x) + " en 7 días")
+    malos = [x for x in lento.get("cuelgues") or [] if (x.get("veces") or 0) >= 5]
+    _si(c, sid, "OCT-MON-12", bool(malos), ", ".join(f"{x['programa']} ({x['veces']} veces)" for x in malos[:3]))
+    fw = (lento.get("cortafuegos") or {})
+    _si(c, sid, "OCT-MON-13", fw.get("activo") is False, ", ".join(fw.get("apagados") or []))
+    cif = lento.get("cifrado") or {}
+    portatil = bool((d.get("bateria") or {}).get("porcentaje") is not None)
+    _si(c, sid, "OCT-MON-14", cif.get("activo") is False and portatil, cif.get("que") or "")
+    n = (lento.get("accesos_fallidos") or {}).get("ultimas_24h") or 0
+    _si(c, sid, "OCT-MON-15", n >= 20, f"{n} en las últimas 24 horas")
+    if "administradores" in lento:
+        ahora = sorted(lento.get("administradores") or [])
+        antes, _ = _base(c, sid, "administradores", ahora)
+        nuevos = [x for x in ahora if x not in antes]
+        _si(c, sid, "OCT-MON-16", bool(nuevos), ", ".join(nuevos))
+    if lento.get("inventario"):
+        ahora = piezas(lento)
+        antes, _ = _base(c, sid, "piezas", ahora)
+        nombres = {"procesador": "procesador", "memoria_gb": "memoria", "discos": "discos", "placa": "placa base",
+                   "serie": "número de serie"}
+        cambios = [f"{nombres[k]}: {antes.get(k)} → {v}" for k, v in ahora.items()
+                   if antes.get(k) not in (None, "", 0, []) and v not in (None, "", 0, []) and v != antes.get(k)]
+        _si(c, sid, "OCT-MON-18", bool(cambios), "; ".join(str(x) for x in cambios)[:300])
+    up = d.get("uptime_s") or 0
+    _si(c, sid, "OCT-MON-17", up > 30 * 86400, f"{int(up // 86400)} días encendido")
+    i = d.get("internet") or {}
+    lento_red = (i.get("ms_mediana") or 0) >= 200
+    _si(c, sid, "OCT-MON-19", (i.get("cortes_24h") or 0) >= 3 or lento_red or (i.get("comprobaciones", 0) >= 3 and i.get("ok") is False),
+        ", ".join(x for x in (f"{i.get('cortes_24h')} cortes en 24 h" if i.get("cortes_24h") else "",
+                              f"tarda {i.get('ms_mediana'):.0f} ms en responder" if lento_red else "",
+                              "ahora mismo sin Internet" if i.get("ok") is False else "") if x))
+
+
+def aceptar_cambios(system_id: int) -> None:
+    """«Es correcto»: los administradores y las piezas de ahora pasan a ser lo normal de este equipo."""
+    with _db() as c:
+        c.execute("DELETE FROM monitor_base WHERE system_id = ?", (system_id,))
+        for cod in ("OCT-MON-16", "OCT-MON-18"):
+            _cerrar(c, system_id, cod)
+    evaluar(system_id)
+
+
+def _gb(b):
+    return f"{b / 1024 ** 3:.1f} GB" if b else "?"
+
+
+def explicar(d: dict) -> list[str]:
+    """«¿Por qué va lento?»: lo que ahora mismo puede estar frenando el equipo, en frases que entiende cualquiera."""
+    if not d:
+        return []
+    out = []
+    procs = d.get("procesos") or []
+    top_cpu = max(procs, key=lambda p: p.get("cpu") or 0, default=None)
+    top_ram = max(procs, key=lambda p: p.get("ram") or 0, default=None)
+    cpu = (d.get("cpu") or {}).get("total")
+    if cpu is not None and cpu >= 85:
+        out.append(f"El procesador va al {cpu:.0f} %" + (f": lo está usando sobre todo «{top_cpu['nombre']}» "
+                   f"({top_cpu['cpu']:.0f} %)." if top_cpu and (top_cpu.get("cpu") or 0) >= 15 else "."))
+    ram = d.get("ram") or {}
+    if ram.get("total"):
+        p = 100 * ram["usada"] / ram["total"]
+        if p >= 90:
+            out.append(f"La memoria está casi llena ({p:.0f} %)" + (f": «{top_ram['nombre']}» usa {_gb(top_ram['ram'])}."
+                       if top_ram and top_ram.get("ram") else ".") + " Cierra programas o pestañas que no uses.")
+        if ram.get("swap_total") and ram.get("swap_usada", 0) / ram["swap_total"] > 0.5 and p >= 80:
+            out.append("Está usando el disco como memoria de reserva: eso lo hace ir mucho más lento.")
+    io = d.get("io") or {}
+    if (io.get("ocupado_pct") or 0) >= 90:
+        out.append("El disco está trabajando a tope (copiando, actualizando o un antivirus revisando).")
+    for x in d.get("discos") or []:
+        if x.get("total") and x.get("libre") is not None and x["libre"] / x["total"] < 0.08 and x["total"] > 8 * 1024 ** 3:
+            out.append(f"El disco {x['montaje']} está casi lleno ({_gb(x['libre'])} libres): con poco sitio todo va más lento.")
+    temps = [t.get("c") for t in d.get("temperaturas") or [] if isinstance(t.get("c"), (int, float))]
+    if temps and max(temps) >= 90:
+        out.append(f"Está muy caliente ({max(temps):.0f} °C): para enfriarse, el ordenador se frena solo.")
+    for g in d.get("gpu") or []:
+        if (g.get("temp") or 0) >= 88:
+            out.append(f"La tarjeta gráfica está muy caliente ({g['temp']:.0f} °C).")
+        elif (g.get("uso") or 0) >= 97:
+            out.append("La tarjeta gráfica va al 100 % (normal si estás jugando; si no, algo la está usando).")
+    i = d.get("internet") or {}
+    if i.get("ok") is False:
+        out.append("Ahora mismo no hay Internet: lo que use Internet irá mal.")
+    elif (i.get("ms_mediana") or 0) >= 200:
+        out.append(f"Internet tarda en responder ({i['ms_mediana']:.0f} ms): las webs y los juegos en línea irán lentos.")
+    L = d.get("lento") or {}
+    if len(L.get("inicio") or []) >= 15:
+        out.append(f"Se abren {len(L['inicio'])} programas solos al encender: el arranque y el día a día van más lentos.")
+    up = d.get("uptime_s") or 0
+    if up > 14 * 86400:
+        out.append(f"Lleva {int(up // 86400)} días sin reiniciarse: reiniciar de vez en cuando lo deja más ágil.")
+    if (L.get("actualizaciones") or {}).get("reinicio"):
+        out.append("Tiene actualizaciones esperando a que se reinicie.")
+    return out
 
 
 def revisar_silencio() -> None:
@@ -258,9 +397,11 @@ def revisar_silencio() -> None:
 
 def avisos(system_id: int | None = None) -> list[dict]:
     with _db() as c:
-        q = "SELECT a.*, s.hostname FROM monitor_avisos a JOIN systems s ON s.id = a.system_id"
-        filas = c.execute(q + (" WHERE a.system_id = ?" if system_id else "") + " ORDER BY a.desde",
-                          (system_id,) if system_id else ()).fetchall()
+        q = (f"SELECT a.*, COALESCE(s.hostname, '{NOMBRE_SERVIDOR}') AS hostname FROM monitor_avisos a "
+             f"LEFT JOIN systems s ON s.id = a.system_id")
+        filas = c.execute(q + (" WHERE a.system_id = ?" if system_id is not None else
+                               f" WHERE s.id IS NOT NULL OR a.system_id = {SERVIDOR}") + " ORDER BY a.desde",
+                          (system_id,) if system_id is not None else ()).fetchall()
     return [{"system_id": f["system_id"], "hostname": f["hostname"], "codigo": f["codigo"], "detalle": f["detalle"],
              "desde": f["desde"]} for f in filas]
 

@@ -28,7 +28,9 @@ a ataques (ransomware) y un panel web pensado para personas que no son técnicas
 - **Arranque por red** (en pruebas, servidor Linux): lo mismo sin pendrive, pulsando F12 → «red». No toca el router.
 - **Desplegar en varios equipos** (en pruebas, Linux): se prepara un ordenador modelo y se copia a muchos a la vez;
   cada uno sale con su nombre y aparece solo en el panel.
-- **Monitorización** (opcional, viene apagada): uso, temperatura, discos y batería de cada equipo, en directo.
+- **Monitorización** (opcional, viene apagada): uso, temperatura, tarjeta gráfica, discos y batería de cada equipo, en
+  directo; **por qué va lento**, pantallazos, cortafuegos, cifrado, administradores nuevos, programas instalados y si
+  Internet va bien. El propio servidor de OCTOPUS también se vigila.
 - **Panel seguro**: doble autenticación con el móvil, bloqueo de atacantes, usuarios de Active Directory/Microsoft 365.
 
 | Para… | Mira |

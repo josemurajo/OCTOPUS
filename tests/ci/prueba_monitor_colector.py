@@ -49,6 +49,22 @@ chk(isinstance(d.get("uptime_s"), int) and d["uptime_s"] > 0, "tiempo encendido"
 inv = L.get("inventario") or {}
 chk(bool(inv.get("cpu")) and bool(inv.get("sistema")), "inventario (procesador y sistema)", f"{inv.get('cpu')} / {inv.get('sistema')}")
 chk(isinstance(L.get("discos_salud"), list), "salud de discos (lista, puede estar vacía en máquinas virtuales)", len(L.get("discos_salud") or []))
+chk(isinstance(d.get("gpu"), list), "tarjeta gráfica (lista; vacía si no hay o no se puede leer)", d.get("gpu"))
+if m._inet_hilo:
+    m._inet_hilo.join(timeout=30)
+inet = m.resumen_internet() or {}
+chk(inet.get("ok") is True and isinstance(inet.get("ms"), (int, float)), "Internet: responde y cuánto tarda", inet)
+chk(isinstance(L.get("cortafuegos"), dict) and "activo" in L["cortafuegos"], "cortafuegos", L.get("cortafuegos"))
+chk(isinstance(L.get("cifrado"), dict) and "activo" in L["cifrado"], "disco cifrado", L.get("cifrado"))
+chk(isinstance(L.get("administradores"), list), "administradores", L.get("administradores"))
+chk(len(L.get("programas") or []) >= 3 and all("n" in p for p in L["programas"]), "programas instalados",
+    f"{L.get('programas_total')} programas")
+chk(isinstance(L.get("inicio"), list), "programas que se abren solos al encender", len(L.get("inicio") or []))
+if octopus_monitor.SISTEMA != "darwin":
+    chk(isinstance(L.get("fallos"), dict), "pantallazos y apagados de golpe", L.get("fallos"))
+if octopus_monitor.SISTEMA == "windows":
+    chk(isinstance(L.get("accesos_fallidos"), dict), "intentos de contraseña fallidos", L.get("accesos_fallidos"))
+    chk(L["cortafuegos"].get("activo") is not None, "Windows: el cortafuegos se puede leer", L.get("cortafuegos"))
 chk(t2 < 15, "una muestra tarda poco", f"{t2:.1f} s (la primera {t1:.1f} s)")
 print("RESUMEN:", "TODO CORRECTO" if not F else "FALLOS: " + ", ".join(F))
 sys.exit(1 if F else 0)
