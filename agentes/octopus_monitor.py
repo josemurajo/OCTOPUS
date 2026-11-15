@@ -315,9 +315,8 @@ def _linux_extra() -> dict:
             ini.append({"n": nombre, "donde": "todos" if str(f).startswith("/etc") else f.parts[2]})
     d["inicio"] = ini[:60]
     # reinicios inesperados (apagados de golpe) y programas que se cuelgan, últimos 7 días
-    if shutil.which("last"):
-        d["fallos"] = {"reinicios": len([l for l in _run(["last", "-x", "-s", "-7days"], 10).splitlines() if "crash" in l]),
-                       "pantallazos": None}
+    d["fallos"] = {"reinicios": len([l for l in _run(["last", "-x", "-s", "-7days"], 10).splitlines() if "crash" in l])
+                   if shutil.which("last") else None, "pantallazos": None}
     if shutil.which("coredumpctl"):
         cu: dict = {}
         for l in _run(["coredumpctl", "list", "--since=-7d", "--no-legend", "--no-pager"], 20).splitlines():
@@ -754,6 +753,7 @@ class _Mac:
         bt = re.search(r"sec = (\d+)", _run(["sysctl", "-n", "kern.boottime"], 5))
         d["uptime_s"] = int(time.time() - int(bt.group(1))) if bt else None
         d["usuarios"] = sorted({l.split()[0] for l in _run(["who"], 5).splitlines() if l.strip()})
+        d["gpu"] = _gpus_nvidia()
         d["temperaturas"], d["ventiladores"] = [], []
         self.prev_t = ahora
         return d
