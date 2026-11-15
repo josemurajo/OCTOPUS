@@ -1838,6 +1838,8 @@ def despachar(cfg: dict, metodo: str, ruta: str, datos: dict | None = None) -> d
         return imagen_disco(cfg)
     if ruta == "/webhook/cortafuegos-encender":
         return encender_cortafuegos()
+    if ruta == "/webhook/parar-copia":
+        return parar_copia()
     if ruta == "/webhook/reiniciar":
         return reiniciar_con_aviso(int(datos.get("minutos") or 10))
     if ruta == "/webhook/traer-de-otro":
@@ -2037,6 +2039,21 @@ def main() -> None:
         h.start()
     while True:
         time.sleep(3600)
+
+
+def parar_copia() -> dict:
+    """Para la copia que se haya quedado colgada en este equipo (solo los procesos de copia de OCTOPUS). Lo que ya se
+    subió se aprovecha en la siguiente."""
+    if SYSTEM == "windows":
+        r = run_cmd(["powershell", "-NoProfile", "-Command",
+                     "Get-CimInstance Win32_Process -Filter \"Name='restic.exe'\" | ?{ $_.CommandLine -match ' (backup|restore) ' } "
+                     "| %{ Invoke-CimMethod -InputObject $_ -MethodName Terminate | Out-Null; 'parado' }"])
+        n = (getattr(r, "stdout", "") or "").count("parado")
+    else:
+        r = run_cmd(["pkill", "-f", "restic.* (backup|restore) "])
+        n = 1 if getattr(r, "returncode", 1) == 0 else 0
+    _marcar_copia_en_marcha(False)
+    return {"status": "success", "message": "Copia parada" if n else "No había ninguna copia en marcha"}
 
 
 def encender_cortafuegos() -> dict:

@@ -36,6 +36,9 @@ instalan versiones con esa firma. Lo más nuevo, arriba.
   pierden los cambios posteriores.
 - **Cuando OCTOPUS no puede arreglar algo solo, lo dice claro:** qué ha intentado, por qué no ha podido, por qué
   suele pasar y cómo arreglarlo tú.
+- **Los avisos no desaparecen antes de tiempo:** al pulsar «Solucionar» (o mientras OCTOPUS lo arregla solo), el
+  aviso sigue ahí con «🔄 Arreglándose ahora» y solo se quita cuando de verdad sale bien. Si algo se queda colgado,
+  el botón sigue disponible: lo para en el equipo y lo empieza otra vez (lo ya copiado no se pierde).
 - README con todo lo de la 3.1.0.
 
 ## 3.1.0 - 2026-11-15 (rescate, arranque por red y despliegue)

@@ -1576,10 +1576,22 @@ def _avisos(lista):
             avisos.append(_aviso('OCT-EQ-02', nombre, sid, sol))
         elif est['texto'] == 'Copia antigua':
             avisos.append(_aviso('OCT-EQ-03', nombre, sid, sol, detalle=_hace(est['ultima'])))
-        for t in e['trabajos']:
-            cod_t = _av.codigo_trabajo(t.get('tipo', 'copia'), t.get('que', '')) if t['estado'] == 'error' else None
-            if cod_t:
-                avisos.append(_aviso(cod_t, nombre, sid, sol, detalle=str(t['mensaje'])[:300]))
+        # trabajos (copias, recuperaciones...): el aviso sigue mientras se repite y solo se quita cuando sale bien
+        vistos, en_marcha = set(), {}
+        for t in agentes.trabajos_de(sid, 20):          # del más nuevo al más viejo
+            cod_t = _av.codigo_trabajo(t.get('tipo', 'copia'), t.get('que', ''))
+            if not cod_t or cod_t in vistos:
+                continue
+            if t['estado'] == 'en_curso':
+                en_marcha.setdefault(cod_t, t)
+                continue
+            vistos.add(cod_t)
+            if t['estado'] == 'error':
+                a_t = _aviso(cod_t, nombre, sid, sol, detalle=str(t['mensaje'])[:300])
+                if cod_t in en_marcha:
+                    a_t['en_marcha'] = {'desde': en_marcha[cod_t]['inicio'],
+                                        'minutos': int((datetime.now(timezone.utc) - en_marcha[cod_t]['inicio']).total_seconds() // 60)}
+                avisos.append(a_t)
         p = pruebas.get(nombre.lower())
         if p and not p.get('ok'):
             avisos.append(_aviso('OCT-EQ-05', nombre, sid, sol, detalle=p.get('detalle', '')))
@@ -1818,6 +1830,9 @@ def avisos_solucionar():
     _ban.marcar('avisos', f'{usuario} pulsa Solucionar: {accion}', equipo=equipo, codigo=codigo)
     clave = f'{codigo}:{sid or ""}'
     _aa.olvidar(clave)   # a mano: OCTOPUS recupera sus intentos automáticos para la próxima vez
+    if row and request.form.get('desatascar') == '1' and agentes.trabajo_en_marcha(row['id']):
+        agentes.parar_trabajo(row)
+        log_audit(session['user_id'], 'DESATASCAR', f'{codigo} {equipo}', request.remote_addr)
     msg, cat = _ejecutar_arreglo(codigo, accion, row, session['user_id'], usuario)
     flash(msg, cat)
     return redirect(volver)
@@ -1899,6 +1914,8 @@ def _autoarreglo_ciclo_sin_lock():
     panel = _direccion_panel()
     mensajes, lanzados = [], []
     for a in avisos:
+        if a.get('en_marcha'):
+            continue          # ya se está arreglando: ni se repite ni se manda mensaje hasta saber cómo acaba
         accion = a.get('accion')
         clave = f'{a["codigo"]}:{a["id"] or ""}'
         # qué se va a hacer con este aviso

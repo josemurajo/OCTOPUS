@@ -145,6 +145,39 @@ a._autoarreglo_ciclo()
 chk(len(mensajes) == 1, "y no se repite el mensaje", len(mensajes))
 a._mandar_mensajes, a._avisos, a._equipos_con_estado, a._ejecutar_arreglo = _orig
 
+# el aviso de una copia que falló NO se va al darle a «Solucionar»: sigue (arreglándose) hasta que sale bien
+from datetime import datetime as _dtm, timezone as _tz, timedelta as _td
+ag = a.agentes
+fila = a._get_system(sid)
+ahora_j = _dtm.now(_tz.utc)
+with ag._jobs_lock:
+    ag.JOBS.clear()
+    ag.JOBS["j1"] = {"id": "j1", "system_id": sid, "equipo": "PORTATIL-ANA", "tipo": "copia", "estado": "error",
+                     "mensaje": "se perdió la conexión", "que": "Copia en curso...", "inicio": ahora_j - _td(hours=1),
+                     "fin": ahora_j - _td(minutes=50)}
+    ag.JOBS["j2"] = {"id": "j2", "system_id": sid, "equipo": "PORTATIL-ANA", "tipo": "copia", "estado": "en_curso",
+                     "mensaje": "Copia en curso...", "que": "Copia en curso...", "inicio": ahora_j - _td(minutes=40), "fin": None}
+with a.app.test_request_context():
+    av_eq = [x for x in a._avisos(a._equipos_con_estado()) if x["codigo"] == "OCT-EQ-04" and x["id"] == sid]
+chk(av_eq and av_eq[0].get("en_marcha", {}).get("minutos", 0) >= 39, "mientras se repite, el aviso sigue (arreglándose)", av_eq)
+h = cl.get("/avisos").get_data(as_text=True)
+chk("Arreglándose ahora" in h and 'name="desatascar"' in h and "Solucionar" in h, "y el botón sigue ahí para desatascarlo")
+pedidos = []
+import ordenes as _ordm
+_ordm.pedir = lambda eq, m, ruta, d, t: pedidos.append(ruta) or {"status": "success"}
+lanzados = []
+a.agentes.lanzar_copia = lambda row, on_done=None, **k: lanzados.append(1)
+meta = re.search(r'name="csrf-token" content="([^"]+)"', h).group(1)    # la tarjeta del aviso lo recibe por JavaScript
+r = cl.post("/avisos/solucionar", data={"csrf_token": meta, "codigo": "OCT-EQ-04", "system_id": str(sid), "desatascar": "1"})
+chk("/webhook/parar-copia" in pedidos and ag.JOBS["j2"]["estado"] == "error" and lanzados,
+    "«Solucionar» con algo colgado: lo para en el equipo y lo empieza otra vez", (pedidos, ag.JOBS["j2"]["estado"]))
+with ag._jobs_lock:
+    ag.JOBS["j3"] = {"id": "j3", "system_id": sid, "equipo": "PORTATIL-ANA", "tipo": "copia", "estado": "ok",
+                     "mensaje": "Copia terminada", "que": "Copia en curso...", "inicio": _dtm.now(_tz.utc), "fin": _dtm.now(_tz.utc)}
+with a.app.test_request_context():
+    av_eq = [x for x in a._avisos(a._equipos_con_estado()) if x["codigo"] == "OCT-EQ-04" and x["id"] == sid]
+chk(not av_eq, "cuando sale bien, el aviso se quita solo", av_eq)
+
 # el propio servidor de OCTOPUS
 sys.path.insert(0, str(RAIZ / "agentes"))
 import octopus_monitor  # noqa: E402

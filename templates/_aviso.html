@@ -7,7 +7,11 @@
   <ul class="small" style="margin-top:0">{% for c in a.causas %}<li>{{ c }}</li>{% endfor %}</ul>{% endif %}
   {% if a.pasos %}<p class="small" style="margin-bottom:2px"><em>Cómo se arregla:</em></p>{% endif %}
   {% if a.pasos %}<ol class="pasos small">{% for p in a.pasos %}<li>{{ p }}</li>{% endfor %}</ol>{% endif %}
-  {% if a.rendido %}
+  {% if a.en_marcha %}
+  <p class="small" style="margin:6px 0"><span class="etiqueta-auto">🔄 Arreglándose ahora</span> Empezó hace
+    {{ a.en_marcha.minutos }} min. El aviso se quitará solo cuando salga bien. Si crees que se ha quedado colgado,
+    pulsa «Solucionar»: se para y se empieza otra vez (lo ya hecho no se pierde).</p>
+  {% elif a.rendido %}
   <p class="small" style="margin:6px 0"><span class="etiqueta-auto mal">🔧 OCTOPUS no ha podido arreglarlo solo</span> Lo ha intentado varias veces (o se arregla y vuelve a pasar).
     Sigue los pasos o pulsa «Solucionar» para intentarlo otra vez.</p>
   {% elif a.auto %}
@@ -19,9 +23,10 @@
   <div class="aviso-acciones">
     {% if a.accion and puede_actuar() %}
     <form method="post" action="{{ url_for('avisos_solucionar') }}" style="display:inline-flex; gap:10px; align-items:center; flex-wrap:wrap"
-          data-confirm="{{ (a.riesgo ~ ' ') if a.riesgo }}Se va a {{ a.como or (a.boton | lower) }}." data-si="Sí, {{ a.boton[:1] | lower }}{{ a.boton[1:] }}">
+          data-confirm="{% if a.en_marcha %}Ya se está arreglando desde hace {{ a.en_marcha.minutos }} min. Se parará y se empezará otra vez (lo ya hecho no se pierde).{% else %}{{ (a.riesgo ~ ' ') if a.riesgo }}Se va a {{ a.como or (a.boton | lower) }}.{% endif %}" data-si="{{ 'Sí, empezar otra vez' if a.en_marcha else 'Sí, ' ~ a.boton[:1] | lower ~ a.boton[1:] }}">
       <input type="hidden" name="codigo" value="{{ a.codigo }}">
       {% if a.id %}<input type="hidden" name="system_id" value="{{ a.id }}">{% endif %}
+      {% if a.en_marcha %}<input type="hidden" name="desatascar" value="1">{% endif %}
       <input type="hidden" name="volver" value="{{ volver }}">
       {% if a.riesgo %}<label class="small" style="font-weight:400; display:inline-flex; gap:6px; align-items:center">
         <input type="checkbox" name="confirmado" value="1" required> Entiendo lo que se va a hacer</label>{% endif %}

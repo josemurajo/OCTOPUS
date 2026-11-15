@@ -344,6 +344,26 @@ def lanzar_restauracion_vm(system, snapshot, nombre, hipervisor, on_done=None):
                    lambda r: f"{nombre} recuperada en {r.get('carpeta')}. {r.get('instrucciones', '')}".strip(), on_done)
 
 
+def trabajo_en_marcha(system_id):
+    with _jobs_lock:
+        return next((dict(j) for j in JOBS.values() if j["system_id"] == system_id and j["estado"] == "en_curso"), None)
+
+
+def parar_trabajo(system, motivo="se paró a mano porque parecía colgado"):
+    """Desatasca un equipo: para en el equipo la copia o recuperación que se ha quedado colgada y la da por terminada
+    aquí, para poder lanzarla otra vez. Lo que ya se había copiado no se pierde (la siguiente sigue donde se quedó)."""
+    try:
+        import ordenes
+        ordenes.pedir(system["hostname"], "POST", "/webhook/parar-copia", {}, 60)
+    except Exception:
+        pass       # si el equipo no contesta, al menos aquí se desatasca
+    with _jobs_lock:
+        for j in JOBS.values():
+            if j["system_id"] == system["id"] and j["estado"] == "en_curso":
+                j.update(estado="error", fin=datetime.now(timezone.utc), mensaje=motivo)
+    invalidar(system["id"])
+
+
 def trabajos_de(system_id=None, limit=10):
     with _jobs_lock:
         jobs = [dict(j) for j in JOBS.values() if system_id is None or j["system_id"] == system_id]
