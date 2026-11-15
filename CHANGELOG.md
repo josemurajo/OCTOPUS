@@ -3,6 +3,17 @@
 Cada versión publicada va firmada por José Murillo Rajo. Los servidores se actualizan solos (o desde el panel) y solo
 instalan versiones con esa firma. Lo más nuevo, arriba.
 
+## 3.1.1 - en preparación
+
+- **Avisos más claros:** cada aviso dice ahora también **por qué suele pasar**, además de qué pasa y cómo se
+  arregla (en el panel, en el correo y en Telegram).
+- **Avisos nuevos** para todo lo que puede fallar: bases de datos, máquinas virtuales, imagen de disco, copia
+  completa, recuperar archivos, pasar a un ordenador nuevo, copia de Microsoft 365/Google, arranque por red, USB
+  de rescate, despliegue y entrar en el panel.
+- **Guía de todos los avisos**, con buscador: en el panel (Avisos → «Ver todos los avisos posibles») y en
+  [SOLUCIONES.md](SOLUCIONES.md).
+- README con todo lo de la 3.1.0.
+
 ## 3.1.0 - 2026-11-15 (rescate, arranque por red y despliegue)
 
 - **Pasar a un ordenador nuevo:** si se rompe, lo cambias o reinstalas Windows, instalas OCTOPUS en el nuevo y traes
