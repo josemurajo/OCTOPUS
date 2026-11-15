@@ -17,8 +17,17 @@ a ataques (ransomware) y un panel web pensado para personas que no son técnicas
 - **Copia completa del equipo** (opcional): todo el disco, para reconstruir un equipo entero.
 - **Bases de datos**: SQL Server, MySQL/MariaDB y PostgreSQL copiadas por su propio motor (siempre sirven), cada día,
   cada 4 horas o cada hora; se vuelve a la hora que quieras como una base nueva, sin tocar la original.
-- **Máquinas virtuales** (en pruebas): copia cada máquina **entera** aunque esté encendida (Hyper-V, KVM/libvirt y
-  Proxmox) y la recupera aparte, sin tocar la original.
+- **Máquinas virtuales** (en pruebas): copia cada máquina **entera** aunque esté encendida (Hyper-V, KVM/libvirt,
+  Proxmox y VirtualBox) y la recupera aparte, sin tocar la original. Si alguien trabaja siempre dentro de una máquina
+  virtual, se puede copiar solo esa máquina.
+- **Imagen de disco de Windows** (en pruebas): para cuando el ordenador ni arranca. Se hace sola, sin molestar, en un
+  disco USB o una carpeta de red, y se recupera con un USB de instalación de Windows.
+- **Pasar a un ordenador nuevo**: si se rompe o lo cambias, traes tus carpetas al nuevo sin sobrescribir nada.
+- **USB de rescate** (en pruebas): un pendrive para cuando un ordenador ya no arranca. Con un código del panel, deja un
+  Linux como estaba o saca los archivos de cualquier equipo a un disco USB. Arranca también con «Arranque seguro».
+- **Arranque por red** (en pruebas, servidor Linux): lo mismo sin pendrive, pulsando F12 → «red». No toca el router.
+- **Desplegar en varios equipos** (en pruebas, Linux): se prepara un ordenador modelo y se copia a muchos a la vez;
+  cada uno sale con su nombre y aparece solo en el panel.
 - **Monitorización** (opcional, viene apagada): uso, temperatura, discos y batería de cada equipo, en directo.
 - **Panel seguro**: doble autenticación con el móvil, bloqueo de atacantes, usuarios de Active Directory/Microsoft 365.
 
@@ -92,6 +101,8 @@ Después, en el panel: **Equipos → Añadir equipo**.
 | `agentes/zerotouch_agent.py` | El agente que va en cada equipo (el mismo para Windows, Linux y Mac) |
 | `agentes/instaladores/` | Instaladores del agente que entrega el panel (Windows `.bat/.ps1`, Linux `.sh`, Mac `.command`) |
 | `ansible/` | Despliegue de agentes a muchos equipos Linux a la vez (`octopus.sh desplegar`) |
+| `rescate/` | El USB de rescate: el programa que va dentro (`octopus_rescate.py`) y cómo se fabrica la imagen (`hacer_iso.sh`) |
+| `install/pxe/` | Arranque por red (contenedor aparte que enciende el panel) |
 | `install/sandbox/` | Sala de análisis de incidentes (contenedor aislado sin red) |
 | `tests/ci/` | Pruebas automáticas en equipos reales de GitHub (Linux, Windows y Mac) |
 
@@ -101,11 +112,12 @@ El laboratorio de pruebas con máquinas virtuales está en la carpeta `maquinas`
 
 1. Cada cambio que se sube a GitHub pasa solo las pruebas automáticas en equipos reales (Linux, Windows y Mac).
 2. Quien mantiene el código prepara la versión: explica los cambios en [CHANGELOG.md](CHANGELOG.md) y ejecuta
-   `bash herramientas/preparar_version.sh 3.0.0` (pone el número y crea el MANIFIESTO con la huella de cada archivo).
-3. José la **firma** en su PC (`bash herramientas/firmar_version.sh`, con su clave privada, que nunca sale de su PC) y
-   sube el archivo `MANIFIESTO.sig` a GitHub. Paso a paso: [PUBLICAR_VERSION.md](PUBLICAR_VERSION.md).
+   `bash herramientas/preparar_version.sh X.Y.Z` (pone el número y crea el MANIFIESTO con la huella de cada archivo).
+3. José la **firma** en su PC (doble clic en `herramientas/FIRMAR_VERSION.bat`, con su clave privada, que nunca sale
+   de su PC) y se sube el archivo `MANIFIESTO.sig` a GitHub. Paso a paso: [PUBLICAR_VERSION.md](PUBLICAR_VERSION.md).
 4. A partir de ahí todo es automático: se comprueba la firma, la versión pasa a la rama `publicado` (la única que
-   descargan los servidores), se crea en *Releases* y se publica la imagen para los NAS. Lo que está a medio hacer en
+   descargan los servidores), se crea en *Releases* con el pendrive de rescate (`octopus-rescate.iso`) y se publica la
+   imagen para los NAS. Lo que está a medio hacer en
    `main` nunca llega a las empresas.
 5. Al actualizar un servidor, si la versión nueva no arranca, se vuelve sola a la anterior.
 
