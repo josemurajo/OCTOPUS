@@ -33,6 +33,7 @@ sys.path.insert(0, str(RAIZ / "lib"))
 import admin_panel as a  # noqa: E402
 
 a.app.config.update(TESTING=True)
+a._aa.ESTADO_FILE = Path(tmp) / "autoarreglos.json"     # que la prueba no use (ni deje) estado en la carpeta del programa
 cl = a.app.test_client()
 
 
@@ -108,6 +109,40 @@ chk(all("PORTATIL-ANA" in a_["titulo"] or "{" not in a_["titulo"] for a_ in j.ge
     any("PORTATIL-ANA" in a_["titulo"] for a_ in j.get("avisos")), "los avisos dicen de qué equipo son",
     [a_["titulo"] for a_ in j.get("avisos")])
 chk(mon.explicar({"cpu": {"total": 5}, "ram": {"total": 10, "usada": 2}}) == [], "si va bien, no se inventa nada")
+
+# pantallazos y cuelgues explicados
+fx = mon.explicar_fallos({"fallos": {"pantallazos": 2, "reinicios": 1, "codigos": ["0x00000116", "0x00000116", "0x0000abcd"]},
+                          "cuelgues": [{"programa": "EXCEL.EXE", "modulo": "raro_addin.dll", "veces": 6},
+                                       {"programa": "juego.exe", "modulo": "nvwgf2umx.dll", "veces": 3},
+                                       {"programa": "app.exe", "modulo": "(no responde)", "veces": 2}]})
+t = " ".join(fx)
+chk("tarjeta gráfica" in t and t.count("0x00000116") == 1 and "0x0000abcd" in t, "pantallazo explicado (y sin repetir)", fx)
+chk("corte de luz" in t, "apagado de golpe explicado")
+chk("raro_addin.dll" in t and "complemento" in t and "juego.exe" in t and "controlador de la tarjeta gráfica" in t
+    and "colgado" in t, "programas que se cuelgan, con el porqué", fx)
+
+# copia fallida: primero se repite en silencio; solo hay mensaje si también falla al repetirla
+mensajes, arreglos = [], []
+_orig = (a._mandar_mensajes, a._avisos, a._equipos_con_estado, a._ejecutar_arreglo)
+a._mandar_mensajes = lambda m: mensajes.extend(m)
+aviso_copia = {"codigo": "OCT-EQ-04", "id": sid, "equipo": "PORTATIL-ANA", "titulo": "La última copia falló", "accion": "copia_equipo",
+               "riesgo": None, "nivel": "problema", "por_que": "", "causas": [], "pasos": [], "detalle": ""}
+a._avisos = lambda lista: [dict(aviso_copia)]
+a._equipos_con_estado = lambda *x, **k: [{"sys": {"id": sid}, "est": {"online": True}}]
+a._ejecutar_arreglo = lambda cod, acc, row, uid, usr, al_terminar=None: arreglos.append(al_terminar)
+a._autoarreglo_ciclo()
+chk(len(arreglos) == 1 and not mensajes, "copia fallida: se repite sola sin mandar mensaje", mensajes)
+arreglos[0](True, "copia hecha")
+chk(not mensajes, "si al repetirla sale bien, no se molesta a nadie", mensajes)
+a._aa.limpiar_viejos(set())
+arreglos.clear()
+a._autoarreglo_ciclo()
+if arreglos:
+    arreglos[0](False, "la copia volvió a fallar")
+chk(len(mensajes) == 1 and "volvió a fallar" in str(mensajes), "si vuelve a fallar, entonces sí se avisa (una vez)", mensajes)
+a._autoarreglo_ciclo()
+chk(len(mensajes) == 1, "y no se repite el mensaje", len(mensajes))
+a._mandar_mensajes, a._avisos, a._equipos_con_estado, a._ejecutar_arreglo = _orig
 
 # el propio servidor de OCTOPUS
 sys.path.insert(0, str(RAIZ / "agentes"))

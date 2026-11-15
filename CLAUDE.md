@@ -30,6 +30,10 @@ Léelo antes de tocar nada. Son las reglas del proyecto que José ha ido dejando
 - Lo nuevo lleva su prueba en `tests/ci/` y su paso en la CI.
 - Lo nuevo que pueda fallar lleva su aviso en `lib/avisos.py` (qué pasa, `causas`, `pasos`) y después
   `python3 herramientas/generar_soluciones.py` (escribe SOLUCIONES.md; la CI comprueba que está al día).
+- Y si se puede arreglar, su aviso lleva `accion` + `boton` y su regla en `lib/autoarreglo.py` (POLITICA): sin
+  riesgo → `auto: True` (lo arregla solo y avisa «lo he arreglado»); con riesgo (borra, reinicia, toca la seguridad
+  del equipo) → `riesgo` y lo hace solo al pulsar «Solucionar» con permiso; si no se puede arreglar desde OCTOPUS,
+  `pasos` claros. El arreglo va en `_ejecutar_arreglo` (lib/admin_panel.py). La prueba de prueba_casa.py lo exige.
 - Antes de preparar una versión: README.md y CHANGELOG.md al día con lo nuevo.
 - Comprobaciones rápidas sin equipos:
   - `python tests/ci/prueba_produccion.py`;

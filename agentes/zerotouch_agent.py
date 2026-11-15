@@ -1373,9 +1373,17 @@ def horas_desde_ultima_copia() -> float | None:
 def copia_atrasada_loop() -> None:
     """Si el equipo estaba apagado a la hora de la copia diaria (o hubo un corte de luz), la copia se hace sola en
     cuanto el equipo vuelve a estar encendido, sin esperar al dia siguiente."""
-    time.sleep(300)   # deja arrancar el equipo con calma
+    time.sleep(180)   # deja arrancar el equipo con calma
     while True:
         try:
+            motivo = toca_reintentar()
+            if motivo and not esta_aislado():
+                # la copia va en modo discreto: si la persona está jugando o usando el equipo a fondo, se frena sola
+                log(f"Copia otra vez: {motivo}")
+                _marcar_copia_en_marcha(False)
+                copia_programada()
+                time.sleep(600)
+                continue
             h = horas_desde_ultima_copia()
             if h is None:
                 _apuntar_copia()          # recien instalado: se cuenta desde ahora (la primera copia la pide el panel)
@@ -1386,7 +1394,7 @@ def copia_atrasada_loop() -> None:
                 copia_programada()
         except Exception as exc:
             log(f"Copia atrasada: {exc}")
-        time.sleep(1800)
+        time.sleep(600)
 
 
 def backup_forense(cfg: dict, path=None) -> dict:
@@ -1398,7 +1406,83 @@ def backup_forense(cfg: dict, path=None) -> dict:
         _BACKUP_LOCK.release()
 
 
+COPIA_EN_MARCHA = STATE_DIR / "copia_en_marcha.json"     # si sigue ahí al arrancar: la copia se cortó (reinicio, apagón...)
+COPIA_FALLIDA = STATE_DIR / "copia_fallida.json"          # la última copia diaria falló: se repite sola enseguida
+REINTENTOS_COPIA = 3
+
+
+def _marcar_copia_en_marcha(si: bool) -> None:
+    try:
+        if si:
+            STATE_DIR.mkdir(parents=True, exist_ok=True)
+            COPIA_EN_MARCHA.write_text(json.dumps({"pid": os.getpid(), "t": time.time()}))
+        elif COPIA_EN_MARCHA.exists():
+            COPIA_EN_MARCHA.unlink()
+    except OSError:
+        pass
+
+
+def copia_cortada() -> bool:
+    """¿Se quedó una copia a medias (el equipo se reinició, se colgó o se fue la luz mientras copiaba)?"""
+    try:
+        d = json.loads(COPIA_EN_MARCHA.read_text())
+    except (OSError, ValueError):
+        return False
+    pid = int(d.get("pid") or 0)
+    if pid and pid != os.getpid():
+        try:
+            if SYSTEM == "windows":
+                vivo = str(pid) in subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"], capture_output=True,
+                                                  text=True, timeout=15, creationflags=0x08000000).stdout
+            else:
+                os.kill(pid, 0)
+                vivo = True
+        except (OSError, subprocess.SubprocessError):
+            vivo = False
+        if vivo and time.time() - float(d.get("t") or 0) < 12 * 3600:
+            return False          # sigue copiando (otro proceso del agente)
+    return pid != os.getpid()
+
+
+def _apuntar_resultado_diaria(ok: bool, motivo: str = "") -> None:
+    try:
+        if ok:
+            COPIA_FALLIDA.unlink(missing_ok=True)
+            return
+        try:
+            d = json.loads(COPIA_FALLIDA.read_text())
+        except (OSError, ValueError):
+            d = {"veces": 0}
+        d.update(veces=int(d.get("veces", 0)) + 1, t=time.time(), motivo=str(motivo)[:300])
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        COPIA_FALLIDA.write_text(json.dumps(d))
+    except OSError:
+        pass
+
+
+def toca_reintentar() -> str:
+    """Motivo para repetir ya la copia diaria (se cortó o falló hace poco), o "" si no toca."""
+    if copia_cortada():
+        return "la copia anterior se cortó (reinicio, cuelgue o apagón): se sigue donde se quedó"
+    try:
+        d = json.loads(COPIA_FALLIDA.read_text())
+    except (OSError, ValueError):
+        return ""
+    veces = int(d.get("veces", 0))
+    if 0 < veces <= REINTENTOS_COPIA and time.time() - float(d.get("t", 0)) > 20 * 60 * veces:
+        return f"la copia falló ({d.get('motivo', '')[:80]}); intento {veces + 1}"
+    return ""
+
+
 def _backup_forense(cfg: dict, path=None) -> dict:
+    _marcar_copia_en_marcha(True)
+    try:
+        return _backup_forense_marcada(cfg, path)
+    finally:
+        _marcar_copia_en_marcha(False)
+
+
+def _backup_forense_marcada(cfg: dict, path=None) -> dict:
     pasos: list[str] = []
     inicio = time.time()
 
@@ -1752,6 +1836,10 @@ def despachar(cfg: dict, metodo: str, ruta: str, datos: dict | None = None) -> d
         return restaurar_backup(cfg, datos.get("target", "/"), datos.get("snapshot", "latest"))
     if ruta == "/webhook/imagen-disco":
         return imagen_disco(cfg)
+    if ruta == "/webhook/cortafuegos-encender":
+        return encender_cortafuegos()
+    if ruta == "/webhook/reiniciar":
+        return reiniciar_con_aviso(int(datos.get("minutos") or 10))
     if ruta == "/webhook/traer-de-otro":
         return traer_de_otro(cfg, str(datos.get("snapshot", "")), list(datos.get("pares") or []))
     if ruta == "/webhook/restaurar-archivo":
@@ -1951,6 +2039,35 @@ def main() -> None:
         time.sleep(3600)
 
 
+def encender_cortafuegos() -> dict:
+    """Aviso «cortafuegos apagado» → Solucionar (con permiso). Windows: los tres perfiles; Mac: el de Apple.
+    En Linux no se toca solo (encenderlo sin reglas podría cortar el acceso remoto al equipo)."""
+    if SYSTEM == "windows":
+        r = run_cmd(["powershell", "-NoProfile", "-Command", "Set-NetFirewallProfile -All -Enabled True"])
+    elif SYSTEM == "darwin":
+        r = run_cmd(["/usr/libexec/ApplicationFirewall/socketfilterfw", "--setglobalstate", "on"])
+    else:
+        return {"status": "error", "message": "En Linux se enciende a mano (sudo ufw enable), para no cortar el acceso "
+                                              "remoto al equipo"}
+    ok = getattr(r, "returncode", 1) == 0
+    return {"status": "success" if ok else "error", "message": "Cortafuegos encendido" if ok else
+            f"No se pudo encender: {(getattr(r, 'stderr', '') or getattr(r, 'stdout', ''))[-300:]}"}
+
+
+def reiniciar_con_aviso(minutos: int = 10) -> dict:
+    """Aviso «lleva semanas sin reiniciar» → Solucionar (con permiso): reinicia dentro de unos minutos, avisando en
+    pantalla para que dé tiempo a guardar."""
+    minutos = max(2, min(120, minutos))
+    texto = f"OCTOPUS: este ordenador se reiniciará en {minutos} minutos. Guarda lo que tengas abierto."
+    if SYSTEM == "windows":
+        r = run_cmd(["shutdown", "/r", "/t", str(minutos * 60), "/c", texto])
+    else:
+        r = run_cmd(["shutdown", "-r", f"+{minutos}", texto])
+    ok = getattr(r, "returncode", 1) == 0
+    return {"status": "success" if ok else "error",
+            "message": f"Se reiniciará en {minutos} minutos (con aviso en pantalla)" if ok else "No se pudo programar el reinicio"}
+
+
 def copia_programada() -> int:
     """`zerotouch_agent.py --copia`: copia de seguridad diaria (la lanza cron o el Programador de tareas)."""
     cfg = load_config()
@@ -1972,6 +2089,8 @@ def copia_programada() -> int:
     else:
         res = backup_forense(cfg)
         log(f"Copia programada: {res.get('status')} {res.get('message', '')}".strip())
+        if "Ya hay una copia en curso" not in str(res.get("message", "")):
+            _apuntar_resultado_diaria(res.get("status") == "success", res.get("message", ""))
         if toca_copia_completa():
             rc = copia_completa(cfg)
             log(f"Copia completa programada: {rc.get('status')} {rc.get('message', '')}".strip())

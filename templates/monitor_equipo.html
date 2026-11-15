@@ -116,7 +116,8 @@ table.procs .mini > i { display: block; height: 100%; width: 0; background: var(
   </div>
 
   <div class="cols">
-    <div class="card"><h2>Estabilidad <small>últimos 7 días</small></h2><dl class="kv2" id="est"><dt class="muted">–</dt><dd></dd></dl></div>
+    <div class="card"><h2>Estabilidad <small>últimos 7 días</small></h2><dl class="kv2" id="est"><dt class="muted">–</dt><dd></dd></dl>
+      <ul class="small" id="est-porque" style="margin:8px 0 0"></ul></div>
     <div class="card"><h2>Internet</h2><dl class="kv2" id="inet"><dt class="muted">Se comprueba cada 5 minutos…</dt><dd></dd></dl></div>
   </div>
 
@@ -378,6 +379,7 @@ table.procs .mini > i { display: block; height: 100%; width: 0; background: var(
       ['Programas que se cuelgan', cu.length ? cu.slice(0, 5).map(x => `${esc(x.programa)} <span class="muted">(${x.veces})</span>`).join(', ') : 'Ninguno'],
       ['Sin reiniciar', d.uptime_s != null ? dur(d.uptime_s) + (d.uptime_s > 30 * 86400 ? ' <span class="chip warn">reinícialo</span>' : '') : '–']
     ].map(f => `<dt>${f[0]}</dt><dd>${f[1]}</dd>`).join(''));
+    poner('est-porque', (r.fallos_porque || []).map(x => `<li>${esc(x)}</li>`).join(''));
     // internet
     const i = d.internet;
     if (i) poner('inet', [

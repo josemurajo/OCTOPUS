@@ -123,6 +123,8 @@ En el panel, este aviso tiene el botón **«Solucionar»**.
 1. Repítela desde la ficha del equipo («Copia completa del equipo» → «Hacer ahora»).
 2. Si vuelve a fallar, mira que el servidor tenga sitio libre: la copia completa ocupa mucho.
 
+En el panel, este aviso tiene el botón **«Solucionar»**.
+
 ## Bases de datos
 
 ### OCT-BD-01 · La copia de las bases de datos de [equipo] falló
@@ -140,6 +142,8 @@ En el panel, este aviso tiene el botón **«Solucionar»**.
 1. Abre la ficha del equipo → «Bases de datos» y revisa el usuario y la contraseña de cada base.
 2. Si han cambiado, ponlos bien, pulsa «Guardar» y después «Copiar ahora».
 3. Si el motor de la base de datos estaba parado, arráncalo y vuelve a copiar.
+
+En el panel, este aviso tiene el botón **«Solucionar»**.
 
 ### OCT-BD-02 · No se pudo recuperar la base de datos de [equipo]
 
@@ -173,6 +177,8 @@ En el panel, este aviso tiene el botón **«Solucionar»**.
 2. Si es VirtualBox en Linux o Mac y la máquina estaba encendida: apágala y copia otra vez (en Windows se copia encendida).
 3. Mira que el servidor tenga sitio libre: las máquinas virtuales ocupan mucho.
 
+En el panel, este aviso tiene el botón **«Solucionar»**.
+
 ### OCT-VM-02 · No se pudo recuperar la máquina virtual de [equipo]
 
 **Qué pasa / por qué importa:** La máquina original NO se ha tocado: sigue como estaba.
@@ -204,6 +210,8 @@ En el panel, este aviso tiene el botón **«Solucionar»**.
 1. Si pone «se deja para luego»: estaba usando el ordenador a fondo; se hará sola más tarde.
 2. Mira que el disco USB esté conectado (o que la carpeta de red se vea) y que tenga sitio libre.
 3. En la ficha del equipo → «Copia imagen de disco» → «Hacer una imagen ahora» para repetirla.
+
+En el panel, este aviso tiene el botón **«Solucionar»**.
 
 ## Recuperar archivos
 
@@ -255,6 +263,8 @@ En el panel, este aviso tiene el botón **«Solucionar»**.
 
 1. Ve a «Copia de la nube» y vuelve a poner los datos de la cuenta (botón «Actualizar»): los permisos de Microsoft 365 y Google caducan cada cierto tiempo.
 2. Comprueba que el servidor tiene Internet.
+
+En el panel, este aviso tiene el botón **«Solucionar»**.
 
 ## Monitorización
 
@@ -432,10 +442,13 @@ En el panel, este aviso tiene el botón **«Solucionar»**.
 
 **Cómo se arregla:**
 
-1. Windows: Seguridad de Windows → Firewall y protección de red → activa los tres perfiles.
-2. Mac: Ajustes del Sistema → Red → Cortafuegos → activar.
-3. Linux: sudo ufw enable (o el cortafuegos que use tu sistema).
-4. Si lo apagó un programa que no conoces, pide ayuda.
+1. En Windows y Mac: pulsa «Solucionar» y se enciende solo.
+2. Windows, a mano: Seguridad de Windows → Firewall y protección de red → activa los tres perfiles.
+3. Mac: Ajustes del Sistema → Red → Cortafuegos → activar.
+4. Linux: sudo ufw enable (o el cortafuegos que use tu sistema).
+5. Si lo apagó un programa que no conoces, pide ayuda.
+
+En el panel, este aviso tiene el botón **«Solucionar»**.
 
 ### OCT-MON-14 · El portátil [equipo] no tiene el disco cifrado
 
@@ -479,8 +492,10 @@ En el panel, este aviso tiene el botón **«Solucionar»**.
 
 **Cómo se arregla:**
 
-1. Si lo has creado tú o alguien de confianza, pulsa «Es correcto» en la monitorización de ese equipo.
+1. Si lo has creado tú o alguien de confianza, pulsa «Solucionar: Es correcto».
 2. Si no sabes quién es: quítale los permisos (Windows: Administración de equipos → Usuarios y grupos) y avisa a un técnico.
+
+En el panel, este aviso tiene el botón **«Solucionar»**.
 
 ### OCT-MON-17 · [equipo] lleva semanas sin reiniciarse
 
@@ -493,7 +508,9 @@ En el panel, este aviso tiene el botón **«Solucionar»**.
 
 **Cómo se arregla:**
 
-1. Reinícialo cuando no moleste (guarda antes lo que tengas abierto).
+1. Reinícialo cuando no moleste (guarda antes lo que tengas abierto), o pulsa «Solucionar»: se reinicia dentro de 10 minutos avisando en pantalla.
+
+En el panel, este aviso tiene el botón **«Solucionar»**.
 
 ### OCT-MON-18 · Han cambiado piezas de [equipo]
 
@@ -506,8 +523,10 @@ En el panel, este aviso tiene el botón **«Solucionar»**.
 
 **Cómo se arregla:**
 
-1. Si se ha ampliado o reparado el equipo, pulsa «Es correcto» en la monitorización de ese equipo.
+1. Si se ha ampliado o reparado el equipo, pulsa «Solucionar: Es correcto».
 2. Si no: revisa el equipo por dentro y pregunta quién lo ha tocado.
+
+En el panel, este aviso tiene el botón **«Solucionar»**.
 
 ### OCT-MON-19 · Internet va mal en [equipo]
 
@@ -728,6 +747,8 @@ En el panel, este aviso tiene el botón **«Solucionar»**.
 2. Si dice que no puede descargar el rescate: el servidor necesita Internet la primera vez.
 3. Si los ordenadores no lo ven: en el servidor, sudo bash octopus.sh abrir-arranque-red (cortafuegos).
 4. Pulsa «Apagar» y «Encender» otra vez.
+
+En el panel, este aviso tiene el botón **«Solucionar»**.
 
 ## USB de rescate
 

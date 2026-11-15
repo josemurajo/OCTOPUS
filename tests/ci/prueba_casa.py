@@ -155,6 +155,17 @@ def unidad():
     chk(all(av.codigo_trabajo(t, q) == c for (t, q), c in casos.items()), "cada trabajo fallido tiene su aviso",
         {k: av.codigo_trabajo(*k) for k in casos})
     chk("Por qué suele pasar" in av.texto("OCT-EQ-04", equipo="PC-1"), "el correo/Telegram también dice por qué suele pasar")
+    # cada aviso que se puede arreglar tiene su arreglo: solo si no tiene riesgo, o con permiso (botón «Solucionar»)
+    fuente = (Path(__file__).resolve().parents[2] / "lib" / "admin_panel.py").read_text(encoding="utf-8")
+    sin = [f"{c} ({v['accion']})" for c, v in av.CATALOGO.items() if v.get("accion") and not (
+        v["accion"] in a._aa.POLITICA and (f"'{v['accion']}'" in fuente or v["accion"] in av.ACCIONES_SERVIDOR))]
+    chk(not sin, "cada «Solucionar» tiene su arreglo y su regla (solo o con permiso)", sin)
+    peligrosos = [k for k, v in a._aa.POLITICA.items() if v.get("riesgo") and v.get("auto")]
+    chk(not peligrosos, "lo que tiene riesgo nunca se hace solo: pide permiso", peligrosos)
+    con_arreglo = {c for c, v in av.CATALOGO.items() if v.get("accion")}
+    chk({"OCT-COMP-01", "OCT-BD-01", "OCT-VM-01", "OCT-IMG-01", "OCT-NUBE-01", "OCT-RED-01", "OCT-MON-13",
+         "OCT-MON-16", "OCT-MON-17", "OCT-MON-18"} <= con_arreglo, "lo nuevo también se arregla con «Solucionar»",
+        sorted(con_arreglo))
     t = c.get("/avisos/guia").get_data(as_text=True)
     chk(t.count('class="codigo"') == len(av.CATALOGO) and "Por qué suele pasar" in t, "guía con todos los avisos en el panel")
     t = c.get("/avisos/guia?q=rescate").get_data(as_text=True)

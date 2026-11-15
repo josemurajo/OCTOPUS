@@ -1576,9 +1576,9 @@ def _avisos(lista):
         elif est['texto'] == 'Copia antigua':
             avisos.append(_aviso('OCT-EQ-03', nombre, sid, sol, detalle=_hace(est['ultima'])))
         for t in e['trabajos']:
-            if t['estado'] == 'error':
-                avisos.append(_aviso(_av.codigo_trabajo(t.get('tipo', 'copia'), t.get('que', '')), nombre, sid, sol,
-                                     detalle=str(t['mensaje'])[:300]))
+            cod_t = _av.codigo_trabajo(t.get('tipo', 'copia'), t.get('que', '')) if t['estado'] == 'error' else None
+            if cod_t:
+                avisos.append(_aviso(cod_t, nombre, sid, sol, detalle=str(t['mensaje'])[:300]))
         p = pruebas.get(nombre.lower())
         if p and not p.get('ok'):
             avisos.append(_aviso('OCT-EQ-05', nombre, sid, sol, detalle=p.get('detalle', '')))
@@ -1629,6 +1629,18 @@ def _avisos(lista):
     return avisos
 
 
+def _ord_pedir(row, ruta, datos, segundos):
+    import ordenes as _ord
+    return _ord.pedir(row['hostname'], 'POST', ruta, datos, segundos)
+
+
+def _lanzar_imagen(row, on_done=None):
+    """Hace ya la imagen de disco del equipo (la usan la pantalla «Imagen de disco» y el botón «Solucionar»)."""
+    return agentes._lanzar(row, 'imagen', 'Haciendo la imagen de disco (puede tardar una hora o más)',
+                           lambda: _ord_pedir(row, '/webhook/imagen-disco', {}, 12 * 3600),
+                           lambda r: f'Imagen de disco hecha en {r.get("destino")}.', on_done)
+
+
 def _ejecutar_arreglo(codigo, accion, row, uid, usuario, al_terminar=None):
     """Hace la solución de un aviso (la usan el botón «Solucionar» y el arreglo automático).
     Devuelve (mensaje, 'success'|'error'). al_terminar(ok, detalle) se llama cuando se sabe el resultado."""
@@ -1658,6 +1670,61 @@ def _ejecutar_arreglo(codigo, accion, row, uid, usuario, al_terminar=None):
         _guardar_solucion(codigo, row['id'], 'en_curso', 'Copia en marcha...')
         return (f'Copia de {row["hostname"]} en marcha' + (' (después se repite la prueba)' if prueba else '') +
                 '. Cuando termine bien, el aviso desaparecerá solo.'), 'success'
+
+    # ---- trabajos en un equipo (copias de otro tipo, imagen de disco, cortafuegos, reiniciar)
+    trabajos_equipo = {
+        'copia_completa_equipo': ('Copia completa', lambda r, f: agentes.lanzar_copia(r, on_done=f, completa=True)),
+        'copia_bd_equipo': ('Copia de las bases de datos', lambda r, f: agentes.lanzar_copia(r, on_done=f, bd=True)),
+        'copia_vms_equipo': ('Copia de las máquinas virtuales', lambda r, f: agentes.lanzar_copia(r, on_done=f, vms=True)),
+        'imagen_equipo': ('Imagen de disco', lambda r, f: _lanzar_imagen(r, f)),
+        'cortafuegos_equipo': ('Encender el cortafuegos', lambda r, f: agentes._lanzar(
+            r, 'ajuste', 'Encendiendo el cortafuegos...', lambda: _ord_pedir(r, '/webhook/cortafuegos-encender', {}, 60),
+            lambda x: x.get('message', 'Cortafuegos encendido'), f)),
+        'reiniciar_equipo': ('Reiniciar', lambda r, f: agentes._lanzar(
+            r, 'ajuste', 'Programando el reinicio...', lambda: _ord_pedir(r, '/webhook/reiniciar', {'minutos': 10}, 60),
+            lambda x: x.get('message', 'Reinicio programado'), f)),
+    }
+    if accion in trabajos_equipo:
+        if not row:
+            _fin_ok(False, 'el equipo ya no existe')
+            return 'Ese equipo ya no existe.', 'error'
+        nombre, lanzar = trabajos_equipo[accion]
+
+        def _fin_t(s_id, ok, resp, _n=nombre):
+            if accion.startswith('copia'):
+                _copia_terminada(s_id, ok, resp)
+            det = f'{_n}: hecho' if ok else f'{_n}: no se pudo ({str(resp.get("message", ""))[:200]})'
+            _guardar_solucion(codigo, s_id, 'ok' if ok else 'error', det)
+            if ok and accion == 'cortafuegos_equipo':
+                _mon.evaluar(s_id)
+            _fin_ok(ok, det)
+        lanzar(row, _fin_t)
+        _guardar_solucion(codigo, row['id'], 'en_curso', f'{nombre}: en marcha...')
+        return f'{nombre} de {row["hostname"]}: en marcha. Cuando termine bien, el aviso desaparecerá solo.', 'success'
+
+    if accion == 'aceptar_cambios_monitor':
+        sid_m = row['id'] if row else _mon.SERVIDOR
+        _mon.aceptar_cambios(sid_m)
+        _guardar_solucion(codigo, sid_m, 'ok', f'Dado por bueno ({usuario})')
+        _fin_ok(True, 'dado por bueno')
+        return 'Hecho: lo que tiene ahora el equipo es lo normal. Se avisará si vuelve a cambiar.', 'success'
+
+    if accion in ('copia_nube_ahora', 'reiniciar_arranque_red'):
+        try:
+            if accion == 'copia_nube_ahora':
+                _nube_lanzar()
+                det = 'Copia de la nube en marcha (el resultado sale en «Copia de la nube»)'
+            else:
+                import arranque_red as _ar
+                _ar.apagar()
+                _ar.encender()
+                det = 'Arranque por red: apagado y encendido otra vez (tarda un poco en estar listo)'
+            ok = True
+        except Exception as exc:
+            ok, det = False, f'No se pudo: {exc}'
+        _guardar_solucion(codigo, None, 'ok' if ok else 'error', det)
+        _fin_ok(ok, det)
+        return det, 'success' if ok else 'error'
 
     if accion == 'reenviar_sugerencias':
         import sugerencias as _sug
@@ -1849,7 +1916,8 @@ def _autoarreglo_ciclo_sin_lock():
             else:
                 si, motivo = _aa.toca(clave, accion)
                 plan = 'arreglando' if si else 'luego'
-        if _aa.hay_que_avisar(clave, a['codigo']):
+        en_silencio = plan == 'arreglando' and a['codigo'] in _aa.PRIMERO_EN_SILENCIO
+        if not en_silencio and _aa.hay_que_avisar(clave, a['codigo']):
             mensajes.append((_aa.tipo_alerta(a['codigo']), _aa.mensaje_nuevo(a, plan, motivo, panel)))
             _aa.apuntar_avisado(clave)
         if plan != 'arreglando':
@@ -1865,8 +1933,11 @@ def _autoarreglo_ciclo_sin_lock():
             _ban.marcar('autoarreglo', f'{"Arreglado solo" if ok else "No se pudo arreglar solo"}: {_a["titulo"]} '
                                        f'— {detalle}', equipo=_a.get('equipo'), codigo=_a['codigo'],
                         nivel='ok' if ok else 'aviso')
-            if _a['codigo'] not in _aa.NO_SE_AVISA:
+            silencio = _a['codigo'] in _aa.PRIMERO_EN_SILENCIO
+            if _a['codigo'] not in _aa.NO_SE_AVISA and not (silencio and ok):
                 _mandar_mensajes([(_aa.tipo_alerta(_a['codigo']), _aa.mensaje_resultado(_a, ok, detalle, _c, panel))])
+                if silencio:
+                    _aa.apuntar_avisado(_c)     # ya se ha contado (falló también al repetirla): no se repite el mensaje
         _ejecutar_arreglo(a['codigo'], accion, row, None, 'automático', al_terminar=_al_terminar)
         lanzados.append(clave)
     _mandar_mensajes(mensajes)
@@ -3426,6 +3497,7 @@ def api_monitor(system_id):
     _mon.mirar(system_id)
     d = _mon.ultimo(system_id) or {}
     out = {'datos': d, 'ahora': datetime.now().timestamp(), 'explica': _mon.explicar(d),
+           'fallos_porque': _mon.explicar_fallos(d.get('lento') or {}),
            'avisos': [_aviso(a['codigo'], a['hostname'], system_id, None, detalle=a['detalle']) for a in _mon.avisos(system_id)]}
     if request.args.get('horas'):
         out['historial'] = _mon.historial(system_id, min(24 * 90, max(0.25, request.args.get('horas', type=float) or 1)))
@@ -4076,10 +4148,7 @@ def equipo_imagen(system_id):
         if not puede_actuar():
             abort(403)
         if request.form.get('accion') == 'ahora':
-            import ordenes as _ord
-            agentes._lanzar(row, 'imagen', 'Haciendo la imagen de disco (puede tardar una hora o más)',
-                            lambda: _ord.pedir(row['hostname'], 'POST', '/webhook/imagen-disco', {}, 12 * 3600),
-                            lambda r: f'Imagen de disco hecha en {r.get("destino")}.')
+            _lanzar_imagen(row)
             flash('Haciendo la imagen de disco. Puedes cerrar esta página: el progreso sale en la ficha del equipo.', 'info')
             return redirect(url_for('equipo', system_id=system_id))
         destino = _imi.destino_valido(request.form.get('destino', ''))

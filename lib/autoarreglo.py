@@ -40,6 +40,24 @@ POLITICA: dict[str, dict] = {
     "renovar_certificado": {"auto": True, "cada": 24 * 3600, "madrugada": True,  # el panel se reinicia unos segundos
                             "como": "emitir un certificado nuevo con la misma autoridad (los equipos lo aceptan solos)"},
     "reenviar_sugerencias": {"auto": True, "cada": 24 * 3600, "como": "volver a enviar las sugerencias al soporte"},
+    # ---- lo de cada equipo que se añadió después
+    "copia_completa_equipo": {"auto": True, "cada": 6 * 3600, "equipo_conectado": True,
+                              "como": "repetir la copia completa del equipo"},
+    "copia_bd_equipo": {"auto": True, "cada": 2 * 3600, "equipo_conectado": True,
+                        "como": "repetir la copia de las bases de datos"},
+    "copia_vms_equipo": {"auto": True, "cada": 6 * 3600, "equipo_conectado": True,
+                         "como": "repetir la copia de las máquinas virtuales"},
+    "imagen_equipo": {"auto": True, "cada": 6 * 3600, "equipo_conectado": True,
+                      "como": "repetir la imagen de disco"},
+    "copia_nube_ahora": {"auto": True, "cada": 6 * 3600, "como": "repetir la copia de Microsoft 365 y Google"},
+    "reiniciar_arranque_red": {"auto": True, "cada": 3600, "como": "apagar y volver a encender el arranque por red"},
+    "aceptar_cambios_monitor": {"auto": False, "como": "dar por buenos los administradores y las piezas de ahora"},
+    "cortafuegos_equipo": {"auto": False, "equipo_conectado": True, "como": "encender el cortafuegos del equipo",
+                           "riesgo": "Se enciende el cortafuegos del equipo. Si algún programa o juego en red dejó de "
+                                     "funcionar al encenderlo, habrá que darle permiso en el cortafuegos."},
+    "reiniciar_equipo": {"auto": False, "equipo_conectado": True, "como": "reiniciar el equipo (avisando 10 minutos antes)",
+                         "riesgo": "El equipo se reiniciará dentro de 10 minutos. Quien lo esté usando verá un aviso en "
+                                   "pantalla para guardar; lo que no se guarde se perderá."},
     "comprobar_actualizacion": {"auto": False, "como": "volver a comprobar si hay versión nueva"},  # ya se hace cada 2 días
     "limpiar_copias": {"auto": False, "como": "borrar las copias antiguas que sobran", "riesgo": "Se borran las copias antiguas que sobran según cuántas has elegido "
                                                 "guardar. Lo que se borra no se puede recuperar."},
@@ -174,6 +192,9 @@ DESPERTAR_FILE = ESTADO_FILE.parent / "autoarreglo_ya"   # lo deja el mantenimie
 MAX_AVISOS_DIA = 4          # el mismo problema, como mucho 4 mensajes al día aunque vaya y venga
 # avisos que no se mandan (ya los manda el incidente, o son recordatorios) y los que esperan antes de avisar
 NO_SE_AVISA = {"OCT-SEN-01", "OCT-EQ-06", "OCT-KIT-01"}
+# Se intentan arreglar primero en silencio (una copia cortada por un reinicio casi siempre sale bien a la segunda):
+# solo se manda mensaje si el arreglo automático también falla.
+PRIMERO_EN_SILENCIO = {"OCT-EQ-03", "OCT-EQ-04"}
 ESPERA_ANTES_DE_AVISAR = {"OCT-EQ-01": 24 * 3600}   # un portátil apagado por la noche no es un problema
 
 

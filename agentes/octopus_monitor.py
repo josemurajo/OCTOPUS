@@ -589,9 +589,10 @@ $o.cifrado=@{ que='BitLocker'; activo=$(if($bl){"$($bl.ProtectionStatus)" -eq 'O
 $desde=(Get-Date).AddDays(-7)
 $rs=@(Get-WinEvent -FilterHashtable @{LogName='System'; Id=41,6008; StartTime=$desde} -MaxEvents 50)
 $bs=@(Get-WinEvent -FilterHashtable @{LogName='System'; ProviderName='Microsoft-Windows-WER-SystemErrorReporting'; Id=1001; StartTime=$desde} -MaxEvents 50)
-$o.fallos=@{ reinicios=[int]$rs.Count; pantallazos=[int]$bs.Count }
+$cods=@($bs|%{ if($_.Message -match '(0x[0-9a-fA-F]{8})'){$matches[1].ToLower()} })
+$o.fallos=@{ reinicios=[int]$rs.Count; pantallazos=[int]$bs.Count; codigos=$cods }
 $ap=@(Get-WinEvent -FilterHashtable @{LogName='Application'; Id=1000,1002; StartTime=$desde} -MaxEvents 300)
-$o.cuelgues=@($ap|%{ if($_.Properties.Count){"$($_.Properties[0].Value)"} }|?{$_}|group|sort Count -Desc|select -First 8|%{@{programa=$_.Name; veces=[int]$_.Count}})
+$o.cuelgues=@($ap|%{ if($_.Properties.Count){ $m=$(if($_.Id -eq 1000 -and $_.Properties.Count -gt 3){"$($_.Properties[3].Value)"}else{'(no responde)'}); "$($_.Properties[0].Value)|$m" } }|?{$_}|group|sort Count -Desc|select -First 8|%{ $p=$_.Name.Split('|'); @{programa=$p[0]; modulo=$p[1]; veces=[int]$_.Count} })
 $lf=@(Get-WinEvent -FilterHashtable @{LogName='Security'; Id=4625; StartTime=(Get-Date).AddDays(-1)} -MaxEvents 1000)
 $o.accesos_fallidos=@{ ultimas_24h=[int]$lf.Count }
 $o.administradores=@(Get-LocalGroupMember -SID 'S-1-5-32-544'|%{"$($_.Name)"})

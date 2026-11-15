@@ -23,6 +23,7 @@ OCTOPUS - Monitorizacion de equipos (servidor): guarda lo que mandan los agentes
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import threading
 import time
@@ -287,11 +288,15 @@ def _evaluar_mas(c, sid, d, lento):
     _si(c, sid, "OCT-MON-10", _sostenido(c, sid, "gtemp", 88, 10), "más de 88 °C durante 10 minutos")
     fa = lento.get("fallos") or {}
     n_fallos = (fa.get("reinicios") or 0) + (fa.get("pantallazos") or 0)
+    porque = explicar_fallos(lento)
     _si(c, sid, "OCT-MON-11", n_fallos > 0, ", ".join(x for x in (
         f"{fa.get('pantallazos')} pantallazo(s)" if fa.get("pantallazos") else "",
-        f"{fa.get('reinicios')} apagado(s) de golpe" if fa.get("reinicios") else "") if x) + " en 7 días")
+        f"{fa.get('reinicios')} apagado(s) de golpe" if fa.get("reinicios") else "") if x) + " en 7 días. "
+        + " ".join(p for p in porque if not p.startswith("«"))[:400])
     malos = [x for x in lento.get("cuelgues") or [] if (x.get("veces") or 0) >= 5]
-    _si(c, sid, "OCT-MON-12", bool(malos), ", ".join(f"{x['programa']} ({x['veces']} veces)" for x in malos[:3]))
+    _si(c, sid, "OCT-MON-12", bool(malos), " ".join(p for p in porque if p.startswith("«") and
+                                                  any(f"«{x['programa']}»" in p for x in malos))[:400]
+        or ", ".join(f"{x['programa']} ({x['veces']} veces)" for x in malos[:3]))
     fw = (lento.get("cortafuegos") or {})
     _si(c, sid, "OCT-MON-13", fw.get("activo") is False, ", ".join(fw.get("apagados") or []))
     cif = lento.get("cifrado") or {}
@@ -320,6 +325,68 @@ def _evaluar_mas(c, sid, d, lento):
         ", ".join(x for x in (f"{i.get('cortes_24h')} cortes en 24 h" if i.get("cortes_24h") else "",
                               f"tarda {i.get('ms_mediana'):.0f} ms en responder" if lento_red else "",
                               "ahora mismo sin Internet" if i.get("ok") is False else "") if x))
+
+
+# Los pantallazos azules de Windows dicen un código. Los más frecuentes, en cristiano (de dónde suele venir y qué hacer).
+PANTALLAZOS = {
+    "0x00000116": ("el controlador de la tarjeta gráfica", "actualiza el controlador de la gráfica desde la web del fabricante"),
+    "0x00000117": ("el controlador de la tarjeta gráfica", "actualiza el controlador de la gráfica desde la web del fabricante"),
+    "0x00000119": ("el controlador de la tarjeta gráfica", "actualiza el controlador de la gráfica desde la web del fabricante"),
+    "0x0000001a": ("la memoria (RAM)", "pasa el «Diagnóstico de memoria de Windows»; si da errores, cambia la memoria"),
+    "0x00000050": ("la memoria o un controlador", "pasa el «Diagnóstico de memoria de Windows» y actualiza Windows"),
+    "0x0000000a": ("un controlador (a menudo el de la red o el wifi)", "actualiza Windows y los controladores"),
+    "0x000000d1": ("un controlador (a menudo el de la red o el wifi)", "actualiza los controladores de red y wifi"),
+    "0x0000007e": ("un controlador o una pieza de Windows", "actualiza Windows y los controladores"),
+    "0x0000003b": ("un controlador (a menudo el de la gráfica)", "actualiza Windows y el controlador de la gráfica"),
+    "0x0000001e": ("un controlador", "actualiza Windows y los controladores"),
+    "0x0000009f": ("un controlador al suspender o despertar", "actualiza los controladores; mientras, apágalo en vez de suspenderlo"),
+    "0x00000133": ("un controlador o el disco SSD", "actualiza los controladores y el programa interno (firmware) del SSD"),
+    "0x00000124": ("una pieza del ordenador (calor, procesador o fuente de alimentación)",
+                   "revisa la temperatura, limpia el polvo y quita el «overclock» si lo hay"),
+    "0x0000007a": ("el disco", "haz copia ya y revisa la salud del disco (en esta misma pantalla)"),
+    "0x000000f4": ("el disco o un proceso de Windows", "revisa la salud del disco y actualiza Windows"),
+    "0x000000ef": ("Windows dañado", "en una consola de administrador: sfc /scannow"),
+    "0x00000139": ("un controlador o la memoria", "actualiza los controladores y pasa el diagnóstico de memoria"),
+    "0x000000c2": ("un controlador", "actualiza los controladores (o quita el último programa instalado)"),
+    "0x00000019": ("un controlador o la memoria", "actualiza los controladores y pasa el diagnóstico de memoria"),
+}
+
+
+def explicar_fallos(lento: dict) -> list[str]:
+    """Por qué se ha caído o colgado algo, en frases sencillas."""
+    out = []
+    fa = lento.get("fallos") or {}
+    vistos = set()
+    for cod in fa.get("codigos") or []:
+        cod = str(cod).lower()
+        if cod in vistos:
+            continue
+        vistos.add(cod)
+        if cod in PANTALLAZOS:
+            de, que = PANTALLAZOS[cod]
+            out.append(f"Pantallazo {cod}: suele venir de {de}. Qué hacer: {que}.")
+        else:
+            out.append(f"Pantallazo {cod}: busca ese código en Internet o enséñaselo a un técnico.")
+    if fa.get("reinicios"):
+        out.append(f"Se apagó de golpe {fa['reinicios']} vez/veces sin pantallazo: suele ser un corte de luz, el botón "
+                   "de apagado o la fuente de alimentación.")
+    for c in lento.get("cuelgues") or []:
+        if (c.get("veces") or 0) < 2:
+            continue
+        prog, mod = c.get("programa") or "?", (c.get("modulo") or "").strip()
+        ml = mod.lower()
+        if mod == "(no responde)":
+            por = "se quedó colgado (sin responder)"
+        elif re.match(r"^(nv|amd|ati|ig|intel).*\.dll$", ml):
+            por = "por el controlador de la tarjeta gráfica: actualízalo"
+        elif not mod or ml == prog.lower():
+            por = "por un fallo del propio programa: actualízalo"
+        elif ml in ("ntdll.dll", "kernelbase.dll", "ucrtbase.dll", "msvcrt.dll"):
+            por = "por un fallo interno (a menudo un complemento o archivos del programa dañados): actualízalo o reinstálalo"
+        else:
+            por = f"por una pieza llamada «{mod}» (a menudo un complemento): quita complementos o reinstala"
+        out.append(f"«{prog}» se cerró {c['veces']} veces {por}.")
+    return out
 
 
 def aceptar_cambios(system_id: int) -> None:

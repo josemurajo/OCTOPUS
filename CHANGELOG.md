@@ -22,6 +22,14 @@ instalan versiones con esa firma. Lo más nuevo, arriba.
   - **Programas instalados** (con buscador) y **programas que se abren solos al encender**.
   - **El propio servidor de OCTOPUS también se monitoriza**, sin instalar nada.
   - 10 avisos nuevos, cada uno con por qué suele pasar y cómo se arregla.
+- **Copias cortadas (reinicio, cuelgue, apagón):** en cuanto el equipo vuelve a estar encendido, la copia sigue
+  sola donde se quedó (sin volver a subir lo que ya subió). Si falla, se repite a los 20 minutos, hasta 3 veces.
+- **Menos sustos:** si una copia falla, OCTOPUS la repite primero en silencio y solo avisa si vuelve a fallar.
+- **Pantallazos y cuelgues explicados:** «Pantallazo 0x116: suele venir del controlador de la gráfica; actualízalo»,
+  «Excel se cerró 6 veces por un complemento».
+- **«Solucionar» también en lo nuevo:** repetir la copia completa, la de bases de datos, la de máquinas virtuales, la
+  imagen de disco, la de la nube y el arranque por red (solos, sin riesgo); encender el cortafuegos y reiniciar un
+  equipo que lleva semanas sin reiniciarse (con permiso); «Es correcto» para administradores y piezas nuevas.
 - README con todo lo de la 3.1.0.
 
 ## 3.1.0 - 2026-11-15 (rescate, arranque por red y despliegue)

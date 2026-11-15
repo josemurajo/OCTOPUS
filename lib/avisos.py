@@ -229,7 +229,7 @@ CATALOGO.update({
         "pasos": ["Repítela desde la ficha del equipo («Copia completa del equipo» → «Hacer ahora»).",
                   "Si vuelve a fallar, mira que el servidor tenga sitio libre: la copia completa ocupa mucho.",
                   "Motivo que dio el equipo: {detalle}"],
-        "accion": None},
+        "accion": "copia_completa_equipo", "boton": "Repetir la copia completa"},
     "OCT-BD-01": {
         "nivel": "problema", "titulo": "La copia de las bases de datos de {equipo} falló",
         "por_que": "Lo que se haya guardado en esas bases de datos desde la última copia buena no está protegido.",
@@ -237,7 +237,7 @@ CATALOGO.update({
                   "Si han cambiado, ponlos bien, pulsa «Guardar» y después «Copiar ahora».",
                   "Si el motor de la base de datos estaba parado, arráncalo y vuelve a copiar.",
                   "Motivo que dio el equipo: {detalle}"],
-        "accion": None},
+        "accion": "copia_bd_equipo", "boton": "Repetir la copia de las bases de datos"},
     "OCT-BD-02": {
         "nivel": "problema", "titulo": "No se pudo recuperar la base de datos de {equipo}",
         "por_que": "La base de datos original NO se ha tocado: sigue como estaba.",
@@ -253,7 +253,7 @@ CATALOGO.update({
                   "se copia encendida).",
                   "Mira que el servidor tenga sitio libre: las máquinas virtuales ocupan mucho.",
                   "Motivo que dio el equipo: {detalle}"],
-        "accion": None},
+        "accion": "copia_vms_equipo", "boton": "Repetir la copia de las máquinas virtuales"},
     "OCT-VM-02": {
         "nivel": "problema", "titulo": "No se pudo recuperar la máquina virtual de {equipo}",
         "por_que": "La máquina original NO se ha tocado: sigue como estaba.",
@@ -268,7 +268,7 @@ CATALOGO.update({
                   "Mira que el disco USB esté conectado (o que la carpeta de red se vea) y que tenga sitio libre.",
                   "En la ficha del equipo → «Copia imagen de disco» → «Hacer una imagen ahora» para repetirla.",
                   "Motivo que dio el equipo: {detalle}"],
-        "accion": None},
+        "accion": "imagen_equipo", "boton": "Repetir la imagen de disco"},
     "OCT-REC-01": {
         "nivel": "problema", "titulo": "La recuperación de archivos en {equipo} no se terminó",
         "por_que": "Puede que solo se hayan recuperado algunos archivos. Lo que ya había en el equipo no se borra.",
@@ -292,7 +292,7 @@ CATALOGO.update({
                   "de Microsoft 365 y Google caducan cada cierto tiempo.",
                   "Comprueba que el servidor tiene Internet.",
                   "Detalle: {detalle}"],
-        "accion": None, "enlace": "nube"},
+        "accion": "copia_nube_ahora", "boton": "Repetir la copia de la nube", "enlace": "nube"},
     "OCT-RED-01": {
         "nivel": "problema", "titulo": "El arranque por red no se ha podido encender",
         "por_que": "Los ordenadores no podrán arrancar el rescate por red (con el pendrive sí).",
@@ -301,7 +301,7 @@ CATALOGO.update({
                   "Si los ordenadores no lo ven: en el servidor, sudo bash octopus.sh abrir-arranque-red (cortafuegos).",
                   "Pulsa «Apagar» y «Encender» otra vez.",
                   "Detalle: {detalle}"],
-        "accion": None, "enlace": "arranque_red"},
+        "accion": "reiniciar_arranque_red", "boton": "Apagar y encender el arranque por red", "enlace": "arranque_red"},
     # ---- monitorización (lo nuevo)
     "OCT-MON-10": {
         "nivel": "atencion", "titulo": "La tarjeta gráfica de {equipo} se está calentando mucho",
@@ -327,11 +327,12 @@ CATALOGO.update({
     "OCT-MON-13": {
         "nivel": "problema", "titulo": "El cortafuegos de {equipo} está apagado",
         "por_que": "El cortafuegos impide que otros equipos de la red entren en este. Apagado, es mucho más fácil atacarlo.",
-        "pasos": ["Windows: Seguridad de Windows → Firewall y protección de red → activa los tres perfiles.",
+        "pasos": ["En Windows y Mac: pulsa «Solucionar» y se enciende solo.",
+                  "Windows, a mano: Seguridad de Windows → Firewall y protección de red → activa los tres perfiles.",
                   "Mac: Ajustes del Sistema → Red → Cortafuegos → activar.",
                   "Linux: sudo ufw enable (o el cortafuegos que use tu sistema).",
                   "Si lo apagó un programa que no conoces, pide ayuda.", "Apagado en: {detalle}"],
-        "accion": None},
+        "accion": "cortafuegos_equipo", "boton": "Encender el cortafuegos"},
     "OCT-MON-14": {
         "nivel": "atencion", "titulo": "El portátil {equipo} no tiene el disco cifrado",
         "por_que": "Si lo pierdes o te lo roban, cualquiera puede sacar el disco y leer todos los archivos.",
@@ -350,21 +351,22 @@ CATALOGO.update({
     "OCT-MON-16": {
         "nivel": "problema", "titulo": "Hay administradores nuevos en {equipo}",
         "por_que": "Un administrador puede hacer de todo en el equipo. Los atacantes crean uno para quedarse dentro.",
-        "pasos": ["Si lo has creado tú o alguien de confianza, pulsa «Es correcto» en la monitorización de ese equipo.",
+        "pasos": ["Si lo has creado tú o alguien de confianza, pulsa «Solucionar: Es correcto».",
                   "Si no sabes quién es: quítale los permisos (Windows: Administración de equipos → Usuarios y grupos) "
                   "y avisa a un técnico.", "Nuevos: {detalle}"],
-        "accion": None},
+        "accion": "aceptar_cambios_monitor", "boton": "Es correcto (lo he hecho yo)"},
     "OCT-MON-17": {
         "nivel": "atencion", "titulo": "{equipo} lleva semanas sin reiniciarse",
         "por_que": "Muchas actualizaciones de seguridad no se aplican hasta reiniciar, y el equipo se va volviendo lento.",
-        "pasos": ["Reinícialo cuando no moleste (guarda antes lo que tengas abierto).", "Detalle: {detalle}"],
-        "accion": None},
+        "pasos": ["Reinícialo cuando no moleste (guarda antes lo que tengas abierto), o pulsa «Solucionar»: se "
+                  "reinicia dentro de 10 minutos avisando en pantalla.", "Detalle: {detalle}"],
+        "accion": "reiniciar_equipo", "boton": "Reiniciarlo (avisando antes)"},
     "OCT-MON-18": {
         "nivel": "atencion", "titulo": "Han cambiado piezas de {equipo}",
         "por_que": "Si nadie lo ha hecho a propósito, puede que alguien haya quitado memoria o un disco (con tus datos).",
-        "pasos": ["Si se ha ampliado o reparado el equipo, pulsa «Es correcto» en la monitorización de ese equipo.",
+        "pasos": ["Si se ha ampliado o reparado el equipo, pulsa «Solucionar: Es correcto».",
                   "Si no: revisa el equipo por dentro y pregunta quién lo ha tocado.", "Cambios: {detalle}"],
-        "accion": None},
+        "accion": "aceptar_cambios_monitor", "boton": "Es correcto (lo he hecho yo)"},
     "OCT-MON-19": {
         "nivel": "atencion", "titulo": "Internet va mal en {equipo}",
         "por_que": "Con cortes o lentitud fallan las webs, las videollamadas, los juegos en línea y las copias.",
@@ -505,8 +507,11 @@ _TRABAJO_CODIGO = {"copia_bd": "OCT-BD-01", "recuperacion_bd": "OCT-BD-02", "cop
                    "recuperacion": "OCT-REC-01", "pasar": "OCT-PASAR-01", "copia": "OCT-EQ-04"}
 
 
-def codigo_trabajo(tipo: str, que: str = "") -> str:
-    """El aviso de un trabajo (copia, recuperación...) que ha terminado mal."""
+def codigo_trabajo(tipo: str, que: str = "") -> str | None:
+    """El aviso de un trabajo (copia, recuperación...) que ha terminado mal. None: no lleva aviso propio (los ajustes
+    que se hacen desde «Solucionar» enseñan su resultado debajo del aviso que los pidió)."""
+    if tipo == "ajuste":
+        return None
     q = (que or "").lower()
     if tipo == "copia" and "completa" in q:
         return "OCT-COMP-01"
