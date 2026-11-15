@@ -9,15 +9,14 @@
 <p class="hint">No cambia nada de tu red: el router sigue dando las direcciones como siempre. OCTOPUS solo contesta a los
   ordenadores que piden arrancar por red. Vale para PCs modernos (también con «Arranque seguro») y antiguos.</p>
 
-{% if not ok %}
-<div class="card" role="alert">{{ motivo }}</div>
-{% else %}
+{% from "_aviso.html" import aviso %}
+{% if fallo %}{{ aviso(fallo, url_for('arranque_red')) }}{% endif %}
+{% if ok %}
 <div class="card">
   {% if est.haciendo %}<p>⏳ {{ est.haciendo }}</p><meta http-equiv="refresh" content="5">
   {% elif est.encendido and est.listo %}<p><strong>✔ Encendido</strong> en {{ est.ip }}. Ya puedes arrancar ordenadores por red.</p>
   {% elif est.encendido %}<p>⏳ Arrancando (la primera vez descarga el rescate, unos 300 MB)...</p><meta http-equiv="refresh" content="10">
   {% else %}<p>Apagado.</p>{% endif %}
-  {% if est.error %}<p class="error">✘ {{ est.error }}</p>{% endif %}
   {% if puede_actuar() and not est.haciendo %}
   <form method="post" style="display:inline">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

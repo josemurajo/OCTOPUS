@@ -3,6 +3,9 @@
 <div class="notice {{ a.nivel }} aviso">
   <div class="aviso-cab"><strong>{{ a.titulo }}</strong><span class="codigo" title="Código del aviso (díselo al soporte si llamas)">{{ a.codigo }}</span></div>
   {% if a.por_que %}<p class="small"><em>Por qué importa:</em> {{ a.por_que }}</p>{% endif %}
+  {% if a.causas %}<p class="small" style="margin-bottom:2px"><em>Por qué suele pasar:</em></p>
+  <ul class="small" style="margin-top:0">{% for c in a.causas %}<li>{{ c }}</li>{% endfor %}</ul>{% endif %}
+  {% if a.pasos %}<p class="small" style="margin-bottom:2px"><em>Cómo se arregla:</em></p>{% endif %}
   {% if a.pasos %}<ol class="pasos small">{% for p in a.pasos %}<li>{{ p }}</li>{% endfor %}</ol>{% endif %}
   {% if a.rendido %}
   <p class="small" style="margin:6px 0"><span class="etiqueta-auto mal">🔧 OCTOPUS no ha podido arreglarlo solo</span> Lo ha intentado varias veces (o se arregla y vuelve a pasar).

@@ -1576,8 +1576,9 @@ def _avisos(lista):
         elif est['texto'] == 'Copia antigua':
             avisos.append(_aviso('OCT-EQ-03', nombre, sid, sol, detalle=_hace(est['ultima'])))
         for t in e['trabajos']:
-            if t['estado'] == 'error' and t.get('tipo', 'copia') == 'copia':
-                avisos.append(_aviso('OCT-EQ-04', nombre, sid, sol, detalle=str(t['mensaje'])[:300]))
+            if t['estado'] == 'error':
+                avisos.append(_aviso(_av.codigo_trabajo(t.get('tipo', 'copia'), t.get('que', '')), nombre, sid, sol,
+                                     detalle=str(t['mensaje'])[:300]))
         p = pruebas.get(nombre.lower())
         if p and not p.get('ok'):
             avisos.append(_aviso('OCT-EQ-05', nombre, sid, sol, detalle=p.get('detalle', '')))
@@ -3762,7 +3763,12 @@ def arranque_red():
             _ar.apagar()
             log_audit(session['user_id'], 'ARRANQUE_RED', 'apagar', request.remote_addr)
         return redirect(url_for('arranque_red'))
-    return render_template('arranque_red.html', ok=ok, motivo=motivo, est=_ar.estado() if ok else {})
+    est = _ar.estado() if ok else {}
+    fallo = None
+    if not ok or est.get('error') or (est.get('existe') and not est.get('encendido') and not est.get('haciendo')):
+        fallo = _aviso('OCT-RED-01', detalle=(motivo if not ok else est.get('error') or
+                                              'el arranque por red se ha parado; mira «Qué está haciendo»'))
+    return render_template('arranque_red.html', ok=ok, motivo=motivo, est=est, fallo=fallo)
 
 
 # ------------------------------------------------------------------ USB de rescate (rescate/octopus_rescate.py)
@@ -3954,6 +3960,18 @@ def despliegue():
                            activos=[dict(a, equipos=json.loads(a['equipos'] or '[]')) for a in activos])
 
 
+@app.route('/avisos/guia')
+@login_required
+def avisos_guia():
+    """Todos los avisos que puede dar OCTOPUS: qué pasa, por qué suele pasar y cómo se arregla (también en SOLUCIONES.md)."""
+    q = (request.args.get('q') or '').strip().lower()
+    todos = [_av.ficha_guia(c) for c in _av.CATALOGO]
+    if q:
+        todos = [a for a in todos if q in (a['codigo'] + ' ' + a['titulo'] + ' ' + a['por_que'] + ' ' +
+                                          ' '.join(a['causas'] + a['pasos'])).lower()]
+    return render_template('avisos_guia.html', avisos=todos, q=q)
+
+
 @app.route('/equipos/<int:system_id>/imagen', methods=['GET', 'POST'])
 @login_required
 def equipo_imagen(system_id):
@@ -3977,7 +3995,7 @@ def equipo_imagen(system_id):
             abort(403)
         if request.form.get('accion') == 'ahora':
             import ordenes as _ord
-            agentes._lanzar(row, 'copia', 'Haciendo la imagen de disco (puede tardar una hora o más)',
+            agentes._lanzar(row, 'imagen', 'Haciendo la imagen de disco (puede tardar una hora o más)',
                             lambda: _ord.pedir(row['hostname'], 'POST', '/webhook/imagen-disco', {}, 12 * 3600),
                             lambda r: f'Imagen de disco hecha en {r.get("destino")}.')
             flash('Haciendo la imagen de disco. Puedes cerrar esta página: el progreso sale en la ficha del equipo.', 'info')

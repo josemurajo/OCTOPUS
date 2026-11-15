@@ -143,6 +143,26 @@ def unidad():
     chk("máquina virtual de" in c.get("/equipos").get_data(as_text=True), "la lista de equipos las enseña juntas")
     cm.set_config("copias_vm", False)
     chk(not a.agentes.solo_vms(fila), "con la función apagada, se vuelve a copiar normal")
+
+    # avisos: todos dicen qué pasa, por qué suele pasar y cómo se arregla; los trabajos fallidos tienen el suyo
+    av = a._av
+    malos = [c for c, v in av.CATALOGO.items() if not (v.get("por_que") and v.get("causas") and v.get("pasos"))]
+    chk(not malos, "cada aviso dice qué pasa, por qué suele pasar y cómo se arregla", malos)
+    casos = {("copia", "Copia en curso..."): "OCT-EQ-04", ("copia", "Copia completa del equipo en curso"): "OCT-COMP-01",
+             ("copia_bd", ""): "OCT-BD-01", ("recuperacion_bd", ""): "OCT-BD-02", ("copia_vms", ""): "OCT-VM-01",
+             ("recuperacion", "Recuperando la máquina virtual X"): "OCT-VM-02", ("imagen", ""): "OCT-IMG-01",
+             ("recuperacion", "Pasando lo de PC-1 (copia x)"): "OCT-PASAR-01", ("recuperacion", "Recuperando 3 archivos"): "OCT-REC-01"}
+    chk(all(av.codigo_trabajo(t, q) == c for (t, q), c in casos.items()), "cada trabajo fallido tiene su aviso",
+        {k: av.codigo_trabajo(*k) for k in casos})
+    chk("Por qué suele pasar" in av.texto("OCT-EQ-04", equipo="PC-1"), "el correo/Telegram también dice por qué suele pasar")
+    t = c.get("/avisos/guia").get_data(as_text=True)
+    chk(t.count('class="codigo"') == len(av.CATALOGO) and "Por qué suele pasar" in t, "guía con todos los avisos en el panel")
+    t = c.get("/avisos/guia?q=rescate").get_data(as_text=True)
+    chk("OCT-RES-02" in t and "OCT-EQ-01" not in t, "la guía se puede buscar")
+    import subprocess as _sp
+    rr = _sp.run([sys.executable, str(Path(__file__).resolve().parents[2] / "herramientas" / "generar_soluciones.py"),
+                  "--comprobar"], capture_output=True, text=True)
+    chk(rr.returncode == 0, "SOLUCIONES.md está al día con los avisos", rr.stdout)
     with a.get_db_connection() as cx:
         cx.execute("DELETE FROM systems WHERE id=?", (invitado,))
     with a.get_db_connection() as cx:

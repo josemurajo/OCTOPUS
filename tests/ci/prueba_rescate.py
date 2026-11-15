@@ -153,6 +153,7 @@ def unidad():
     h = cl.get("/arranque-red").get_data(as_text=True)
     chk("Arranque por red" in h and ("Docker" in h or "OCTOPUS_IP" in h or "Encender" in h), "pantalla del arranque por red",
         h[-600:])
+    chk("OCT-RED-01" in h and "Por qué suele pasar" in h, "si no se puede encender, aviso con su código y cómo arreglarlo")
     chk("Arranque por red" in cl.get("/equipos").get_data(as_text=True), "botón en Equipos")
 
 

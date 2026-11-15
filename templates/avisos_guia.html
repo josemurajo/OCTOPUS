@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Qué hacer si algo falla{% endblock %}
+{% block content %}
+{# Guía de todos los avisos (lib/avisos.py: CATALOGO). Lo mismo está en SOLUCIONES.md, en GitHub. #}
+<p class="small"><a href="{{ url_for('avisos') }}">← Avisos</a></p>
+<h1>Qué hacer si algo falla</h1>
+<p class="lead">Todos los avisos que puede dar OCTOPUS: <strong>qué pasa</strong>, <strong>por qué suele pasar</strong> y
+  <strong>cómo se arregla</strong>. Busca por el código (por ejemplo <code>OCT-EQ-04</code>) o por una palabra.</p>
+<form method="get" class="card" role="search">
+  <div class="field" style="display:flex; gap:8px; flex-wrap:wrap">
+    <input name="q" value="{{ q }}" placeholder="Código o palabra: copia, disco, rescate, contraseña…" aria-label="Buscar"
+           style="max-width:420px">
+    <button class="btn btn-primary" type="submit">Buscar</button>
+    {% if q %}<a class="btn" href="{{ url_for('avisos_guia') }}">Ver todos</a>{% endif %}
+  </div>
+</form>
+{% for a in avisos %}
+<div class="card" id="{{ a.codigo }}">
+  <div class="aviso-cab"><strong>{{ a.titulo }}</strong><span class="codigo">{{ a.codigo }}</span></div>
+  <p class="small"><em>Qué pasa / por qué importa:</em> {{ a.por_que }}</p>
+  {% if a.causas %}<p class="small" style="margin-bottom:2px"><em>Por qué suele pasar:</em></p>
+  <ul class="small" style="margin-top:0">{% for c in a.causas %}<li>{{ c }}</li>{% endfor %}</ul>{% endif %}
+  <p class="small" style="margin-bottom:2px"><em>Cómo se arregla:</em></p>
+  <ol class="pasos small">{% for p in a.pasos %}<li>{{ p }}</li>{% endfor %}</ol>
+  {% if a.accion %}<p class="small muted">Cuando sale en Avisos, tiene el botón «Solucionar».</p>{% endif %}
+</div>
+{% else %}<p class="muted">No hay ningún aviso con «{{ q }}».</p>{% endfor %}
+{% endblock %}

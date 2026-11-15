@@ -3,7 +3,8 @@
 {% block title %}Avisos{% endblock %}
 {% block content %}
 <h1>Avisos</h1>
-<p class="lead">Solo te avisamos de lo que importa, y siempre te decimos qué hacer. Si se puede arreglar solo, pulsa «Solucionar».</p>
+<p class="lead">Solo te avisamos de lo que importa, y siempre te decimos qué hacer. Si se puede arreglar solo, pulsa «Solucionar».
+  <a href="{{ url_for('avisos_guia') }}">Ver todos los avisos posibles y cómo se arreglan</a>.</p>
 {% for a in avisos %}{{ aviso(a, url_for('avisos')) }}
 {% else %}
   <div class="card hero ok"><div class="hero-icon">✓</div><div><h1>No hay nada que revisar</h1><p class="muted">Todos los equipos están funcionando bien.</p></div></div>

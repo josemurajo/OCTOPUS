@@ -28,6 +28,9 @@ Léelo antes de tocar nada. Son las reglas del proyecto que José ha ido dejando
 - Cada push pasa `.github/workflows/pruebas.yml` en Linux, Windows y Mac reales. No des nada por terminado con
   la CI en rojo.
 - Lo nuevo lleva su prueba en `tests/ci/` y su paso en la CI.
+- Lo nuevo que pueda fallar lleva su aviso en `lib/avisos.py` (qué pasa, `causas`, `pasos`) y después
+  `python3 herramientas/generar_soluciones.py` (escribe SOLUCIONES.md; la CI comprueba que está al día).
+- Antes de preparar una versión: README.md y CHANGELOG.md al día con lo nuevo.
 - Comprobaciones rápidas sin equipos:
   - `python tests/ci/prueba_produccion.py`;
   - `bash tests/ci/prueba_publicar.sh`.

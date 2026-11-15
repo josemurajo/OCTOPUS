@@ -99,7 +99,7 @@ def pedir_config(servidor: str, codigo: str, timeout: int = 30) -> dict:
     """Pide al panel cómo llegar a las copias del equipo. La respuesta va cifrada con el código: por eso no hace falta
     fiarse del certificado del servidor (alguien en medio no puede leerla ni cambiarla sin el código)."""
     if not normalizar(codigo):
-        raise ValueError("El código no es válido: son 12 letras y números, como ABCD-EFGH-JKMN.")
+        raise ValueError("[OCT-RES-01] El código no es válido: son 12 letras y números, como ABCD-EFGH-JKMN.")
     url = servidor.strip().rstrip("/")
     if not re.match(r"^https?://", url):
         url = "https://" + url
@@ -112,14 +112,15 @@ def pedir_config(servidor: str, codigo: str, timeout: int = 30) -> dict:
         with urllib.request.urlopen(req, timeout=timeout, context=ctx) as r:
             resp = json.loads(r.read())
     except urllib.error.HTTPError as exc:
-        raise RuntimeError("El servidor no acepta el código (¿mal escrito, ya usado o ha pasado más de una hora?). "
-                           "Pide otro en el panel.") from exc
+        raise RuntimeError("[OCT-RES-01] El servidor no acepta el código (¿mal escrito, ya usado o ha pasado más de "
+                           "una hora?). Pide otro en el panel. Si es de un despliegue: [OCT-DESP-01] la tanda se ha "
+                           "terminado.") from exc
     except OSError as exc:
-        raise RuntimeError(f"No se llega al servidor {url}: ¿está el cable de red puesto? ({exc})") from exc
+        raise RuntimeError(f"[OCT-RES-02] No se llega al servidor {url}: ¿está el cable de red puesto? ({exc})") from exc
     try:
         return descifrar(codigo, resp["datos"])
     except Exception as exc:
-        raise RuntimeError("La respuesta del servidor no cuadra con el código. Pide otro en el panel.") from exc
+        raise RuntimeError("[OCT-RES-01] La respuesta del servidor no cuadra con el código. Pide otro en el panel.") from exc
 
 
 # ------------------------------------------------------------------------------------------------------------ restic
@@ -250,7 +251,7 @@ def poner_arranque(raiz: str, disco: str, avisar=print) -> list[str]:
     """GRUB del propio sistema copiado: UEFI (como «disco extraíble», vale en cualquier placa) y BIOS antigua."""
     grub = _existe_en(raiz, "grub-install", "grub2-install")
     if not grub:
-        raise RuntimeError("El sistema copiado no tiene GRUB (el programa de arranque): no se puede hacer arrancable.")
+        raise RuntimeError("[OCT-RES-04] El sistema copiado no tiene GRUB (el programa de arranque): no se puede hacer arrancable.")
     libgrub = next((os.path.join(raiz, d) for d in ("usr/lib/grub", "usr/lib/grub2") if os.path.isdir(os.path.join(raiz, d))), "")
     hechos = []
     if libgrub and os.path.isdir(os.path.join(libgrub, "x86_64-efi")):
@@ -260,7 +261,7 @@ def poner_arranque(raiz: str, disco: str, avisar=print) -> list[str]:
         _chroot(raiz, [grub, "--target=i386-pc", disco])
         hechos.append("BIOS")
     if not hechos:
-        raise RuntimeError("Al GRUB del sistema copiado le faltan sus piezas (x86_64-efi / i386-pc).")
+        raise RuntimeError("[OCT-RES-04] Al GRUB del sistema copiado le faltan sus piezas (x86_64-efi / i386-pc).")
     avisar(f"Arranque puesto ({' y '.join(hechos)}).")
     if _existe_en(raiz, "update-initramfs"):
         _chroot(raiz, ["update-initramfs", "-u", "-k", "all"])
@@ -284,7 +285,7 @@ def restaurar_linux(cfg: dict, copia: str, disco: str, avisar=print, nuevo: dict
     necesita = tamano_copia(cfg, copia)
     tiene = int(_run(["blockdev", "--getsize64", disco]).stdout.strip() or 0)
     if necesita and tiene and necesita > (tiene - 600 * 1024 ** 2) * 0.95:
-        raise RuntimeError(f"El disco es pequeño: la copia ocupa {necesita // 1024 ** 3 + 1} GB y el disco tiene "
+        raise RuntimeError(f"[OCT-RES-03] El disco es pequeño: la copia ocupa {necesita // 1024 ** 3 + 1} GB y el disco tiene "
                            f"{tiene // 1024 ** 3} GB.")
     avisar(f"Preparando {disco} (se borra todo lo que tenía)...")
     for p in sorted(Path("/dev").glob(Path(disco).name + "*"), reverse=True):
@@ -455,6 +456,10 @@ def servidor_del_arranque() -> str:
     return ""
 
 
+AYUDA = ("\n\nCon el código [OCT-…] del principio, qué hacer está en el panel → Avisos → «Ver todos los avisos "
+         "posibles», o en SOLUCIONES.md en GitHub.")
+
+
 def con_menus() -> int:
     m = Menu()
     m.aviso("Bienvenido al rescate de OCTOPUS.\n\nNecesitas: el cable de red puesto y, en el panel de OCTOPUS (desde "
@@ -525,7 +530,7 @@ def con_menus() -> int:
                 _run(["umount", punto], check=False)
             m.aviso(f"Listo: los archivos están en el disco USB, carpeta {Path(r['carpeta']).name}.")
     except Exception as exc:
-        m.aviso(f"No ha salido bien: {exc}")
+        m.aviso(f"No ha salido bien: {exc}" + AYUDA)
         return 1
     return 0
 
@@ -543,7 +548,7 @@ def desplegar_con_menus(m, cfg) -> int:
     try:
         r = restaurar_linux(cfg, dep["copia"], disco, avisar=print, nuevo=dep["nuevo"])
     except Exception as exc:
-        m.aviso(f"No ha salido bien: {exc}")
+        m.aviso(f"No ha salido bien: {exc}" + AYUDA)
         return 1
     m.aviso(f"Listo: {dep['nuevo']['hostname']} instalado. Quita el pendrive (o desconecta el arranque por red) y "
             "reinicia. Aparecerá solo en el panel." + (f"\n\nAviso: {r['aviso']}" if r.get("aviso") else ""))

@@ -220,6 +220,219 @@ CATALOGO: dict[str, dict] = {
 }
 
 
+# ---------------------------------------------------------------- avisos de lo que se añadió después
+CATALOGO.update({
+    "OCT-COMP-01": {
+        "nivel": "problema", "titulo": "La copia completa de {equipo} falló",
+        "por_que": "Sin ella no se puede dejar el equipo entero como estaba si se rompe el disco (sus carpetas siguen "
+                   "protegidas por la copia normal).",
+        "pasos": ["Repítela desde la ficha del equipo («Copia completa del equipo» → «Hacer ahora»).",
+                  "Si vuelve a fallar, mira que el servidor tenga sitio libre: la copia completa ocupa mucho.",
+                  "Motivo que dio el equipo: {detalle}"],
+        "accion": None},
+    "OCT-BD-01": {
+        "nivel": "problema", "titulo": "La copia de las bases de datos de {equipo} falló",
+        "por_que": "Lo que se haya guardado en esas bases de datos desde la última copia buena no está protegido.",
+        "pasos": ["Abre la ficha del equipo → «Bases de datos» y revisa el usuario y la contraseña de cada base.",
+                  "Si han cambiado, ponlos bien, pulsa «Guardar» y después «Copiar ahora».",
+                  "Si el motor de la base de datos estaba parado, arráncalo y vuelve a copiar.",
+                  "Motivo que dio el equipo: {detalle}"],
+        "accion": None},
+    "OCT-BD-02": {
+        "nivel": "problema", "titulo": "No se pudo recuperar la base de datos de {equipo}",
+        "por_que": "La base de datos original NO se ha tocado: sigue como estaba.",
+        "pasos": ["Comprueba que el motor de la base de datos está en marcha y que hay sitio libre en el disco.",
+                  "Vuelve a intentarlo eligiendo otra hora (otra copia).",
+                  "Motivo que dio el equipo: {detalle}"],
+        "accion": None},
+    "OCT-VM-01": {
+        "nivel": "problema", "titulo": "La copia de las máquinas virtuales de {equipo} falló",
+        "por_que": "Si una máquina virtual se estropea, no habría una copia reciente de ella entera.",
+        "pasos": ["Abre la ficha del equipo → «Máquinas virtuales» para ver cuáles se ven y en qué estado están.",
+                  "Si es VirtualBox en Linux o Mac y la máquina estaba encendida: apágala y copia otra vez (en Windows "
+                  "se copia encendida).",
+                  "Mira que el servidor tenga sitio libre: las máquinas virtuales ocupan mucho.",
+                  "Motivo que dio el equipo: {detalle}"],
+        "accion": None},
+    "OCT-VM-02": {
+        "nivel": "problema", "titulo": "No se pudo recuperar la máquina virtual de {equipo}",
+        "por_que": "La máquina original NO se ha tocado: sigue como estaba.",
+        "pasos": ["Mira que el equipo tenga sitio libre para la copia recuperada (ocupa lo mismo que la máquina).",
+                  "Vuelve a intentarlo; si falla, prueba con una copia anterior.",
+                  "Motivo que dio el equipo: {detalle}"],
+        "accion": None},
+    "OCT-IMG-01": {
+        "nivel": "atencion", "titulo": "La imagen de disco de {equipo} no se pudo hacer",
+        "por_que": "Si el ordenador deja de arrancar, la última imagen buena será más antigua.",
+        "pasos": ["Si pone «se deja para luego»: estaba usando el ordenador a fondo; se hará sola más tarde.",
+                  "Mira que el disco USB esté conectado (o que la carpeta de red se vea) y que tenga sitio libre.",
+                  "En la ficha del equipo → «Copia imagen de disco» → «Hacer una imagen ahora» para repetirla.",
+                  "Motivo que dio el equipo: {detalle}"],
+        "accion": None},
+    "OCT-REC-01": {
+        "nivel": "problema", "titulo": "La recuperación de archivos en {equipo} no se terminó",
+        "por_que": "Puede que solo se hayan recuperado algunos archivos. Lo que ya había en el equipo no se borra.",
+        "pasos": ["Comprueba que el equipo sigue encendido y con conexión.",
+                  "Mira que tenga sitio libre en el disco donde se recupera.",
+                  "Vuelve a intentarlo desde la ficha del equipo; si falla, prueba con otra copia.",
+                  "Motivo que dio el equipo: {detalle}"],
+        "accion": None},
+    "OCT-PASAR-01": {
+        "nivel": "problema", "titulo": "No se pudo pasar todo a {equipo}",
+        "por_que": "Algunas carpetas no han llegado al ordenador nuevo. Lo que ya tenía no se sobrescribe nunca.",
+        "pasos": ["Comprueba que el ordenador nuevo sigue encendido y conectado.",
+                  "Mira que tenga sitio libre en el disco.",
+                  "Repite «Pasar a un ordenador nuevo» solo con las carpetas que falten: lo que ya llegó no se duplica.",
+                  "Motivo que dio el equipo: {detalle}"],
+        "accion": None},
+    "OCT-NUBE-01": {
+        "nivel": "problema", "titulo": "La copia de Microsoft 365 / Google ha fallado",
+        "por_que": "Los correos y archivos de la nube de anoche no se han copiado.",
+        "pasos": ["Ve a «Copia de la nube» y vuelve a poner los datos de la cuenta (botón «Actualizar»): los permisos "
+                  "de Microsoft 365 y Google caducan cada cierto tiempo.",
+                  "Comprueba que el servidor tiene Internet.",
+                  "Detalle: {detalle}"],
+        "accion": None, "enlace": "nube"},
+    "OCT-RED-01": {
+        "nivel": "problema", "titulo": "El arranque por red no se ha podido encender",
+        "por_que": "Los ordenadores no podrán arrancar el rescate por red (con el pendrive sí).",
+        "pasos": ["Mira el detalle de abajo y la parte «Qué está haciendo» de Equipos → Arranque por red.",
+                  "Si dice que no puede descargar el rescate: el servidor necesita Internet la primera vez.",
+                  "Si los ordenadores no lo ven: en el servidor, sudo bash octopus.sh abrir-arranque-red (cortafuegos).",
+                  "Pulsa «Apagar» y «Encender» otra vez.",
+                  "Detalle: {detalle}"],
+        "accion": None, "enlace": "arranque_red"},
+    # ---- estos los enseña el propio USB de rescate (en el ordenador que se está rescatando)
+    "OCT-RES-01": {
+        "nivel": "problema", "titulo": "USB de rescate: el código no vale",
+        "por_que": "Sin un código bueno, el rescate no puede llegar a las copias (es lo que las protege).",
+        "pasos": ["Pide un código nuevo en el panel: ficha del equipo → «USB de rescate» → «Dar código».",
+                  "Escríbelo sin prisas: son 12 letras y números (no hay O ni 0, ni I ni 1)."],
+        "accion": None, "solo_guia": True},
+    "OCT-RES-02": {
+        "nivel": "problema", "titulo": "USB de rescate: no llega al servidor",
+        "por_que": "El rescate necesita hablar con el servidor de OCTOPUS para traer las copias.",
+        "pasos": ["Pon el cable de red (el rescate no usa wifi).",
+                  "Escribe la dirección tal cual sale en el panel, junto al código (por ejemplo https://192.168.1.10:8080).",
+                  "Comprueba que el servidor de OCTOPUS está encendido (desde otro ordenador se tiene que abrir el panel)."],
+        "accion": None, "solo_guia": True},
+    "OCT-RES-03": {
+        "nivel": "problema", "titulo": "USB de rescate: el disco es pequeño",
+        "por_que": "La copia completa no cabe en el disco elegido.",
+        "pasos": ["Usa un disco igual o más grande que el del ordenador original.",
+                  "O saca solo los archivos a un disco USB («Sacar los archivos»)."],
+        "accion": None, "solo_guia": True},
+    "OCT-RES-04": {
+        "nivel": "problema", "titulo": "USB de rescate: no se puede hacer arrancable",
+        "por_que": "El sistema copiado no tiene su programa de arranque (GRUB) o le faltan piezas.",
+        "pasos": ["Los archivos SÍ están en el disco: puedes sacarlos con «Sacar los archivos».",
+                  "Instala el sistema de cero en ese disco y después usa «Pasar a un ordenador nuevo» para traer tus carpetas."],
+        "accion": None, "solo_guia": True},
+    "OCT-DESP-01": {
+        "nivel": "problema", "titulo": "Despliegue: el código ya no vale",
+        "por_que": "La tanda se ha terminado: pasó el tiempo, se llegó al máximo de ordenadores o alguien pulsó «Terminar».",
+        "pasos": ["En el panel: Equipos → «Desplegar en varios equipos» → «Dar código del despliegue» para una tanda nueva."],
+        "accion": None, "solo_guia": True},
+    "OCT-LOGIN-01": {
+        "nivel": "problema", "titulo": "No puedo entrar en el panel",
+        "por_que": "Sin entrar no se pueden ver los avisos ni recuperar nada (las copias siguen haciéndose solas).",
+        "pasos": ["Si has olvidado la contraseña: en la pantalla de entrada, «He olvidado mi contraseña» (llega un correo).",
+                  "Si has probado muchas veces, espera 15 minutos: OCTOPUS bloquea un rato a quien falla mucho.",
+                  "Si te has quedado fuera (bloqueado, o el panel solo se abre desde la oficina), en el servidor: "
+                  "sudo bash octopus.sh acceso-emergencia (en Windows: octopus.ps1 acceso-emergencia)."],
+        "accion": None, "solo_guia": True},
+    "OCT-2FA-01": {
+        "nivel": "problema", "titulo": "He perdido el móvil de la doble autenticación",
+        "por_que": "Sin el código del móvil no se puede entrar en el panel.",
+        "pasos": ["Usa uno de los 10 códigos de emergencia que te enseñó al activarla.",
+                  "Si no los tienes, otro administrador puede quitártela en Usuarios.",
+                  "Si eres el único, en el servidor: sudo bash octopus.sh quitar-2fa TU_USUARIO (en Windows: "
+                  "octopus.ps1 quitar-2fa TU_USUARIO). Te pedirá el código del kit de recuperación."],
+        "accion": None, "solo_guia": True},
+})
+
+# Por qué ha pasado (lo más normal), para cada aviso. En el panel, en los correos y en SOLUCIONES.md.
+CAUSAS = {
+    "OCT-EQ-01": ["El equipo está apagado, en suspensión o sin red.", "Se ha cambiado de red (otra wifi, VPN) y no llega al servidor.",
+                  "El agente de OCTOPUS se ha parado o lo ha quitado un antivirus."],
+    "OCT-EQ-02": ["El equipo se acaba de añadir y aún no le ha tocado su copia diaria.",
+                  "No tiene ninguna carpeta elegida para copiar."],
+    "OCT-EQ-03": ["El equipo ha estado apagado o fuera de la oficina.", "Las copias están fallando (mira si hay otro aviso)."],
+    "OCT-EQ-04": ["Se cortó la red a mitad de la copia.", "El equipo se apagó o entró en suspensión.",
+                  "No hay sitio libre en el servidor o en el equipo.", "Un archivo estaba bloqueado por un programa."],
+    "OCT-EQ-05": ["La copia que se probó estaba incompleta.", "El almacén de copias tiene algún error (mira sus avisos).",
+                  "El equipo no tenía sitio para la prueba."],
+    "OCT-EQ-06": ["Mientras se hacía la copia, OCTOPUS detectó cifrado masivo o tocaron un archivo señuelo."],
+    "OCT-MON-01": ["El disco está estropeándose (lo dice el propio disco: SMART)."],
+    "OCT-MON-02": ["Los discos SSD tienen una vida de escrituras; este la ha gastado casi entera."],
+    "OCT-MON-03": ["Descargas, papelera, programas o archivos grandes acumulados."],
+    "OCT-MON-04": ["Polvo, rejillas tapadas, ventilador estropeado o el equipo trabajando a tope mucho rato."],
+    "OCT-MON-05": ["Las baterías se gastan con los años y las cargas."],
+    "OCT-MON-06": ["Muchos programas o pestañas abiertas a la vez, o un programa que no suelta la memoria."],
+    "OCT-MON-07": ["Un programa colgado o trabajando muchísimo, una actualización, o algo malicioso (virus, minero)."],
+    "OCT-MON-08": ["El equipo está apagado o sin red.", "El agente se ha parado."],
+    "OCT-MON-09": ["Alguien lo ha desactivado a mano, otro antivirus lo ha sustituido o lo ha apagado un virus."],
+    "OCT-SEN-01": ["Un programa malicioso (ransomware) está cifrando o borrando archivos.",
+                  "Muy raramente: alguien abrió y cambió el archivo trampa a mano."],
+    "OCT-ALM-01": ["Un corte de luz o un reinicio del servidor a mitad de una tarea dejó el bloqueo puesto."],
+    "OCT-ALM-02": ["Un fallo del disco del servidor.", "Un corte de luz mientras se escribía una copia."],
+    "OCT-ALM-03": ["El almacén estaba bloqueado o muy ocupado.", "No había sitio libre para hacer la limpieza."],
+    "OCT-DISCO-01": ["Se guardan muchas copias o se han añadido equipos o máquinas virtuales grandes."],
+    "OCT-SRV-01": ["Sin Internet o con las claves del almacén externo caducadas.", "Sin sitio libre en el destino."],
+    "OCT-SRV-02": ["El servidor estuvo apagado por la noche.", "El mantenimiento se quedó colgado (mira sus avisos)."],
+    "OCT-SRV-03": ["El correo de avisos no está configurado o su contraseña ha cambiado."],
+    "OCT-CERT-01": ["Los certificados duran un tiempo limitado por seguridad; este se acerca a su fecha."],
+    "OCT-KIT-01": ["Nadie ha pulsado todavía «Descargar el kit» en Ajustes."],
+    "OCT-ACT-01": ["Las actualizaciones automáticas están en pausa o la de esta noche no se pudo instalar."],
+    "OCT-SUG-01": ["No había Internet o no hay ningún destino de soporte configurado."],
+    "OCT-COMP-01": ["No había sitio libre en el servidor.", "El equipo se apagó o perdió la red a mitad (tarda horas)."],
+    "OCT-BD-01": ["Ha cambiado la contraseña del usuario de la base de datos.", "El motor de la base de datos estaba parado.",
+                  "No había sitio libre en el equipo para el volcado."],
+    "OCT-BD-02": ["El motor de la base de datos estaba parado o sin sitio.", "La copia elegida está dañada."],
+    "OCT-VM-01": ["VirtualBox en Linux o Mac con la máquina encendida (hay que apagarla).",
+                  "Sin sitio libre en el servidor.", "El hipervisor estaba ocupado o la máquina se movió de sitio."],
+    "OCT-VM-02": ["Sin sitio libre en el equipo.", "La copia elegida está incompleta."],
+    "OCT-IMG-01": ["El disco USB no estaba conectado o la carpeta de red no se veía.", "No había sitio en el destino.",
+                   "Estabas usando el ordenador a fondo y se dejó para luego (es normal)."],
+    "OCT-REC-01": ["El equipo se apagó o perdió la red a mitad.", "No había sitio libre.",
+                   "Algún archivo estaba abierto y no se pudo poner."],
+    "OCT-PASAR-01": ["El ordenador nuevo se apagó o perdió la red a mitad.", "No había sitio libre en el ordenador nuevo."],
+    "OCT-NUBE-01": ["El permiso de la cuenta de Microsoft 365 o Google ha caducado o se ha quitado.",
+                    "Sin Internet en el servidor."],
+    "OCT-RED-01": ["El servidor no tiene Internet para descargar el rescate la primera vez.",
+                   "Falta la dirección del servidor (OCTOPUS_IP) o el cortafuegos del servidor lo bloquea.",
+                   "El servidor no es Linux (el arranque por red solo funciona en servidores Linux)."],
+    "OCT-RES-01": ["El código se ha escrito mal, ya se usó (vale una vez) o ha pasado más de una hora."],
+    "OCT-RES-02": ["No hay cable de red, la dirección está mal escrita o el servidor está apagado."],
+    "OCT-RES-03": ["El disco nuevo es más pequeño que lo que ocupaba el sistema copiado."],
+    "OCT-RES-04": ["La copia es de un sistema sin GRUB (o se borró) o no es una «copia completa»."],
+    "OCT-DESP-01": ["Ha pasado el tiempo de la tanda, se llegó al máximo de ordenadores o se terminó a mano."],
+    "OCT-LOGIN-01": ["Contraseña olvidada, bloqueo por muchos intentos o el correo de recuperación no está configurado."],
+    "OCT-2FA-01": ["Móvil perdido, roto o cambiado sin pasar la aplicación de códigos."],
+}
+for _c, _l in CAUSAS.items():
+    CATALOGO[_c]["causas"] = _l
+
+# Trabajo que ha fallado (tipo + lo que se estaba haciendo) -> aviso
+_TRABAJO_CODIGO = {"copia_bd": "OCT-BD-01", "recuperacion_bd": "OCT-BD-02", "copia_vms": "OCT-VM-01",
+                   "recuperacion_vm": "OCT-VM-02", "imagen": "OCT-IMG-01", "completa": "OCT-COMP-01",
+                   "recuperacion": "OCT-REC-01", "pasar": "OCT-PASAR-01", "copia": "OCT-EQ-04"}
+
+
+def codigo_trabajo(tipo: str, que: str = "") -> str:
+    """El aviso de un trabajo (copia, recuperación...) que ha terminado mal."""
+    q = (que or "").lower()
+    if tipo == "copia" and "completa" in q:
+        return "OCT-COMP-01"
+    if tipo == "copia" and "imagen de disco" in q:
+        return "OCT-IMG-01"
+    if tipo == "recuperacion" and "máquina virtual" in q:
+        return "OCT-VM-02"
+    if tipo == "recuperacion" and q.startswith("pasando"):
+        return "OCT-PASAR-01"
+    return _TRABAJO_CODIGO.get(tipo, "OCT-EQ-04")
+
+
 def ficha(codigo: str, **datos) -> dict:
     """El aviso completo y ya rellenado para un caso concreto."""
     c = dict(CATALOGO.get(codigo) or {"nivel": "atencion", "titulo": codigo, "por_que": "", "pasos": [], "accion": None})
@@ -236,14 +449,61 @@ def ficha(codigo: str, **datos) -> dict:
     if not datos["detalle"]:
         pasos = [p for p in pasos if not p.rstrip().endswith(":")]
     return {"codigo": codigo, "nivel": c["nivel"], "titulo": rellenar(c["titulo"]), "por_que": c.get("por_que", ""),
-            "pasos": pasos, "accion": c.get("accion"), "boton": c.get("boton", "Solucionar"),
-            "enlace": c.get("enlace")}
+            "causas": list(c.get("causas", [])), "pasos": pasos, "accion": c.get("accion"),
+            "boton": c.get("boton", "Solucionar"), "enlace": c.get("enlace")}
+
+
+def ficha_guia(codigo: str) -> dict:
+    """Un aviso tal como sale en la guía (sin un equipo concreto)."""
+    f = ficha(codigo, equipo="[equipo]", detalle="")
+    f["titulo"] = CATALOGO[codigo]["titulo"].format(equipo="[equipo]", detalle="[detalle]")
+    return f
+
+
+def guia_markdown() -> str:
+    """Todos los avisos, para SOLUCIONES.md (herramientas/generar_soluciones.py) y la guía del panel."""
+    grupos = [("OCT-EQ", "Equipos y copias"), ("OCT-COMP", "Copia completa"), ("OCT-BD", "Bases de datos"),
+              ("OCT-VM", "Máquinas virtuales"), ("OCT-IMG", "Imagen de disco de Windows"),
+              ("OCT-REC", "Recuperar archivos"), ("OCT-PASAR", "Pasar a un ordenador nuevo"),
+              ("OCT-NUBE", "Copia de Microsoft 365 y Google"), ("OCT-MON", "Monitorización"),
+              ("OCT-SEN", "Ataques"), ("OCT-ALM", "Almacén de copias"), ("OCT-DISCO", "Almacén de copias"),
+              ("OCT-SRV", "Servidor"), ("OCT-CERT", "Servidor"), ("OCT-KIT", "Servidor"), ("OCT-ACT", "Servidor"),
+              ("OCT-SUG", "Servidor"), ("OCT-RED", "Arranque por red"), ("OCT-RES", "USB de rescate"),
+              ("OCT-DESP", "Desplegar en varios equipos"), ("OCT-LOGIN", "Entrar en el panel"),
+              ("OCT-2FA", "Entrar en el panel")]
+    out = ["# Qué hacer si algo falla", "",
+           "Cada problema que OCTOPUS detecta sale en el panel (**Avisos**), en el correo y en Telegram con un **código**",
+           "(por ejemplo `OCT-EQ-04`). Aquí están todos: busca el código (Ctrl+F) y verás **qué pasa**, **por qué suele",
+           "pasar** y **cómo se arregla**. Muchos se arreglan solos o con el botón «Solucionar» del panel.", "",
+           "> Este archivo se genera solo desde `lib/avisos.py` (`python3 herramientas/generar_soluciones.py`): no lo",
+           "> edites a mano.", ""]
+    hecho = set()
+    for pref, nombre in grupos:
+        codigos = [c for c in CATALOGO if c.rsplit("-", 1)[0] == pref and c not in hecho]
+        if not codigos:
+            continue
+        if f"## {nombre}" not in out:
+            out += [f"## {nombre}", ""]
+        for c in codigos:
+            hecho.add(c)
+            f = ficha_guia(c)
+            out += [f"### {c} · {f['titulo']}", "",
+                    f"**Qué pasa / por qué importa:** {f['por_que']}", ""]
+            if f["causas"]:
+                out += ["**Por qué suele pasar:**", ""] + [f"- {x}" for x in f["causas"]] + [""]
+            out += ["**Cómo se arregla:**", ""] + [f"{i}. {p}" for i, p in enumerate(f["pasos"], 1)] + [""]
+            if f["accion"]:
+                out += ["En el panel, este aviso tiene el botón **«Solucionar»**.", ""]
+    return "\n".join(out).rstrip() + "\n"
 
 
 def texto(codigo: str, **datos) -> str:
     """El aviso en texto plano (correo, Telegram, registro)."""
     f = ficha(codigo, **datos)
-    lineas = [f"[{codigo}] {f['titulo']}", f"Por qué importa: {f['por_que']}", "Qué hacer:"]
+    lineas = [f"[{codigo}] {f['titulo']}", f"Por qué importa: {f['por_que']}"]
+    if f["causas"]:
+        lineas.append("Por qué suele pasar: " + " / ".join(f["causas"]))
+    lineas.append("Qué hacer:")
     lineas += [f"  {i}. {p}" for i, p in enumerate(f["pasos"], 1)]
     if f["accion"]:
         try:
@@ -272,7 +532,7 @@ def codigo_mantenimiento(tarea: str, resultado: dict) -> str | None:
         return "OCT-ALM-01" if "lock" in det else "OCT-ALM-03"
     if tarea == "vigilar":
         return "OCT-DISCO-01" if resultado.get("disco_lleno") else None
-    return {"autocopia": "OCT-SRV-01", "informe": "OCT-SRV-03"}.get(tarea)
+    return {"autocopia": "OCT-SRV-01", "informe": "OCT-SRV-03", "copia_nube": "OCT-NUBE-01"}.get(tarea)
 
 
 def caducidad_certificado() -> int | None:

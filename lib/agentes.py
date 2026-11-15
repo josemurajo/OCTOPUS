@@ -265,7 +265,7 @@ def _lanzar(system, tipo, mensaje, llamada, al_terminar, on_done=None):
             if j["system_id"] == system["id"] and j["estado"] == "en_curso":
                 return j["id"]
         JOBS[job_id] = {"id": job_id, "system_id": system["id"], "equipo": system["hostname"], "tipo": tipo,
-                        "estado": "en_curso", "mensaje": mensaje, "inicio": datetime.now(timezone.utc), "fin": None}
+                        "estado": "en_curso", "mensaje": mensaje, "que": mensaje, "inicio": datetime.now(timezone.utc), "fin": None}
     sid = system["id"]
 
     def _run():

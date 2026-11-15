@@ -35,6 +35,7 @@ a ataques (ransomware) y un panel web pensado para personas que no son técnicas
 |---|---|
 | Instalarlo en una empresa | **[PRODUCCION.md](PRODUCCION.md)** |
 | Probarlo con máquinas virtuales | **[maquinas/](maquinas/)** (laboratorio con su README) |
+| **Algo falla: qué ha pasado y cómo se arregla** | **[SOLUCIONES.md](SOLUCIONES.md)** (busca el código del aviso, p. ej. `OCT-EQ-04`) |
 | Saber qué archivo tocar para cambiar algo | **[MAPA_DEL_CODIGO.md](MAPA_DEL_CODIGO.md)** |
 | Ver que todo pasa las pruebas | pestaña **Actions** (Linux, Windows y Mac en cada cambio) |
 
@@ -56,6 +57,15 @@ a ataques (ransomware) y un panel web pensado para personas que no son técnicas
 - Solo hay **dos puertos TCP** en el servidor, los dos cifrados con una autoridad de certificados propia.
 - Las copias se hacen con [restic](https://restic.net): formato abierto, se pueden abrir sin OCTOPUS con
   la clave del kit de recuperación.
+
+## Si algo falla
+
+Cada problema sale en el panel (**Avisos**), en el correo y en Telegram con un **código** (por ejemplo `OCT-EQ-04`) y
+siempre dice **qué pasa**, **por qué suele pasar** y **cómo se arregla**; si se puede arreglar solo, con un botón
+«Solucionar». La lista completa, para buscar un código o una palabra:
+
+- en el panel: **Avisos → «Ver todos los avisos posibles y cómo se arreglan»**;
+- aquí: **[SOLUCIONES.md](SOLUCIONES.md)**.
 
 ## Dónde instalarlo
 
